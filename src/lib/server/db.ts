@@ -29,7 +29,8 @@ export const REMOTE_DATABASE_URL = (process.env.TURSO_DATABASE_URL || "").trim()
 
 // ---------------------------------------------------------------- schema migrations
 //
-// PRAGMA user_version = applied schema version. Each migration runs once, in its own transaction,
+// Applied schema version: PRAGMA user_version on a SQLite file; on Turso (which rejects writes to
+// user_version) the single row of table schema_meta. Each migration runs once, in its own transaction,
 // in order. NEVER edit a released migration — add a new one. An existing database is backed up to
 // data/backups/ before it is migrated.
 
@@ -391,8 +392,22 @@ const MIGRATIONS: { version: number; up: (db: Sql) => Promise<void>; foreignKeys
 ];
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
 
-export async function schemaVersion(d: Sql): Promise<number> {
-  return Number((await d.get("PRAGMA user_version"))?.user_version ?? 0);
+const SCHEMA_META_SQL = "CREATE TABLE IF NOT EXISTS schema_meta (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)";
+
+export async function schemaVersion(d: Driver): Promise<number> {
+  if (d.kind === "file") return Number((await d.get("PRAGMA user_version"))?.user_version ?? 0);
+  const t = await d.get("SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = 'schema_meta'");
+  if (!t) return 0;
+  return Number((await d.get("SELECT version FROM schema_meta WHERE id = 1"))?.version ?? 0);
+}
+
+async function setSchemaVersion(d: Driver, version: number) {
+  if (d.kind === "file") {
+    await d.exec(`PRAGMA user_version = ${version}`);
+    return;
+  }
+  await d.exec(SCHEMA_META_SQL);
+  await d.run("INSERT INTO schema_meta (id, version) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET version = excluded.version", version);
 }
 
 function backupBeforeMigration(conn: DatabaseSync, from: number) {
@@ -430,7 +445,7 @@ export async function migrate(d: Driver, conn?: DatabaseSync): Promise<void> {
         await m.up(d);
         const fk = await d.all("PRAGMA foreign_key_check");
         if (fk.length) throw new Error(`foreign key violations in migration v${m.version}: ${JSON.stringify(fk.slice(0, 5))}`);
-        await d.exec(`PRAGMA user_version = ${m.version}`);
+        await setSchemaVersion(d, m.version);
       },
       { foreignKeysOff: m.foreignKeysOff },
     );
