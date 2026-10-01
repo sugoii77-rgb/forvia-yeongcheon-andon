@@ -606,6 +606,8 @@ answered by UAP and the real line / process master data has been delivered.
 - [ ] Load real lines / processes (Gamma 1차, Gamma 2차, Nu 1차, Nu 2차, NX4, JX, …) from UAP
 - [ ] Implement trigger / reaction-rule master data (revisioned), trigger selection in the operator
       call, next-action guidance, rule reference stored per ANDON, arrival / QRCI milestones
+- Equipment master data (Appendix B) is **optional** for the first pilot — do not block this
+  milestone waiting for complete equipment data
 
 **Milestone 4 — Escalation / proactive (rule-based first, AI later)** — data model prepared in 2A
 - [ ] Configure `escalation_step.after_minutes` per policy (no defaults in code) and activate
@@ -789,3 +791,29 @@ list.**
 | OBD-15 | E2 "same issue": same equipment / process / trigger / defect text? Needed for automatic repeat counting |
 | OBD-16 | QRCI: record start / completion in the system, link to the QRCI document, or keep outside? |
 | OBD-17 | Which roles are "GAP Leader" per line (UAP GAP Leader vs PC&L GAP Leader in L1) — one role with department, or separate roles? |
+
+---
+
+## Appendix B — Reference design: legacy FORVIA DMC ANDON (reference only, NOT implemented)
+
+> Source: a legacy FORVIA DMC / SAP ANDON configuration document (reviewed 2026-10-01). Used only as
+> reference architecture. **No SAP, DMC, PLC or MES integration** — Digital ANDON stays standalone,
+> external-network based and mobile-first.
+
+Concepts to preserve in future designs:
+
+1. **Internal id ≠ display name** for equipment (stable internal identifier + human-readable name),
+   the same pattern already used for departments (`PCL` shown as "PC&L").
+2. **Hierarchy Plant → Line → Process → Equipment** (equipment as an optional level under process).
+3. **Equipment status**: active / inactive, or ANDON include / exclude (monitored or not).
+4. **Never delete historical equipment** when it leaves the monitoring scope — deactivate it, so past
+   ANDONs keep a valid reference (same rule as users and departments).
+5. **Configurable KPI / target values** (e.g. response-time targets, repeat thresholds) as master data,
+   not hard-coded numbers — consistent with Reaction Rule thresholds (Appendix A.5).
+6. **Live board generated from active master data** (Plant / Line / Process / Equipment) rather than
+   a fixed layout.
+7. **Equipment-level history and repeat-issue analytics** must stay possible (e.g. optional
+   `equipment_id` on an ANDON; E2 "same issue repeats per shift" could count per equipment — see OBD-15).
+
+Scope note: equipment master data is **optional for the first pilot**. The Reaction Rule milestone
+must work with Line / Process only and must not wait for complete equipment data.
