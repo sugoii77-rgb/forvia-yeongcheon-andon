@@ -1,15 +1,17 @@
 import { createEvent, getBoardCounts, listEvents, AndonError, type ListOptions } from "@/lib/server/andonService";
 import { notifyAndonCreated } from "@/lib/server/notifications";
 import { deletePhoto, savePhoto } from "@/lib/server/photos";
-import { handle } from "@/lib/server/http";
+import { handle, requestAudit } from "@/lib/server/http";
 
 export async function GET(req: Request) {
   return handle("GET /api/andons", () => {
     const q = new URL(req.url).searchParams;
     const scope = (q.get("scope") ?? "board") as ListOptions["scope"];
+    const responderId = Number(q.get("responderId"));
     const events = listEvents({
       scope,
       department: q.get("department") || undefined,
+      responderId: Number.isInteger(responderId) && responderId > 0 ? responderId : undefined,
       limit: q.get("limit") ? Number(q.get("limit")) : undefined,
     });
     // serverTime lets clients correct for clock skew when showing elapsed time.
@@ -55,6 +57,7 @@ export async function POST(req: Request) {
         createdBy: str("createdBy"),
         clientRequestId: str("clientRequestId") || undefined,
         photoFile,
+        audit: requestAudit(req),
       });
     } catch (err) {
       if (photoFile) await deletePhoto(photoFile);

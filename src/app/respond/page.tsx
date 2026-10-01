@@ -3,22 +3,24 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { TopBar } from "@/components/TopBar";
 import { StatusBadge } from "@/components/StatusBadge";
-import { ResponderPicker } from "@/components/ResponderPicker";
+import { ResponderPicker, responderCapableUsers } from "@/components/ResponderPicker";
 import { api, fmtDuration, fmtTime, usePolling, useServerNow, useStoredState } from "@/lib/client";
 import { signalColor, type AndonEvent, type MasterData } from "@/lib/domain";
 
 export default function RespondListPage() {
   const [meta, setMeta] = useState<MasterData | null>(null);
   const [metaError, setMetaError] = useState<string | null>(null);
-  const [me, setMe] = useStoredState("andon.responder.name", "");
+  const [me, setMe] = useStoredState("andon.responder.id", "");
   const [allDepts, setAllDepts] = useState(false);
 
   useEffect(() => {
     api<MasterData>("/api/meta").then(setMeta, (e: Error) => setMetaError(e.message));
   }, []);
 
-  const myDept = meta?.users.find((u) => u.name === me)?.departmentCode ?? "";
-  const url = `/api/andons?scope=active${!allDepts && myDept ? `&department=${myDept}` : ""}`;
+  const myUser = meta?.users.find((u) => String(u.id) === me);
+  const myDept = myUser?.departmentCode ?? "";
+  // The server decides which events belong to this responder (their department).
+  const url = `/api/andons?scope=active${!allDepts && myUser ? `&responderId=${myUser.id}` : ""}`;
   const { data, error, clockOffsetMs } = usePolling<{ events: AndonEvent[] }>(url, 3000);
   const now = useServerNow(clockOffsetMs);
 
@@ -28,7 +30,7 @@ export default function RespondListPage() {
       <main className="page">
         <h1>담당자 조치 <span className="muted" style={{ fontSize: 16 }}>Responder</span></h1>
         {metaError && <div className="alert alert-error">기준정보 로드 실패: {metaError}</div>}
-        {meta && <ResponderPicker meta={meta} value={me} onChange={setMe} />}
+        {meta && <ResponderPicker meta={meta} options={responderCapableUsers(meta)} value={me} onChange={setMe} />}
 
         <div className="row" style={{ marginBottom: 12 }}>
           <strong>

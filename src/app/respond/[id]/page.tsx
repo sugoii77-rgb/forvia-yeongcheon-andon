@@ -12,6 +12,8 @@ import {
   type AndonTransition,
   type MasterData,
   type NotificationLogEntry,
+  type ResponderSummary,
+  type Responsibility,
   type TransitionAction,
 } from "@/lib/domain";
 
@@ -19,7 +21,35 @@ interface Detail {
   event: AndonEvent;
   transitions: AndonTransition[];
   notifications: NotificationLogEntry[];
+  responsibility: Responsibility | null;
+  eligibleResponders: ResponderSummary[];
   serverTime: string;
+}
+
+const ROUTING_LABEL: Record<string, string> = {
+  LINE_PROCESS_CATEGORY: "공정별 규칙",
+  LINE_CATEGORY: "라인별 규칙",
+  CATEGORY_DEFAULT: "유형 기본값",
+};
+
+/** "Android · Chrome" style summary of a user-agent string (display only). */
+function deviceSummary(ua: string | null): string {
+  if (!ua) return "";
+  const os = /Android/i.test(ua) ? "Android" : /iPhone|iPad/i.test(ua) ? "iOS" : /Windows/i.test(ua) ? "Windows" : /Mac OS/i.test(ua) ? "macOS" : /Linux/i.test(ua) ? "Linux" : "";
+  const br = /Edg\//.test(ua)
+    ? "Edge"
+    : /SamsungBrowser/.test(ua)
+      ? "Samsung"
+      : /Chrome\//.test(ua)
+        ? "Chrome"
+        : /Safari\//.test(ua)
+          ? "Safari"
+          : /Firefox\//.test(ua)
+            ? "Firefox"
+            : /node/i.test(ua)
+              ? "script"
+              : "";
+  return [os, br].filter(Boolean).join(" · ");
 }
 
 const ACTION_LABEL: Record<string, string> = {
@@ -32,7 +62,7 @@ const ACTION_LABEL: Record<string, string> = {
 export default function RespondDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [meta, setMeta] = useState<MasterData | null>(null);
-  const [me, setMe] = useStoredState("andon.responder.name", "");
+  const [me, setMe] = useStoredState("andon.responder.id", "");
   const { data, error, clockOffsetMs, refresh } = usePolling<Detail>(`/api/andons/${encodeURIComponent(id)}`, 5000);
   const now = useServerNow(clockOffsetMs);
 
@@ -47,8 +77,8 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
 
   async function run(action: TransitionAction) {
     if (busy) return;
-    if (!me) {
-      setResult({ ok: false, message: "먼저 담당자 이름을 선택하세요." });
+    if (!me || !data?.eligibleResponders.some((u) => String(u.id) === me)) {
+      setResult({ ok: false, message: "먼저 이 ANDON의 담당자 이름을 선택하세요." });
       return;
     }
     if (action !== "ACKNOWLEDGE" && !comment.trim()) {
@@ -61,7 +91,7 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
       const res = await api<{ event: AndonEvent }>(`/api/andons/${encodeURIComponent(id)}/transition`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, userName: me, comment: action === "ACKNOWLEDGE" ? undefined : comment.trim() }),
+        body: JSON.stringify({ action, userId: Number(me), comment: action === "ACKNOWLEDGE" ? undefined : comment.trim() }),
       });
       setResult({ ok: true, message: `저장됨 → ${STATUS_LABEL[res.event.status].ko} (${res.event.status})` });
       setComment("");
@@ -89,6 +119,9 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
   const actions = allowedActions(e.status);
   const end = e.closedAt ? new Date(e.closedAt).getTime() : now;
   const elapsed = (end - new Date(e.createdAt).getTime()) / 1000;
+  const eligible = data.eligibleResponders;
+  const meEligible = eligible.some((u) => String(u.id) === me);
+  const storedUser = meta?.users.find((u) => String(u.id) === me);
 
   return (
     <>
@@ -112,7 +145,15 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
             <dt>이상 유형</dt>
             <dd>{e.categoryName}</dd>
             <dt>담당 부서</dt>
-            <dd>{e.departmentName}</dd>
+            <dd>
+              {e.departmentName}
+              {data.responsibility && (
+                <span className="muted" style={{ fontWeight: 500 }}>
+                  {" "}
+                  ({ROUTING_LABEL[data.responsibility.matchedBy] ?? data.responsibility.matchedBy})
+                </span>
+              )}
+            </dd>
             <dt>발생</dt>
             <dd>
               {fmtDateTime(e.createdAt)} · {e.createdBy}
@@ -142,7 +183,13 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
 
         {e.status !== "CLOSED" && (
           <section className="card" style={{ marginTop: 14 }}>
-            {meta && <ResponderPicker meta={meta} value={me} onChange={setMe} />}
+            {meta && <ResponderPicker meta={meta} options={eligible} value={meEligible ? me : ""} onChange={setMe} />}
+            {storedUser && !meEligible && (
+              <div className="alert alert-warn">
+                {storedUser.name} 님은 이 ANDON의 담당 부서({e.departmentName}) 담당자가 아닙니다. 담당자를 선택하세요.
+              </div>
+            )}
+            {eligible.length === 0 && <div className="alert alert-error">이 부서에 등록된 담당자가 없습니다 (기준정보 확인 필요).</div>}
 
             {mode && (
               <div className="field">
@@ -205,6 +252,13 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
               <span className="muted">
                 {fmtDateTime(t.createdAt)} · {t.userName} · {t.fromStatus ?? "—"} → {t.toStatus}
               </span>
+              {(t.deviceId || t.clientIp) && (
+                <div className="muted" style={{ fontSize: 13 }}>
+                  기기 {t.deviceId ? t.deviceId.slice(0, 12) : "-"}
+                  {t.clientIp ? ` · ${t.clientIp}` : ""}
+                  {deviceSummary(t.userAgent) ? ` · ${deviceSummary(t.userAgent)}` : ""}
+                </div>
+              )}
               {t.comment && <div>{t.comment}</div>}
             </li>
           ))}

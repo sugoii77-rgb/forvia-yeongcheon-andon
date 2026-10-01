@@ -33,6 +33,8 @@ npm run serve                 # http://localhost:<PORT from .env>  (builds if ne
 | `npm run typecheck` / `npm run lint` | static checks |
 | `npm run test:golden` | end-to-end Golden Path test against a running server (`BASE_URL=http://localhost:3000`) |
 | `npm run test:reliability` | photo-failure tests (ANDON must still be created) |
+| `npm run test:routing` | routing / responder identity / device audit tests |
+| `npm run masterdata -- list` | show / change users, roles, routing rules (see RUNBOOK.md §7) |
 | `npm run backup` | online DB backup → `data/backups/` |
 | `npm run seed -- --reset` | reset to demo data (stop server first; old DB is backed up) |
 

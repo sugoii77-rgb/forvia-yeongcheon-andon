@@ -1,4 +1,5 @@
 import { getEvent, getNotifications, getTransitions, AndonError } from "@/lib/server/andonService";
+import { eligibleResponders, eventResponsibility } from "@/lib/server/routingService";
 import { handle } from "@/lib/server/http";
 
 export async function GET(_req: Request, ctx: RouteContext<"/api/andons/[id]">) {
@@ -10,6 +11,9 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/andons/[id]">) 
       event,
       transitions: getTransitions(id),
       notifications: getNotifications(id),
+      // Routing decided by the server: the UI only displays it.
+      responsibility: eventResponsibility(id),
+      eligibleResponders: eligibleResponders(event.departmentCode),
       serverTime: new Date().toISOString(),
     });
   });

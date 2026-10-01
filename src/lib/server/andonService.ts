@@ -7,21 +7,16 @@ import {
   type AndonTransition,
   type MasterData,
   type NotificationLogEntry,
+  type RoleCode,
   type TransitionAction,
 } from "../domain.ts";
 import { getDb, nowIso, transaction } from "./db.ts";
-import { PLANT } from "./masterData.ts";
+import { AndonError, type AuditInfo } from "./errors.ts";
+import { resolveResponsibility, validateResponder } from "./routingService.ts";
 
-/** Error with an HTTP status and a user-facing (Korean) message. */
-export class AndonError extends Error {
-  status: number;
-  code: string;
-  constructor(status: number, message: string, code: string) {
-    super(message);
-    this.status = status;
-    this.code = code;
-  }
-}
+export { AndonError, type AuditInfo };
+
+const NO_AUDIT: AuditInfo = { deviceId: null, clientIp: null, userAgent: null };
 
 type Row = Record<string, unknown>;
 
@@ -69,21 +64,44 @@ function toTransition(r: Row): AndonTransition {
     fromStatus: (r.from_status as AndonStatus) ?? null,
     toStatus: r.to_status as AndonStatus,
     userName: r.user_name as string,
+    userId: (r.user_id as number | null) ?? null,
     comment: (r.comment as string) ?? null,
     createdAt: r.created_at as string,
+    deviceId: (r.device_id as string | null) ?? null,
+    clientIp: (r.client_ip as string | null) ?? null,
+    userAgent: (r.user_agent as string | null) ?? null,
   };
+}
+
+function insertTransition(
+  eventId: string,
+  t: { action: string; from: AndonStatus | null; to: AndonStatus; userName: string; userId: number | null; comment: string | null; at: string },
+  audit: AuditInfo,
+) {
+  getDb()
+    .prepare(
+      `INSERT INTO andon_transition
+         (event_id, action, from_status, to_status, user_name, user_id, comment, created_at, device_id, client_ip, user_agent)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(eventId, t.action, t.from, t.to, t.userName, t.userId, t.comment, t.at, audit.deviceId, audit.clientIp, audit.userAgent);
 }
 
 // ---------------------------------------------------------------- master data
 
 export function getMasterData(): MasterData {
   const db = getDb();
+  const plants = db
+    .prepare("SELECT code, name, name_ko FROM plant WHERE active = 1 ORDER BY code")
+    .all()
+    .map((r) => ({ code: r.code as string, name: r.name as string, nameKo: r.name_ko as string }));
   return {
-    plant: PLANT,
+    plant: plants[0]?.name ?? "",
+    plants,
     lines: db
-      .prepare("SELECT code, name FROM line WHERE active = 1 ORDER BY sort_order")
+      .prepare("SELECT code, name, plant_code FROM line WHERE active = 1 ORDER BY sort_order")
       .all()
-      .map((r) => ({ code: r.code as string, name: r.name as string })),
+      .map((r) => ({ code: r.code as string, name: r.name as string, plantCode: r.plant_code as string })),
     processes: db
       .prepare("SELECT id, line_code, name FROM process WHERE active = 1 ORDER BY line_code, sort_order")
       .all()
@@ -101,6 +119,16 @@ export function getMasterData(): MasterData {
       .prepare("SELECT code, name_ko, name_en FROM department WHERE active = 1")
       .all()
       .map((r) => ({ code: r.code as string, nameKo: r.name_ko as string, nameEn: r.name_en as string })),
+    roles: db
+      .prepare("SELECT code, name_ko, name_en, can_respond, escalation_level FROM role ORDER BY sort_order")
+      .all()
+      .map((r) => ({
+        code: r.code as RoleCode,
+        nameKo: r.name_ko as string,
+        nameEn: r.name_en as string,
+        canRespond: r.can_respond === 1,
+        escalationLevel: (r.escalation_level as number | null) ?? null,
+      })),
     users: db
       .prepare("SELECT id, name, department_code, role FROM app_user WHERE active = 1 ORDER BY id")
       .all()
@@ -108,7 +136,7 @@ export function getMasterData(): MasterData {
         id: r.id as number,
         name: r.name as string,
         departmentCode: r.department_code as string,
-        role: r.role as string,
+        role: r.role as RoleCode,
       })),
   };
 }
@@ -119,6 +147,8 @@ export interface ListOptions {
   /** active = OPEN/ACK/IN_PROGRESS; board = active + closed in the last N minutes; all = everything */
   scope?: "active" | "board" | "all";
   department?: string;
+  /** Only events this user is responsible for (their department). Unknown/inactive user → none. */
+  responderId?: number;
   limit?: number;
   recentClosedMinutes?: number;
 }
@@ -139,6 +169,10 @@ export function listEvents(opts: ListOptions = {}): AndonEvent[] {
   if (opts.department) {
     where.push("e.department_code = ?");
     params.push(opts.department);
+  }
+  if (opts.responderId != null) {
+    where.push("e.department_code = (SELECT department_code FROM app_user WHERE id = ? AND active = 1)");
+    params.push(opts.responderId);
   }
   // History: newest first. Boards: RED first, then YELLOW, then GREEN; oldest first within each.
   const order =
@@ -190,6 +224,7 @@ export interface CreateAndonInput {
   photoFile?: string | null;
   /** Only used by the demo seeder to back-date events. */
   createdAt?: string;
+  audit?: AuditInfo;
 }
 
 /** Korea time date as YYYYMMDD, used in ANDON IDs. */
@@ -224,9 +259,12 @@ export function createEvent(input: CreateAndonInput): { event: AndonEvent; dupli
     .get(input.processId, input.lineCode);
   if (!proc) throw new AndonError(400, "라인/공정 선택이 올바르지 않습니다.", "INVALID_PROCESS");
 
-  const cat = db.prepare("SELECT default_department FROM category WHERE code = ? AND active = 1").get(input.categoryCode);
+  const cat = db.prepare("SELECT 1 FROM category WHERE code = ? AND active = 1").get(input.categoryCode);
   if (!cat) throw new AndonError(400, "이상 유형 선택이 올바르지 않습니다.", "INVALID_CATEGORY");
 
+  const plant = db
+    .prepare("SELECT p.name FROM line l JOIN plant p ON p.code = l.plant_code WHERE l.code = ?")
+    .get(input.lineCode) as { name: string } | undefined;
   const createdAt = input.createdAt ?? nowIso();
   const id = transaction(db, () => {
     const prefix = `AND-${kstDateKey(createdAt)}-`;
@@ -235,18 +273,21 @@ export function createEvent(input: CreateAndonInput): { event: AndonEvent; dupli
       .get(`${prefix}%`) as { id: string } | undefined;
     const seq = last ? Number(last.id.slice(prefix.length)) + 1 : 1;
     const newId = `${prefix}${String(seq).padStart(3, "0")}`;
+    // Responsibility is decided once, at creation, by the routing rules (src/lib/routing.ts).
+    const resp = resolveResponsibility(input.lineCode, input.processId, input.categoryCode);
 
     db.prepare(
-      `INSERT INTO andon_event (id, plant, line_code, process_id, category_code, department_code, description,
-         photo_file, status, created_by, created_at, updated_at, client_request_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)`,
+      `INSERT INTO andon_event (id, plant, line_code, process_id, category_code, department_code, routing_rule_id,
+         description, photo_file, status, created_by, created_at, updated_at, client_request_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)`,
     ).run(
       newId,
-      PLANT,
+      plant?.name ?? "",
       input.lineCode,
       input.processId,
       input.categoryCode,
-      cat.default_department as string,
+      resp.departmentCode,
+      resp.routingRuleId,
       description,
       input.photoFile ?? null,
       createdBy,
@@ -254,10 +295,12 @@ export function createEvent(input: CreateAndonInput): { event: AndonEvent; dupli
       createdAt,
       input.clientRequestId ?? null,
     );
-    db.prepare(
-      `INSERT INTO andon_transition (event_id, action, from_status, to_status, user_name, comment, created_at)
-       VALUES (?, 'CREATE', NULL, 'OPEN', ?, ?, ?)`,
-    ).run(newId, createdBy, description, createdAt);
+    // Operators have no accounts yet: user_id stays NULL, the typed name is recorded as-is.
+    insertTransition(
+      newId,
+      { action: "CREATE", from: null, to: "OPEN", userName: createdBy, userId: null, comment: description, at: createdAt },
+      input.audit ?? NO_AUDIT,
+    );
     return newId;
   });
 
@@ -268,8 +311,12 @@ export function createEvent(input: CreateAndonInput): { event: AndonEvent; dupli
 
 export interface TransitionInput {
   action: TransitionAction;
-  userName: string;
+  /** Responder from master data (preferred). */
+  userId?: number | null;
+  /** Accepted for compatibility; must match an active, eligible user. */
+  userName?: string | null;
   comment?: string;
+  audit?: AuditInfo;
   /** Only used by the demo seeder to back-date transitions. */
   at?: string;
 }
@@ -279,8 +326,9 @@ export function transitionEvent(id: string, input: TransitionInput): AndonEvent 
   const rule = TRANSITION_RULES[input.action];
   if (!rule) throw new AndonError(400, "알 수 없는 조치입니다.", "INVALID_ACTION");
 
-  const userName = (input.userName ?? "").trim();
-  if (!userName) throw new AndonError(400, "담당자를 선택하세요.", "USER_REQUIRED");
+  if (input.userId == null && !(input.userName ?? "").trim()) {
+    throw new AndonError(400, "담당자를 선택하세요.", "USER_REQUIRED");
+  }
   const comment = (input.comment ?? "").trim();
   if (rule.commentRequired && !comment) {
     throw new AndonError(400, "조치 내용을 입력하세요.", "COMMENT_REQUIRED");
@@ -290,8 +338,13 @@ export function transitionEvent(id: string, input: TransitionInput): AndonEvent 
   const at = input.at ?? nowIso();
 
   transaction(db, () => {
-    const row = db.prepare("SELECT status FROM andon_event WHERE id = ?").get(id) as { status: AndonStatus } | undefined;
+    const row = db.prepare("SELECT status, department_code FROM andon_event WHERE id = ?").get(id) as
+      | { status: AndonStatus; department_code: string }
+      | undefined;
     if (!row) throw new AndonError(404, "ANDON을 찾을 수 없습니다.", "NOT_FOUND");
+    // Who: must be an active, responder-capable user of the event's responsible department.
+    const responder = validateResponder({ userId: input.userId, userName: input.userName }, row.department_code);
+    const userName = responder.name;
     if (!rule.from.includes(row.status)) {
       throw new AndonError(
         409,
@@ -315,10 +368,11 @@ export function transitionEvent(id: string, input: TransitionInput): AndonEvent 
       .run(...params, id, row.status);
     if (res.changes !== 1) throw new AndonError(409, "다른 사용자가 먼저 처리했습니다. 화면을 새로고침하세요.", "CONFLICT");
 
-    db.prepare(
-      `INSERT INTO andon_transition (event_id, action, from_status, to_status, user_name, comment, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).run(id, input.action, row.status, rule.to, userName, comment || null, at);
+    insertTransition(
+      id,
+      { action: input.action, from: row.status, to: rule.to, userName, userId: responder.id, comment: comment || null, at },
+      input.audit ?? NO_AUDIT,
+    );
   });
 
   return getEvent(id)!;

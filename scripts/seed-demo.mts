@@ -65,7 +65,7 @@ const demo: Demo[] = [
   { line: "MUF1", process: "Final Inspection", category: "MATERIAL", desc: "포장 박스 결품", by: "정작업", daysAgo: 2, hour: 11, ackMin: 8, closeMin: 26, responder: L, closeNote: "포장재 긴급 입고" },
   { line: "TGDI1", process: "WCC Welding", category: "MAINTENANCE", desc: "용접 로봇 #2 알람 정지 (Wire feed error)", by: "박작업", daysAgo: 2, hour: 13, ackMin: 3, actionMin: 5, closeMin: 41, responder: M, actionNote: "피더 점검", closeNote: "와이어 라이너 교체" },
   { line: "TGDI2", process: "Leak Test", category: "QUALITY", desc: "Leak Test NG 연속 3회 발생", by: "이작업", daysAgo: 1, hour: 10, ackMin: 3, actionMin: 6, closeMin: 33, responder: Q2, actionNote: "지그 점검", closeNote: "실링 지그 청소 후 정상" },
-  { line: "TGDI1", process: "Packing", category: "OTHER", desc: "라벨 프린터 용지 걸림", by: "최작업", daysAgo: 1, hour: 15, ackMin: 4, closeMin: 12, responder: P, closeNote: "용지 재장착" },
+  { line: "TGDI1", process: "Packing", category: "OTHER", desc: "라벨 프린터 용지 걸림", by: "최작업", daysAgo: 1, hour: 15, ackMin: 4, closeMin: 12, responder: L, closeNote: "용지 재장착" },
   { line: "MUF1", process: "Pipe Bending", category: "MAINTENANCE", desc: "벤딩기 유압 누유", by: "오작업", daysAgo: 1, hour: 17, ackMin: 6, actionMin: 9, closeMin: 70, responder: M, actionNote: "누유 부위 확인", closeNote: "유압 호스 교체" },
   // Today: some closed, one in progress, one open (so the board is not empty at demo start)
   { line: "TGDI2", process: "WCC Welding", category: "QUALITY", desc: "용접 비드 기공(Porosity) 발견", by: "한작업", daysAgo: 0, hour: -3, ackMin: 2, actionMin: 4, closeMin: 29, responder: Q2, actionNote: "가스 노즐 점검", closeNote: "노즐 스패터 제거" },

@@ -12,13 +12,37 @@ export class ApiError extends Error {
   }
 }
 
+const DEVICE_KEY = "andon.device.id";
+let memoryDeviceId: string | null = null;
+
+/**
+ * Persistent random id of this browser/device, created on first use and kept in localStorage.
+ * Sent with every request (header x-andon-device) and recorded in the ANDON history.
+ * Not an authentication mechanism: clearing browser data creates a new id.
+ */
+export function deviceId(): string {
+  try {
+    let id = localStorage.getItem(DEVICE_KEY);
+    if (!id) {
+      id = `dev-${newRequestId()}`.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 64);
+      localStorage.setItem(DEVICE_KEY, id);
+    }
+    return id;
+  } catch {
+    memoryDeviceId ??= `dev-${newRequestId()}`.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 64);
+    return memoryDeviceId;
+  }
+}
+
 /** fetch + JSON with a timeout and Korean error messages. Network failures become status 0. */
 export async function api<T>(url: string, init: RequestInit = {}, timeoutMs = 15000): Promise<T> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const headers = new Headers(init.headers);
+  headers.set("x-andon-device", deviceId());
   let res: Response;
   try {
-    res = await fetch(url, { ...init, signal: ctrl.signal, cache: "no-store" });
+    res = await fetch(url, { ...init, headers, signal: ctrl.signal, cache: "no-store" });
   } catch (err) {
     const timeout = (err as Error)?.name === "AbortError";
     throw new ApiError(

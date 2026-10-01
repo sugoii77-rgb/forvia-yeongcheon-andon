@@ -3,7 +3,7 @@
 > **Source of truth for AI-to-AI and human handover.** Update this file at the end of every
 > meaningful milestone (sections 11–16 at minimum).
 >
-> Last updated: **2026-10-01** · Milestone 1 (Golden Path) — **done and verified** · Milestone 2 — **H1 + H2 done**, rest pending
+> Last updated: **2026-10-01** · Milestone 1 — **done** · Milestone 2 — H1 + H2 done · **Milestone 2A (responsibility & routing foundation) — done**
 
 ---
 
@@ -63,6 +63,9 @@ Worker detects issue → creates ANDON → event stored → dashboard turns RED
 - **Real-time = polling** (dashboard 2 s, responder list 3 s, detail 5 s). Simple and survives
   server restarts/network hiccups without reconnection logic. SSE can be added later if needed.
 - **History is append-only**: `andon_transition` rows can't be updated or deleted (SQLite triggers).
+- **Responsibility & identity are server-side** (`routingService.ts`): routing Line + Process +
+  Category → department at creation; every ACK / ACTION / CLOSE is validated against master data and
+  recorded with user id, device id, IP and user agent. UI components only display server decisions.
 - **Notifications** go through a `NotificationProvider` interface. Currently `mock` (console +
   `notification_log` table). A Kakao provider can be dropped in without touching ANDON logic.
 - Server-side clock is authoritative: API responses include `serverTime`; clients correct
@@ -93,12 +96,14 @@ C:\andon\  (git repository root)
 ├─ scripts/
 │  ├─ supervisor.ts        ← keeps the server running (npm run serve)
 │  ├─ stop.ts / status.ts  ← npm run stop / npm run status
+│  ├─ masterdata.ts        ← list / change users, routing rules, category defaults (npm run masterdata)
 │  ├─ lib/runtime.ts       ← shared PID / port / health helpers for the three scripts above
 │  ├─ windows/install-autostart.ps1, uninstall-autostart.ps1  ← scheduled task "Digital ANDON"
 │  ├─ seed-demo.mts        ← demo data (npm run seed [-- --reset])
 │  ├─ backup.ts            ← online DB backup (npm run backup)
 │  ├─ test-golden-path.ts  ← end-to-end Golden Path API test, 26 checks (npm run test:golden)
-│  └─ test-reliability.ts  ← photo-failure tests, 6 checks (npm run test:reliability)
+│  ├─ test-reliability.ts  ← photo-failure tests, 6 checks (npm run test:reliability)
+│  └─ test-routing.ts      ← routing / identity / device audit: 10 unit + 28 API checks (npm run test:routing)
 ├─ data/                   ← runtime data, git-ignored (created automatically)
 │  ├─ andon.db             ← SQLite database (+ -wal / -shm files)
 │  ├─ uploads/             ← ANDON photos
@@ -115,8 +120,8 @@ C:\andon\  (git repository root)
    │  ├─ history/page.tsx         D. History & analytics
    │  └─ api/
    │     ├─ andons/route.ts                 GET list (scope=board|active|all), POST create (multipart)
-   │     ├─ andons/[id]/route.ts            GET detail + transitions + notification log
-   │     ├─ andons/[id]/transition/route.ts POST {action, userName, comment}
+   │     ├─ andons/[id]/route.ts            GET detail + transitions + notifications + responsibility + eligibleResponders
+   │     ├─ andons/[id]/transition/route.ts POST {action, userId | userName, comment}; header x-andon-device
    │     ├─ stats/route.ts                  GET ?days=N
    │     ├─ meta/route.ts                   GET master data
    │     ├─ photos/[file]/route.ts          GET photo
@@ -126,10 +131,13 @@ C:\andon\  (git repository root)
       ├─ domain.ts         statuses, state machine rules, shared types (client + server)
       ├─ client.ts         browser helpers: api(), polling, formatting, local storage
       ├─ photoPrep.ts      on-device photo resize to ≤1600 px JPEG before upload
+      ├─ routing.ts        PURE routing resolver + responder eligibility rules (unit-tested)
       └─ server/
          ├─ db.ts          connection, schema, pragmas, master-data bootstrap
          ├─ masterData.ts  initial lines/processes/categories/departments/users
          ├─ andonService.ts  create / transition / queries / stats  (ALL state changes here)
+         ├─ routingService.ts  responsibility, eligible responders, recipients, responder validation
+         ├─ errors.ts      AndonError, AuditInfo
          ├─ notifications/index.ts  NotificationProvider + Mock + notifyAndonCreated()
          ├─ photos.ts      photo save/read (type + size checks, path-traversal safe)
          └─ http.ts        error → HTTP response mapping
@@ -149,23 +157,70 @@ C:\andon\  (git repository root)
 - `ACTION` and `CLOSE` **require a comment** (action note / corrective action).
 - Invalid transition → HTTP 409. Concurrent updates are guarded by `UPDATE … WHERE status = <read status>`.
 
-**Tables** (`src/lib/server/db.ts`)
+**Tables** (`src/lib/server/db.ts`, schema **v2**)
 
 | Table | Purpose |
 |---|---|
+| `plant` | YC Yeongcheon (single plant for now) |
+| `line` | T-GDI 1, T-GDI 2, Muffler 1 — `plant_code` → plant |
+| `process` | processes per line |
 | `department` | QUALITY, PRODUCTION, MAINTENANCE, LOGISTICS, EHS |
-| `category` | issue categories, each with `default_department` (routing) — configurable in DB |
-| `line`, `process` | T-GDI 1, T-GDI 2, Muffler 1 and their processes |
-| `app_user` | demo users; `role` RESPONDER/MANAGER; `kakao_id` reserved for Kakao |
-| `andon_event` | **current state** of each ANDON + cached timestamps (`acknowledged_at`, `closed_at`, …) + `client_request_id` (UNIQUE, idempotency) |
-| `andon_transition` | **append-only history**: event_id, action, from_status, to_status, user_name, comment, created_at |
+| `category` | issue categories; `default_department` = routing when no rule matches |
+| `role` | OPERATOR, RESPONDER, GAP_LEADER, SUPERVISOR, ENGINEER, PLANT_MANAGER; `can_respond`, `escalation_level` (prepared) |
+| `app_user` | id, name (unique), department_code → department, role → role, active, kakao_id (reserved). Never delete — deactivate |
+| `routing_rule` | category + line [+ process] → department override; `active`; unique per (category, line, process); trigger: process must belong to line |
+| `andon_event` | **current state** + cached timestamps + `client_request_id` (UNIQUE, idempotency) + `department_code` and `routing_rule_id` (decided at creation, never re-routed) + `escalation_level` (prepared, always 0) |
+| `andon_transition` | **append-only history** (UPDATE/DELETE blocked by triggers): action, from/to status, `user_name`, `user_id`, comment, created_at, `device_id`, `client_ip`, `user_agent` |
 | `notification_log` | every notification attempt: provider, recipient, SENT/FAILED, message, error |
+| `escalation_policy`, `escalation_step` | **prepared, inactive** escalation model (see below) |
 
 - ANDON ID format: `AND-YYYYMMDD-NNN` (KST date, daily sequence).
 - All timestamps stored as UTC ISO-8601 strings; displayed in Asia/Seoul.
-- `PRAGMA user_version` = schema version (currently 1). Schema uses `CREATE … IF NOT EXISTS`;
-  future changes need a small migration step keyed on `user_version`.
-- Master data is inserted with `INSERT OR IGNORE` at start-up → DB edits are never overwritten.
+- **Migrations:** `PRAGMA user_version` = applied schema version (now **2**). `db.ts` runs pending
+  migrations in order, each in its own transaction, after writing
+  `data/backups/andon-pre-migration-v<from>-to-v<to>-<time>.db`. A DB newer than the app is refused.
+  Never edit a released migration; add a new one.
+- Master data is seeded at start-up only if missing (`INSERT … WHERE NOT EXISTS` / `INSERT OR IGNORE`)
+  → DB edits (e.g. via `npm run masterdata`) are never overwritten. A *deleted* seeded row would be
+  re-created on the next start — deactivate instead of deleting.
+- Pre-v2 history rows have `user_id`, `device_id`, `client_ip`, `user_agent` = NULL (history is
+  never rewritten).
+
+**Routing model** (`src/lib/routing.ts` pure resolver, `src/lib/server/routingService.ts` DB access)
+
+```
+Line + Process + Category ─► most specific ACTIVE routing_rule
+                               1. category + line + process   (LINE_PROCESS_CATEGORY)
+                               2. category + line             (LINE_CATEGORY)
+                               3. category.default_department (CATEGORY_DEFAULT)
+                          ─► responsible department (stored on the event + routing_rule_id)
+                          ─► eligible responders = active users of that department whose role can_respond
+                          ─► initial notification = active RESPONDER-role users of that department
+```
+
+Deterministic: at most one rule per (category, line, process) (unique index); the result never depends
+on rule order. Seeded override: `기타` at T-GDI 1 / Packing → Logistics.
+
+**Responder identity** (`validateResponder`): every ACK / ACTION / CLOSE must name a user (`userId`
+preferred, `userName` accepted) that exists (400 `UNKNOWN_RESPONDER`), is active (403
+`INACTIVE_RESPONDER`), has a role with `can_respond` (403 `ROLE_NOT_ALLOWED`, e.g. OPERATOR) and
+belongs to the event's responsible department (403 `WRONG_DEPARTMENT`). If both id and name are sent
+they must match (400 `RESPONDER_MISMATCH`). Rejected attempts change nothing. Escalation roles of the
+same department (GAP_LEADER, SUPERVISOR, ENGINEER, PLANT_MANAGER) may also respond.
+
+**Device audit**: each browser creates a random device id once (`localStorage` `andon.device.id`)
+and sends it as header `x-andon-device` on every request. The server stores it with the client IP
+(as reported via `x-forwarded-for` — not authenticated) and the user agent on every history row
+(CREATE, ACKNOWLEDGE, ACTION, CLOSE). The responder screen shows them in the history timeline.
+
+**Escalation model — prepared, NOT active.** Intended flow:
+`OPEN → RESPONDER notified → no ACK after threshold → GAP_LEADER → SUPERVISOR / ENGINEER → PLANT_MANAGER`.
+`escalation_policy` (code, optional department/category scope, `active` = 0) and `escalation_step`
+(policy, `step_no`, `target_role`, `after_minutes` = **NULL / not configured**, `active` = 0) hold
+the configuration; `role.escalation_level` and `andon_event.escalation_level` exist for later. No code
+reads these tables yet and no thresholds are hard-coded. Implementing it later needs: a periodic job in
+the server process, a per-event escalation log, recipient lookup by (department, role), and
+notification via the existing provider.
 
 **Future AI/rule monitoring readiness**: every state change is an immutable, timestamped row in
 `andon_transition`, and `andon_event` has indexed `status` / `created_at`. Rules such as
@@ -210,6 +265,7 @@ npm run dev       # development mode with hot reload
 - **Auto-start at boot:** `scripts/windows/install-autostart.ps1 -AtStartup` (admin PowerShell) registers
   the scheduled task "Digital ANDON"; Windows restarts the supervisor every minute if it dies.
   `-DryRun` shows what would be registered. Remove with `uninstall-autostart.ps1`.
+- **Master data:** `npm run masterdata -- list` (and user / route / category commands; see RUNBOOK.md §7).
 - **Recovery / operations:** see **RUNBOOK.md**. All state is in `data/`; logs in `data/logs/`.
 - `npm run start` (plain `next start`, no supervisor) still works for quick local checks; don't
   use it for the plant — stopping its npm wrapper on Windows can leave the server process running.
@@ -226,7 +282,12 @@ npm run dev       # development mode with hot reload
 | `npm run test:golden` | **end-to-end Golden Path against a running server** (set `BASE_URL`, default `http://localhost:3000`). 26 checks: create, idempotent duplicate, validation, board RED, photo, path traversal, notification log, illegal transitions (409), ACK/ACTION/CLOSE, full history, stats delta. Creates one `[TEST]` event (left CLOSED). |
 | `npm run test:reliability` | 6 checks: ANDON is still created (RED, no photo, warning returned) when the photo is GIF / has no MIME type / is 12 MB; valid photo still attached; no photo OK. Creates 5 `[TEST]` events and closes them. |
 
-> Both API tests write into the database they run against (known issue, see §12).
+| `npm run test:routing` | 10 unit checks of the routing resolver / eligibility (no server) + 28 API checks: routing of every category, process-level override, eligible-responder list, unknown name / unknown id / inactive / wrong department / operator role / id-name mismatch / missing user rejected without side effects, valid responder by id and by name, device id + IP + user agent in history, invalid device id dropped, server-side inbox filter, full ordered history. Creates 10 `[TEST] routing` events and closes them. |
+
+> **Test-data contamination (known, not fixed yet):** all three API tests write real `[TEST]` events
+> into the database they run against (Golden Path +1, reliability +5, routing +10 per run). They are
+> closed again, but they count in statistics, averages and repeat TOP 5. Before a demo, stop the
+> server and run `npm run seed -- --reset`. A separate test database is a pending task.
 
 Supervisor recovery tests (manual, see change log 2026-10-01 M2): kill server → restart; stale
 server from a previous run → stopped; second supervisor → refused; failing health → restart;
@@ -266,6 +327,16 @@ Manual UI test: open `/operator` on a phone-width browser, `/dashboard` in anoth
 - [x] **Supervised server (H2):** `npm run serve` / `status` / `stop`, auto-restart, health watchdog,
       auto-rebuild, stale-process cleanup, daily logs, Windows auto-start task scripts, RUNBOOK.md.
 
+**Milestone 2A — Responsibility & routing foundation** (no Kakao, no escalation behaviour, no CANCEL)
+- [x] Configurable master data in DB: plant, line, process, category, department, user, role (+ `npm run masterdata` CLI)
+- [x] Roles OPERATOR / RESPONDER / GAP_LEADER / SUPERVISOR / ENGINEER / PLANT_MANAGER (`can_respond`, `escalation_level`)
+- [x] Deterministic routing Line + Process + Category → department (routing rules + category default), decided server-side at creation and stored with the rule id
+- [x] Server-side responder validation (exists, active, role may respond, responsible department)
+- [x] Device audit (device id, IP, user agent) on every history row; shown in the responder timeline
+- [x] Responder UI: picker lists only eligible responders of the event (from the server); inbox filtered by the server
+- [x] Escalation model prepared (tables, roles, levels) — inactive, thresholds unset
+- [x] Versioned schema migrations with automatic pre-migration backup (v1 → v2)
+
 **Verified on 2026-10-01** (production build, Node 24.15, Windows 11):
 `typecheck` ✔ · `lint` ✔ · `build` ✔ · `test:golden` 26/26 ✔ (earlier reports said "25/25" — that was a miscount; the test has 26 checks) · UI golden path in browser
 (operator at 375 px → dashboard RED → responder ACK → dashboard YELLOW without reload → ACTION →
@@ -284,7 +355,18 @@ data intact, operator retry succeeds ✔ · backup script ✔.
 - **No sound** on the dashboard for new RED events yet (browsers block autoplay without interaction).
 - Photos are resized on the device; photos sent by other clients (API) are stored as received
   (≤ 10 MB, JPG/PNG/WEBP/HEIC). File content is not verified against the declared type.
-- **Responder names are not validated** against `app_user` and the device/IP is not recorded (H4).
+- **Device identity is not authentication.** The device id lives in browser storage (new id after
+  clearing data / other browser) and the IP is taken from `x-forwarded-for`, which a client can forge.
+  Anyone on the LAN can still pick any eligible name — validation guarantees the name is *valid*, not
+  that the person is who they claim to be. Real login (SSO / PIN) is still pending.
+- **Operators have no accounts**: CREATE rows have `user_id` NULL and the typed operator name.
+- **CANCEL (false call) is not implemented** — pending requirement (see §14). A mistaken ANDON must be
+  ACKed and CLOSEd and counts in statistics.
+- **Escalation is not active**: tables exist, nothing reads them, thresholds are NULL.
+- Existing events keep the department they were routed to at creation; changing routing rules affects
+  new ANDONs only.
+- User / rule ids in the existing dev DB have gaps (ids were consumed by start-up seeding before this was
+  fixed) — ids carry no meaning.
 - **API tests write into the live DB** (`[TEST]` events count in statistics). Run
   `npm run seed -- --reset` before a demo.
 - **Auto-start task not yet registered on any PC** — scripts validated with `-DryRun` only.
@@ -331,7 +413,9 @@ data intact, operator retry succeeds ✔ · backup script ✔.
 - [x] H1 photo never blocks the call · [x] H2 supervisor / auto-start / runbook
 - [ ] Register the auto-start task on the demo/plant PC (needs admin; `-AtStartup`)
 - [ ] Separate test database for `test:golden` / `test:reliability`; `CANCELLED` (false call) outcome excluded from KPIs
-- [ ] Validate responder names against `app_user`; store client IP / user-agent per transition (H4)
+- [x] Validate responder identity server-side; store user id, device id, IP, user agent per transition (H4) — Milestone 2A
+- [ ] **CANCEL / false-call outcome** (pending requirement): new terminal status or action with a reason,
+      excluded from KPIs; must use the same responder validation and device audit
 - [ ] Small fixes: `limit` validation (500 on `?limit=abc`), `nosniff` + `poweredByHeader: false`,
       notification try/catch, schema `user_version` check, Node engines ≥ 22.18, backup photos too
 
@@ -340,7 +424,9 @@ data intact, operator retry succeeds ✔ · backup script ✔.
 - [ ] Map users → Kakao recipient (`app_user.kakao_id`); correct `APP_BASE_URL` (LAN IP + port)
 - [ ] Retry policy for failed notifications (re-send from `notification_log` FAILED rows)
 
-**Milestone 4 — Escalation / proactive (rule-based first, AI later)**
+**Milestone 4 — Escalation / proactive (rule-based first, AI later)** — data model prepared in 2A
+- [ ] Configure `escalation_step.after_minutes` per policy (no defaults in code) and activate
+- [ ] Periodic check in the server process; per-event escalation log; notify (department, role) targets
 - [ ] Background rule check (e.g. every 30 s): not acknowledged in 5 min → notify manager
 - [ ] Same line/process/category ≥ 3 in a shift → notify quality lead
 - [ ] Record alerts in an `alert` table; humans decide on high-impact actions (no auto line stop)
@@ -361,10 +447,10 @@ data intact, operator retry succeeds ✔ · backup script ✔.
 ## 15. Next recommended action
 
 1. ~~Move the project to a permanent short path and put it under git~~ — done 2026-10-01 (`C:\andon`).
-2. Decide where the demo server runs; on that PC follow RUNBOOK.md §6 (first-time setup) and
+2. Decide where the demo server runs; on that PC follow RUNBOOK.md §8 (first-time setup) and
    register auto-start with `-AtStartup`. Then reboot it once and confirm the system comes back alone.
-3. Continue Milestone 2 with H4 (validate responder names, record device) and test-data separation,
-   then Milestone 3 (Kakao). Walk the Golden Path with real phones and the actual dashboard monitor.
+3. Review the 2A routing with the plant (real departments, responders, routing exceptions; enter them
+   with `npm run masterdata`). Then: test-data separation + CANCEL, then Milestone 3 (Kakao), then escalation. Walk the Golden Path with real phones and the actual dashboard monitor.
 
 ## 16. Change log
 
@@ -374,3 +460,4 @@ data intact, operator retry succeeds ✔ · backup script ✔.
 | 2026-10-01 | Moved project to `C:\andon` (permanent location), fresh `npm install`, git repository initialised. Re-verified typecheck / lint / build / `test:golden` at the new location. |
 | 2026-10-01 | Recovery: removed an accidental nested copy (`digital-andon/`) that broke typecheck/lint/build; tool scope made explicit (commit `a702b41`). |
 | 2026-10-01 | Milestone 2 part 1 — H1: photo problems never block the ANDON call (server warning instead of 400; on-device resize to ≤1600 px JPEG; `test:reliability`). H2: `scripts/supervisor.ts` (`npm run serve/status/stop`), restart + watchdog + auto-rebuild + stale-process cleanup + daily logs, Windows auto-start scripts, RUNBOOK.md. Verified: typecheck/lint/build ✔, `test:golden` 26/26, `test:reliability` 6/6, browser: 12.2 MB 4000×3000 photo → 631 KB 1600×1200 JPEG; undecodable photo → note, call still possible; supervisor: crash → back in 2 s, stale server stopped, double start refused, failing health → restart after 3 checks, missing build → rebuilt (healthy 5 s after start), stop → port free. Auto-start task validated by dry run only (not registered). |
+| 2026-10-01 | Milestone 2A — responsibility & routing foundation: schema v2 with migration runner + pre-migration backup; plant / role / routing_rule / escalation_policy / escalation_step tables; app_user with role FK (MANAGER → SUPERVISOR); deterministic routing (process rule > line rule > category default) stored per event; server-side responder validation; device id / IP / user agent on every history row; eligible-only responder picker; `npm run masterdata`; `npm run test:routing`. Verified: fresh DB + seed, live-DB copy v1→v2 (40 events / 136 history rows preserved), live DB migrated with backup; typecheck / lint / build ✔; test:routing 38/38, test:golden 26/26, test:reliability 6/6; mobile UI ACK shows device + IP + "Android · Chrome" in history. |

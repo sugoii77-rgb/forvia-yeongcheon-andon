@@ -3,6 +3,7 @@
 // register it in createProvider() below. No other code needs to change.
 import type { AndonEvent } from "../../domain";
 import { getDb, nowIso } from "../db";
+import { primaryRecipients } from "../routingService";
 
 export interface NotificationRecipient {
   name: string;
@@ -56,16 +57,16 @@ export function buildAndonMessage(event: AndonEvent): NotificationMessage {
   };
 }
 
-/** Responsible people = active RESPONDER users of the event's department. */
+/**
+ * Initial recipients = active RESPONDER users of the event's responsible department
+ * (decided by routingService; escalation roles are notified later, when escalation exists).
+ */
 function resolveRecipients(event: AndonEvent): NotificationRecipient[] {
-  return getDb()
-    .prepare("SELECT name, department_code, kakao_id FROM app_user WHERE active = 1 AND role = 'RESPONDER' AND department_code = ?")
-    .all(event.departmentCode)
-    .map((r) => ({
-      name: r.name as string,
-      departmentCode: r.department_code as string,
-      address: (r.kakao_id as string) ?? null,
-    }));
+  return primaryRecipients(event.departmentCode).map((u) => ({
+    name: u.name,
+    departmentCode: u.departmentCode,
+    address: u.kakaoId,
+  }));
 }
 
 /**
