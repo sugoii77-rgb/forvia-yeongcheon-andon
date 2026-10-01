@@ -1,0 +1,33 @@
+{
+  "name": "digital-andon",
+  "version": "0.1.0",
+  "description": "Digital ANDON prototype - FORVIA Yeongcheon Plant",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "typecheck": "next typegen && tsc --noEmit",
+    "seed": "node scripts/seed-demo.mts",
+    "backup": "node scripts/backup.ts",
+    "test:golden": "node scripts/test-golden-path.ts"
+  },
+  "dependencies": {
+    "next": "16.3.8",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.0",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.8",
+    "typescript": "^5"
+  }
+}
