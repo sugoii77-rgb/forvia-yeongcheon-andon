@@ -59,7 +59,12 @@ Worker detects issue → creates ANDON → event stored → dashboard turns RED
   twice, and on start stops stale servers **of this project only** (identified by command line
   containing the project folder or by `/api/health` reporting this project's DB file).
   PID files: `data/run/`. Logs: `data/logs/andon-YYYY-MM-DD.log` (30 days).
-- **Single process, single DB file.** No Redis, no message broker, no separate DB server.
+- **Single process, single DB file** on the plant server / this PC. No Redis, no message broker.
+- **Second deployment: Vercel (cloud demo, https://forvia-yeongcheon-andon.vercel.app).** Same code; the server functions run in
+  `iad1` and use **Turso** (hosted libSQL, `aws-us-east-1`, same region) instead of the SQLite file
+  and a **private Vercel Blob** store instead of `data/uploads/`. Selected only by environment
+  variables (`TURSO_DATABASE_URL`, `BLOB_READ_WRITE_TOKEN`); see §9 "Vercel deployment".
+  `src/lib/server/sql.ts` hides the two database drivers behind one async API.
 - **Real-time = polling** (dashboard 2 s, responder list 3 s, detail 5 s). Simple and survives
   server restarts/network hiccups without reconnection logic. SSE can be added later if needed.
 - **History is append-only**: `andon_transition` rows can't be updated or deleted (SQLite triggers).
@@ -80,7 +85,8 @@ Worker detects issue → creates ANDON → event stored → dashboard turns RED
 | Runtime | **Node.js 24** (scripts need ≥ 22.18 for native TS; `engines` still says 22.13 — see §12) | built-in SQLite + native TypeScript execution for scripts |
 | Framework | **Next.js 16.3** (App Router, Turbopack), React 19 | UI + API in one deployable; PWA-capable later |
 | Language | TypeScript (strict) | |
-| DB | **SQLite via built-in `node:sqlite`** | zero native build, zero DB server, one-file backup; easy for plant IT |
+| DB | **SQLite via built-in `node:sqlite`** (plant / local); **Turso** via `@libsql/client/web` on Vercel | zero native build, zero DB server, one-file backup; easy for plant IT. Turso only because Vercel has no persistent disk |
+| Photos | local folder (plant / local); **private Vercel Blob** (`@vercel/blob`) on Vercel | photos are always served through `/api/photos/<name>`, never a public URL |
 | Styling | Plain CSS (`src/app/globals.css`) | no extra tooling to learn |
 | Scripts | `node scripts/*.ts` (Node native type stripping) | no `tsx`/esbuild dependency |
 
@@ -195,10 +201,12 @@ C:\andon\  (git repository root)
 
 - ANDON ID format: `AND-YYYYMMDD-NNN` (KST date, daily sequence).
 - All timestamps stored as UTC ISO-8601 strings; displayed in Asia/Seoul.
-- **Migrations:** `PRAGMA user_version` = applied schema version (now **4**). `db.ts` runs pending
-  migrations in order, each in its own transaction, after writing
-  `data/backups/andon-pre-migration-v<from>-to-v<to>-<time>.db`. A DB newer than the app is refused.
-  Never edit a released migration; add a new one.
+- **Migrations:** applied schema version (now **5**; v5 = `login_throttle`) is `PRAGMA user_version`
+  in a SQLite file and the one row of table `schema_meta` on Turso (Turso rejects writes to
+  `user_version`). On a file DB `db.ts` runs pending migrations at start-up, each in its own
+  transaction, after writing `data/backups/andon-pre-migration-v<from>-to-v<to>-<time>.db`. A remote
+  (Turso) DB is migrated **only** by `npm run db:migrate`; the deployed app refuses a remote DB whose
+  version differs. A DB newer than the app is refused. Never edit a released migration; add a new one.
 - Master data is seeded at start-up only if missing (`INSERT … WHERE NOT EXISTS` / `INSERT OR IGNORE`)
   → DB edits (e.g. via `npm run masterdata`) are never overwritten. A *deleted* seeded row would be
   re-created on the next start — deactivate instead of deleting.
@@ -336,6 +344,8 @@ See `.env.example`. Copy to `.env`. No secrets in source code.
 | `APP_BASE_URL` | `http://localhost:3000` | base for links in notifications — **set to the LAN address** |
 | `NOTIFICATION_PROVIDER` | `mock` | `mock` only for now; `kakao` planned |
 | `KAKAO_*` | — | placeholders for the future Kakao provider (keep only in `.env`) |
+| `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | — | **Vercel only** (set by the Turso integration). If set, the app uses Turso instead of `DATABASE_PATH`. **Never put them in `.env` / `.env.local` of the plant server** |
+| `BLOB_READ_WRITE_TOKEN` | — | **Vercel only** (set by the Blob store connection). If set, photos go to private Vercel Blob instead of `UPLOAD_DIR` |
 
 ## 8. How to install
 
@@ -367,6 +377,26 @@ npm run dev       # development mode with hot reload
   use it for the plant — stopping its npm wrapper on Windows can leave the server process running.
 - **Backup:** `npm run backup` (safe while running) → `data/backups/`.
 - **Reset demo data:** stop the server, `npm run seed -- --reset` (previous DB is backed up first).
+
+### Vercel deployment (cloud demo)
+
+| Item | Value |
+|---|---|
+| URL | https://forvia-yeongcheon-andon.vercel.app (Vercel project `forvia-yeongcheon-andon`, team `sugoii77-rgbs-projects`, Hobby plan) |
+| Deploys | automatically on every push to `main` of GitHub `sugoii77-rgb/forvia-yeongcheon-andon` |
+| Functions | region `iad1` (`vercel.json`), Node 24 (`engines`) |
+| Database | Turso `andon-db` (Vercel Marketplace integration, `aws-us-east-1`); env `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` |
+| Photos | private Blob store `andon-photos` (`icn1`); env `BLOB_READ_WRITE_TOKEN` |
+| Other env (production + preview) | `COOKIE_SECURE=true`, `NOTIFICATION_PROVIDER=mock`, `SESSION_TTL_HOURS=168`, `APP_BASE_URL=https://forvia-yeongcheon-andon.vercel.app` |
+
+- **Schema changes:** before pushing code with a new migration, migrate Turso first:
+  `vercel env run -e production -- npm run db:migrate` (credentials stay in the process environment;
+  nothing is written to disk). Then push. The deployed app refuses a DB with a different version.
+- **Demo data:** `vercel env run -e production -- npm run seed` adds demo events (`--reset` is refused
+  for Turso). Preview deployments use the **same** Turso DB and Blob store as production.
+- **Never** run `vercel env pull` into `C:\andon` — a `.env.local` with `TURSO_*` would switch the
+  plant server to the cloud DB. Use `vercel env run` instead.
+- `/api/health` shows `"backend": "remote"` on Vercel and `"file"` on the plant server.
 
 ## 10. How to test
 
@@ -477,6 +507,19 @@ server stopped: dashboard shows disconnect banner, operator sees "호출 실패"
 data intact, operator retry succeeds ✔ · backup script ✔.
 
 ## 12. Known issues / limitations
+
+- **Vercel deployment (cloud demo):**
+  - **Hobby plan = non-commercial use only.** Company use needs Vercel Pro (and a Turso plan check).
+  - **Public URL with open registration:** anyone who finds the URL can register a RESPONDER account
+    and see the dashboard. Before sharing it widely: Vercel Deployment Protection or an access gate.
+  - **Polling cost:** each open dashboard makes ~1,800 requests/hour (2 s polling). Several monitors
+    left open all day can exhaust free-tier function / Turso quotas — keep the plant monitor on the
+    plant server.
+  - **Latency:** functions and DB are in the US east (`iad1` / `aws-us-east-1`): ~0.5–0.6 s per warm
+    API call from Korea, ~1.5 s on a cold start. Fine for a demo; the plant server on the LAN is faster.
+  - Preview deployments share the production DB and Blob store.
+  - Turso / Blob backups are the providers' (Turso point-in-time restore); `npm run backup` covers the
+    local SQLite file only.
 
 - **No authentication.** Responder picks a name from a list (stored per device). Anyone on the
   LAN can act. Acceptable for the prototype; needs SSO/AD or PIN before production use.
@@ -647,6 +690,7 @@ answered by UAP and the real line / process master data has been delivered.
 | 2026-10-01 | Milestone 2 part 1 — H1: photo problems never block the ANDON call (server warning instead of 400; on-device resize to ≤1600 px JPEG; `test:reliability`). H2: `scripts/supervisor.ts` (`npm run serve/status/stop`), restart + watchdog + auto-rebuild + stale-process cleanup + daily logs, Windows auto-start scripts, RUNBOOK.md. Verified: typecheck/lint/build ✔, `test:golden` 26/26, `test:reliability` 6/6, browser: 12.2 MB 4000×3000 photo → 631 KB 1600×1200 JPEG; undecodable photo → note, call still possible; supervisor: crash → back in 2 s, stale server stopped, double start refused, failing health → restart after 3 checks, missing build → rebuilt (healthy 5 s after start), stop → port free. Auto-start task validated by dry run only (not registered). |
 | 2026-10-01 | Milestone 2A — responsibility & routing foundation: schema v2 with migration runner + pre-migration backup; plant / role / routing_rule / escalation_policy / escalation_step tables; app_user with role FK (MANAGER → SUPERVISOR); deterministic routing (process rule > line rule > category default) stored per event; server-side responder validation; device id / IP / user agent on every history row; eligible-only responder picker; `npm run masterdata`; `npm run test:routing`. Verified: fresh DB + seed, live-DB copy v1→v2 (40 events / 136 history rows preserved), live DB migrated with backup; typecheck / lint / build ✔; test:routing 38/38, test:golden 26/26, test:reliability 6/6; mobile UI ACK shows device + IP + "Android · Chrome" in history. |
 | 2026-10-01 | Milestone 2B — user registration & authentication: schema v3 (departments ME / MT / UAP / QC / PCL with old codes kept inactive + successor; app_user rebuilt with e-mail, non-unique name; user_identity, user_session, user_notification_channel; actor department / role on history rows); scrypt passwords; server-side sessions (HttpOnly, SameSite=Lax); /register, /login, /me; responder actions only as the logged-in user; masterdata CLI admin commands; tests use registered throw-away accounts. Migration verified on a copy and on the live DB: events 73 / history 239 / notifications 67 / users 10 unchanged, event-department and history checksums identical. Verified: typecheck / lint / build ✔; test:auth 42/42, test:routing 39/39, test:golden 26/26, test:reliability 6/6; browser (mobile): register → back to the event → ACK / ACTION / CLOSE as the logged-in QC user → timeline shows name, QC · 품질 · RESPONDER, device, IP, browser; QC user on an MT ANDON: no buttons + 403 from the API; logout. |
+| 2026-10-01 | Vercel deployment: async DB layer (`sql.ts`: node:sqlite file driver + Turso libSQL driver), schema v5 (`login_throttle` in the DB), photos in private Vercel Blob, notifications via `after()`; Turso keeps the schema version in `schema_meta` (it rejects `PRAGMA user_version = …`). Created Vercel project + GitHub auto-deploy, Turso `andon-db`, Blob `andon-photos`; migrated Turso v0→v5 and seeded 20 demo events. Verified on Turso: FK enforcement, transaction rollback, append-only triggers (UPDATE / DELETE rejected); Blob: save / read back identical bytes / unauthenticated URL 403 / delete; deployed https://forvia-yeongcheon-andon.vercel.app: `/api/health` backend remote, dashboard renders demo data. NOT verified on Vercel: login + ACK / ACTION / CLOSE and photo upload through the deployed UI (would create accounts / test events in the demo DB). Local plant server unchanged (SQLite file, v5). |
 | 2026-10-01 | Google authentication provider (Astra implemented; reviewed and completed after Astra's usage limit): schema v4 (employee_id permanent + unique, phone, company_email, user_identity.provider_email, one Google identity per employee, google_auth_flow); Google OIDC via openid-client (PKCE, state, nonce, JWKS signature, issuer / audience / expiry); onboarding; linking with local password re-check bound to the session. Review fixes: notification address only from verified channel; onboarding department labels; Google button hidden when unconfigured; 409 on races; safe logging; admin employee-id / unlink-google. Migration v3→v4 verified on a fresh copy of the live DB (all old rows / columns unchanged) and then on the live DB. Isolated v4 regression: test:google 48/48, test:auth 42/42, test:routing 39/39, test:golden 26/26, test:reliability 6/6. Real Google sign-in NOT tested (no Google Cloud client configured). |
 
 

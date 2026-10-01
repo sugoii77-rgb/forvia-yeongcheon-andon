@@ -155,3 +155,17 @@ Google 로그인은 **추가** 로그인 방식입니다. 설정하지 않으면
 - 기존 로컬 계정 사용자는 로그인 후 **내 정보 → 비밀번호 확인 → Google 계정 연결**.
   Google 이메일이 같아도 자동 연결되지 않습니다.
 - 카카오톡 ID는 연락 참고용이며 알림 발송 주소로 사용되지 않습니다.
+
+## 10. Vercel 클라우드 데모 · Cloud demo on Vercel
+
+주소: https://forvia-yeongcheon-andon.vercel.app  (공장 서버와 **별개**의 DB · 사진 저장소를 사용합니다)
+
+- **배포:** GitHub `main` 에 push 하면 자동 배포. 상태 확인: `vercel ls`, `https://forvia-yeongcheon-andon.vercel.app/api/health` → `"backend":"remote"`.
+- **DB 스키마 변경이 있는 커밋은 push 전에 먼저:**
+  ```powershell
+  vercel env run -e production -- npm run db:migrate
+  ```
+- **데모 데이터 추가:** `vercel env run -e production -- npm run seed` (`--reset` 은 Turso에서 거부됨).
+- **절대 금지:** `C:\andon` 에서 `vercel env pull` 실행 — `.env.local` 에 Turso 접속정보가 생기면 공장 서버가 클라우드 DB를 쓰게 됩니다.
+  실수로 생겼다면 `.env.local` 삭제 후 `npm run stop` → `npm run serve`.
+- 제약: Hobby 요금제(비상업용), 공개 주소 · 누구나 회원가입 가능, 현황판 2초 폴링 비용, 미국 동부 서버(응답 ~0.6초). 자세한 내용 PROJECT.md §12.
