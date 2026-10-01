@@ -1,6 +1,8 @@
 // End-to-end API test of the Golden Path against a running server.
 // Usage: npm run test:golden          (server must be running; BASE_URL defaults to http://localhost:3000)
 // Creates one real test ANDON (description starts with "[TEST]").
+export {}; // module scope: keeps this script's declarations out of the global namespace
+
 const BASE = (process.env.BASE_URL || "http://localhost:3000").replace(/\/$/, "");
 
 let failures = 0;

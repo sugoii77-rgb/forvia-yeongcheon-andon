@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Never lint build output, dependencies or runtime data, even in stray nested copies.
+    "**/.next/**",
+    "**/node_modules/**",
+    "data/**",
   ]),
 ]);
 

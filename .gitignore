@@ -48,3 +48,10 @@ next-env.d.ts
 
 # local Claude Code / editor settings
 /.claude/
+
+# guard against stray copies / runtime artefacts anywhere in the tree
+**/.next/
+**/node_modules/
+*.db
+*.db-wal
+*.db-shm

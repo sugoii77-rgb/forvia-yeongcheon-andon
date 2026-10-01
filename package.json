@@ -11,7 +11,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
+    "lint": "eslint src scripts",
     "typecheck": "next typegen && tsc --noEmit",
     "seed": "node scripts/seed-demo.mts",
     "backup": "node scripts/backup.ts",
