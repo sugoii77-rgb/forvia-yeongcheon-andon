@@ -36,10 +36,11 @@ npm run serve                 # http://localhost:<PORT from .env>  (builds if ne
 | `npm run test:reliability` | photo-failure tests (ANDON must still be created) |
 | `npm run test:routing` | routing / responder identity / device audit tests |
 | `npm run test:auth` | registration / login / session / authorization tests |
+| `npm run test:google` | Google OIDC tests with a fake Google (isolated DB under `work/`, see PROJECT.md §10) |
 | `npm run masterdata -- list` | ADMIN: show / change users (role, department, active, password reset), routing rules (RUNBOOK.md §7) |
 | `npm run backup` | online DB backup → `data/backups/` |
 | `npm run seed -- --reset` | reset to demo data (stop server first; old DB is backed up) |
 
-Operators call ANDON without login. Responders **register** (`/register`: name, e-mail, department ME / MT / UAP / QC / PC&L) and become RESPONDER of that department automatically; other roles are set by an administrator. API tests register throw-away `*@andon.test` accounts and must run on the server PC, one at a time.
+Operators call ANDON without login. Responders log in locally or — once configured (RUNBOOK.md §9) — with Google. Responders **register** (`/register`: name, e-mail, department ME / MT / UAP / QC / PC&L) and become RESPONDER of that department automatically; other roles are set by an administrator. API tests register throw-away `*@andon.test` accounts and must run on the server PC, one at a time.
 
 All runtime data lives in `data/` (SQLite DB, photos, logs). Operations and recovery: **[RUNBOOK.md](RUNBOOK.md)**. Auto-start at boot: `scripts/windows/install-autostart.ps1 -AtStartup`.

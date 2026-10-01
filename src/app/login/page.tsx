@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { TopBar } from "@/components/TopBar";
 import { api, safeNextPath } from "@/lib/client";
 import type { PublicUser } from "@/lib/domain";
+import { GoogleLogin } from "@/components/GoogleLogin";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -38,6 +39,8 @@ export default function LoginPage() {
       <TopBar />
       <main className="page" style={{ maxWidth: 480 }}>
         <h1>로그인 <span className="muted" style={{ fontSize: 16 }}>Login</span></h1>
+        <GoogleLogin />
+        <h2 style={{fontSize:18}}>기존 로컬 계정</h2>
         <form className="card" onSubmit={submit}>
           <div className="field">
             <label htmlFor="email">이메일</label>

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { TopBar } from "@/components/TopBar";
 import { api, useMe } from "@/lib/client";
+import { GoogleLogin } from "@/components/GoogleLogin";
 
 export default function MePage() {
   const router = useRouter();
@@ -37,12 +38,17 @@ export default function MePage() {
             </div>
           </div>
         )}
+        {user?.email && user.active && !user.googleLinked && <GoogleLogin linking />}
         {user && (
           <div className="card">
             <dl className="kv" style={{ fontSize: 18 }}>
               <dt>이름</dt>
               <dd>{user.name}</dd>
-              <dt>이메일</dt>
+              <dt>사번</dt>
+              <dd>{user.employeeId ?? "미등록 · Google 연결 시 등록"}</dd>
+              <dt>Google 로그인</dt>
+              <dd>{user.googleLinked ? "연결됨" : "연결되지 않음"}</dd>
+              <dt>로컬 로그인 이메일</dt>
               <dd>{user.email ?? "-"}</dd>
               <dt>부서</dt>
               <dd>{user.departmentLabel}</dd>

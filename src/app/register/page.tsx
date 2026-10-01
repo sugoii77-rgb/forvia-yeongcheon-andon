@@ -4,6 +4,7 @@ import Link from "next/link";
 import { TopBar } from "@/components/TopBar";
 import { api, safeNextPath } from "@/lib/client";
 import type { MasterData, PublicUser } from "@/lib/domain";
+import { GoogleLogin } from "@/components/GoogleLogin";
 
 export default function RegisterPage() {
   const [departments, setDepartments] = useState<MasterData["departments"]>([]);
@@ -45,6 +46,7 @@ export default function RegisterPage() {
       <TopBar />
       <main className="page" style={{ maxWidth: 520 }}>
         <h1>회원가입 <span className="muted" style={{ fontSize: 16 }}>Register</span></h1>
+        <GoogleLogin />
         <form className="card" onSubmit={submit}>
           <div className="field">
             <label htmlFor="name">이름</label>

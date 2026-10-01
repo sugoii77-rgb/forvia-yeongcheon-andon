@@ -332,11 +332,38 @@ function migrateV3(db: DatabaseSync) {
   `);
 }
 
+/** v4: additive employee/contact fields and short-lived Google login transactions. */
+function migrateV4(db: DatabaseSync) {
+  db.exec(`
+    ALTER TABLE app_user ADD COLUMN employee_id TEXT;
+    ALTER TABLE app_user ADD COLUMN phone TEXT;
+    ALTER TABLE app_user ADD COLUMN company_email TEXT;
+    CREATE UNIQUE INDEX ux_employee_id ON app_user(employee_id) WHERE employee_id IS NOT NULL;
+    CREATE TRIGGER employee_id_immutable BEFORE UPDATE OF employee_id ON app_user
+      WHEN OLD.employee_id IS NOT NULL AND NEW.employee_id IS NOT OLD.employee_id
+      BEGIN SELECT RAISE(ABORT, 'employee_id is permanent'); END;
+    ALTER TABLE user_identity ADD COLUMN provider_email TEXT;
+    CREATE UNIQUE INDEX ux_google_user ON user_identity(user_id) WHERE provider = 'GOOGLE';
+    CREATE TABLE google_auth_flow (
+      token_hash TEXT PRIMARY KEY,
+      phase TEXT NOT NULL CHECK(phase IN ('AUTHORIZATION','ONBOARDING')),
+      state TEXT, nonce TEXT, verifier TEXT,
+      next_path TEXT NOT NULL,
+      link_user_id INTEGER REFERENCES app_user(id),
+      link_session_hash TEXT,
+      subject TEXT, provider_email TEXT, display_name TEXT,
+      expires_at TEXT NOT NULL
+    );
+    CREATE INDEX ix_google_flow_expiry ON google_auth_flow(expires_at);
+  `);
+}
+
 const MIGRATIONS: { version: number; up: (db: DatabaseSync) => void; foreignKeysOff?: boolean }[] = [
   { version: 1, up: (db) => db.exec(V1_SQL) },
   { version: 2, up: migrateV2 },
   // Rebuilds app_user, which andon_transition references → FKs off during the rebuild, checked after.
   { version: 3, up: migrateV3, foreignKeysOff: true },
+  { version: 4, up: migrateV4 },
 ];
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
 

@@ -75,6 +75,8 @@ export const SELF_REGISTRATION_ROLE: RoleCode = "RESPONDER";
 /** Public view of a user — never contains password hashes or session data. */
 export interface PublicUser {
   id: number;
+  employeeId: string | null;
+  googleLinked: boolean;
   name: string;
   email: string | null;
   departmentCode: string;

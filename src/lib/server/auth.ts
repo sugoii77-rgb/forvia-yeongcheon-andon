@@ -64,12 +64,15 @@ function validatePassword(password: string) {
 // ---------------------------------------------------------------- users
 
 const PUBLIC_USER_SELECT = `
-SELECT u.id, u.name, u.email, u.department_code, u.role, u.active, r.name_ko AS role_name, r.can_respond
+SELECT u.id, u.employee_id, u.name, u.email, u.department_code, u.role, u.active, r.name_ko AS role_name, r.can_respond,
+       EXISTS(SELECT 1 FROM user_identity i WHERE i.user_id=u.id AND i.provider='GOOGLE') AS google_linked
 FROM app_user u JOIN role r ON r.code = u.role`;
 
 function toPublicUser(r: Record<string, unknown>): PublicUser {
   return {
     id: r.id as number,
+    employeeId: (r.employee_id as string | null) ?? null,
+    googleLinked: r.google_linked === 1,
     name: r.name as string,
     email: (r.email as string | null) ?? null,
     departmentCode: r.department_code as string,
@@ -219,12 +222,14 @@ export function createSession(userId: number, audit: AuditInfo): { token: string
   return { token, expiresAt };
 }
 
-function readCookie(req: Request, name: string): string | null {
+export function readCookie(req: Request, name: string): string | null {
   const header = req.headers.get("cookie");
   if (!header) return null;
   for (const part of header.split(";")) {
     const i = part.indexOf("=");
-    if (i > 0 && part.slice(0, i).trim() === name) return decodeURIComponent(part.slice(i + 1).trim());
+    if (i > 0 && part.slice(0, i).trim() === name) {
+      try { return decodeURIComponent(part.slice(i + 1).trim()); } catch { return null; }
+    }
   }
   return null;
 }

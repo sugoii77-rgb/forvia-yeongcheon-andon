@@ -1,7 +1,7 @@
 // Master-data maintenance without SQL (npm run masterdata -- <command>). Administrator tool.
 // Safe while the server is running. Every change is validated by the database (foreign keys,
 // checks, triggers). Users are never deleted — deactivate them so history stays intact.
-// <user> = numeric id or e-mail address.
+// <user> = numeric user id, local login e-mail, or emp:<employee ID> (e.g. emp:A1234).
 //
 //   list                                         departments, roles, users, routing rules, …
 //   user add "<name>" <DEPARTMENT> <ROLE>        account without login (e.g. demo / operator)
@@ -9,6 +9,9 @@
 //   user role <user> <ROLE>                      only administrators change roles (GAP_LEADER, …)
 //   user dept <user> <DEPARTMENT>
 //   user reset-password <user>                   prints a new temporary password once
+//   user employee-id <user> <EMPLOYEE_ID>        assign the permanent employee ID (cannot be changed later);
+//                                                pre-assigning prevents a newcomer from claiming that ID
+//   user unlink-google <user>                    remove the Google login (e.g. lost Google account); ends sessions
 //   user deactivate-test-accounts                deactivates all *@andon.test accounts (API tests)
 //   route add <CATEGORY> <LINE> [<processId>] <DEPARTMENT> ["note"]
 //   route deactivate <ruleId> | route activate <ruleId>
@@ -42,10 +45,9 @@ function list() {
   table("role", all("SELECT code, name_ko, can_respond, escalation_level FROM role ORDER BY sort_order"));
   table(
     "app_user",
-    all(`SELECT u.id, u.name, u.email, u.department_code AS dept, u.role, u.active, u.source,
-                CASE WHEN i.id IS NULL THEN '' ELSE 'LOCAL' END AS login
-         FROM app_user u LEFT JOIN user_identity i ON i.user_id = u.id AND i.provider = 'LOCAL'
-         ORDER BY u.department_code, u.id`),
+    all(`SELECT u.id, u.employee_id, u.name, u.email, u.department_code AS dept, u.role, u.active, u.source,
+                (SELECT group_concat(i.provider, '+') FROM user_identity i WHERE i.user_id = u.id) AS login
+         FROM app_user u ORDER BY u.department_code, u.id`),
   );
   table(
     "routing_rule (most specific active rule wins: line+process+category > line+category > category default)",
@@ -58,7 +60,9 @@ function list() {
 function userId(ref: string): number {
   const row = /^\d+$/.test(ref)
     ? db.prepare("SELECT id FROM app_user WHERE id = ?").get(Number(ref))
-    : db.prepare("SELECT id FROM app_user WHERE email = ?").get(normalizeEmail(ref));
+    : ref.toLowerCase().startsWith("emp:")
+      ? db.prepare("SELECT id FROM app_user WHERE employee_id = ?").get(ref.slice(4).trim().toUpperCase())
+      : db.prepare("SELECT id FROM app_user WHERE email = ?").get(normalizeEmail(ref));
   if (!row) throw new Error(`user not found: ${ref}`);
   return (row as { id: number }).id;
 }
@@ -104,6 +108,15 @@ try {
     // Existing sessions of this user are ended.
     db.prepare("UPDATE user_session SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL").run(nowIso(), id);
     console.log(`Temporary password (shown once): ${temp}`);
+  } else if (cmd === "user" && sub === "employee-id" && args.length === 2) {
+    const id = userId(args[0]);
+    const emp = args[1].trim().toUpperCase();
+    if (!/^[A-Z0-9][A-Z0-9_-]{1,39}$/.test(emp)) throw new Error("employee ID: 2-40 chars, letters / digits / - / _");
+    changed(db.prepare("UPDATE app_user SET employee_id = ? WHERE id = ?").run(emp, id), `user #${id} employee ID = ${emp}`);
+  } else if (cmd === "user" && sub === "unlink-google" && args.length === 1) {
+    const id = userId(args[0]);
+    changed(db.prepare("DELETE FROM user_identity WHERE user_id = ? AND provider = 'GOOGLE'").run(id), `user #${id} Google login removed`);
+    db.prepare("UPDATE user_session SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL").run(nowIso(), id);
   } else if (cmd === "user" && sub === "deactivate-test-accounts") {
     const r = db.prepare("UPDATE app_user SET active = 0 WHERE email LIKE '%@andon.test' AND active = 1").run();
     console.log(`OK: ${r.changes} test account(s) deactivated`);

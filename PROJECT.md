@@ -3,7 +3,7 @@
 > **Source of truth for AI-to-AI and human handover.** Update this file at the end of every
 > meaningful milestone (sections 11–16 at minimum).
 >
-> Last updated: **2026-10-01** · Milestone 1 — **done** · Milestone 2 — H1 + H2 done · 2A routing foundation — done · **2B registration & authentication — done**
+> Last updated: **2026-10-01** · Milestone 1 — **done** · Milestone 2 — H1 + H2 done · 2A routing foundation — done · 2B registration & authentication — done · **Google authentication provider — done (offline-tested; real Google not yet configured)**
 
 ---
 
@@ -107,6 +107,8 @@ C:\andon\  (git repository root)
 │  ├─ test-reliability.ts  ← photo-failure tests, 6 checks (npm run test:reliability)
 │  ├─ test-routing.ts      ← routing / identity / device audit: 10 unit + 29 API checks (npm run test:routing)
 │  ├─ test-auth.ts         ← registration / login / session / authorization: 42 checks (npm run test:auth)
+│  ├─ test-google.ts       ← Google OIDC with signed test tokens (no real Google): 48 checks (npm run test:google, isolated DB)
+│  ├─ verify-google-migration.ts ← compares a v3 backup with its migrated v4 copy (all old rows/columns)
 │  └─ lib/testkit.ts       ← test helpers: logged-in throw-away accounts, admin CLI calls
 ├─ data/                   ← runtime data, git-ignored (created automatically)
 │  ├─ andon.db             ← SQLite database (+ -wal / -shm files)
@@ -124,7 +126,8 @@ C:\andon\  (git repository root)
    │  ├─ history/page.tsx         D. History & analytics
    │  ├─ register/page.tsx        회원가입 (name, e-mail, department, password)
    │  ├─ login/page.tsx           로그인 (?next= returns to the page, e.g. an ANDON from a notification link)
-   │  ├─ me/page.tsx              내 정보 + 로그아웃
+   │  ├─ me/page.tsx              내 정보 + 로그아웃 + Google 계정 연결 (password re-check)
+   │  ├─ onboarding/page.tsx      Google onboarding: employee ID, name, department, phone, KakaoTalk ID, company e-mail
    │  └─ api/
    │     ├─ andons/route.ts                 GET list (scope=board|active|all, mine=1 = my department via session), POST create (multipart, no login)
    │     ├─ andons/[id]/route.ts            GET detail + transitions + notifications + responsibility + eligibleResponders + viewer.canRespond
@@ -133,7 +136,8 @@ C:\andon\  (git repository root)
    │     ├─ meta/route.ts                   GET master data
    │     ├─ photos/[file]/route.ts          GET photo
    │     ├─ health/route.ts                 GET DB health (200 / 503)
-   │     └─ auth/register|login|logout|me   POST register / login / logout, GET current user
+   │     ├─ auth/register|login|logout|me   POST register / login / logout, GET current user
+   │     └─ auth/google/start|callback|onboarding  Google OIDC: start (GET = configured?), callback, onboarding
    ├─ components/  TopBar (shows login / user), StatusBadge
    └─ lib/
       ├─ domain.ts         statuses, state machine rules, shared types (client + server)
@@ -146,6 +150,8 @@ C:\andon\  (git repository root)
          ├─ andonService.ts  create / transition / queries / stats  (ALL state changes here)
          ├─ routingService.ts  responsibility, department successors, eligible responders, recipients, responder validation
          ├─ auth.ts        registration, scrypt password hashing, login throttling, sessions, cookies, origin check
+         ├─ googleAuth.ts  Google OIDC flow (openid-client): state / nonce / PKCE, callback, onboarding, session
+         ├─ googleIdentity.ts  Google subject → employee; onboarding / linking rules (no takeover)
          ├─ errors.ts      AndonError, AuditInfo
          ├─ notifications/index.ts  NotificationProvider + Mock + notifyAndonCreated()
          ├─ photos.ts      photo save/read (type + size checks, path-traversal safe)
@@ -166,7 +172,7 @@ C:\andon\  (git repository root)
 - `ACTION` and `CLOSE` **require a comment** (action note / corrective action).
 - Invalid transition → HTTP 409. Concurrent updates are guarded by `UPDATE … WHERE status = <read status>`.
 
-**Tables** (`src/lib/server/db.ts`, schema **v3**)
+**Tables** (`src/lib/server/db.ts`, schema **v4**)
 
 | Table | Purpose |
 |---|---|
@@ -176,8 +182,9 @@ C:\andon\  (git repository root)
 | `department` | **ME, MT, UAP, QC, PCL** (active); `display_code` ("PC&L"), `sort_order`, `successor_code`. Pre-v3 codes QUALITY, PRODUCTION, MAINTENANCE, LOGISTICS, EHS stay as **inactive** rows with a successor |
 | `category` | issue categories; `default_department` = routing when no rule matches |
 | `role` | OPERATOR, RESPONDER, GAP_LEADER, SUPERVISOR, ENGINEER, PLANT_MANAGER; `can_respond`, `escalation_level` (prepared) |
-| `app_user` | id, name (not unique), email (unique, normalized; NULL = no login), department_code → department, role → role, active, source (SEED / REGISTRATION / ADMIN), created_at. Never delete — deactivate |
-| `user_identity` | how a person logs in: provider (LOCAL now; GOOGLE / KAKAO later), subject (LOCAL: e-mail), password_hash (scrypt, LOCAL only), last_login_at; unique (provider, subject) |
+| `app_user` | employee = id, **employee_id** (v4: unique, permanent once set — trigger), name (not unique), email (LOCAL login e-mail, unique; NULL = no local login), department_code → department, role → role, active, source, created_at; contact (v4): phone, kakao_id (typed KakaoTalk ID — reference only, NOT a notification address), company_email (optional). Never delete — deactivate |
+| `user_identity` | how a person logs in: provider LOCAL / GOOGLE (KAKAO later), subject (LOCAL: e-mail; GOOGLE: Google's stable `sub`), password_hash (LOCAL only), provider_email (v4, metadata only), last_login_at; unique (provider, subject); at most one GOOGLE identity per employee (v4) |
+| `google_auth_flow` | v4: short-lived (10 min) server-side Google login state: phase AUTHORIZATION (state, nonce, PKCE verifier, next path, link target + session hash) or ONBOARDING (verified sub / e-mail / name). Browser holds only an opaque token (cookie scoped to /api/auth/google); rows are consumed once |
 | `user_session` | server-side sessions: SHA-256 of the cookie token, user_id, expires_at, revoked_at, device / IP / user agent at login |
 | `user_notification_channel` | **prepared, unused**: where a person receives messages (provider KAKAO / SMS / EMAIL, recipient_id, verified, active) — separate from login identity |
 | `routing_rule` | category + line [+ process] → department override; `active`; unique per (category, line, process); trigger: process must belong to line |
@@ -188,7 +195,7 @@ C:\andon\  (git repository root)
 
 - ANDON ID format: `AND-YYYYMMDD-NNN` (KST date, daily sequence).
 - All timestamps stored as UTC ISO-8601 strings; displayed in Asia/Seoul.
-- **Migrations:** `PRAGMA user_version` = applied schema version (now **3**). `db.ts` runs pending
+- **Migrations:** `PRAGMA user_version` = applied schema version (now **4**). `db.ts` runs pending
   migrations in order, each in its own transaction, after writing
   `data/backups/andon-pre-migration-v<from>-to-v<to>-<time>.db`. A DB newer than the app is refused.
   Never edit a released migration; add a new one.
@@ -252,11 +259,36 @@ new department without rewriting history. Display: "QUALITY · 품질" (original
   and active flag are read from the DB on **every** request, so deactivation or a role change applies
   immediately. Logout revokes the session server-side. State-changing auth requests reject a foreign
   `Origin` header (403). Nothing auth-related is stored in localStorage.
-- **Future identity providers**: a Google or Kakao login adds a `user_identity` row
-  (provider = GOOGLE / KAKAO, subject = provider user id) for the same `app_user`. Routing and
-  eligibility only use `app_user` (department, role, active), never the provider.
-- **Notification identity is separate**: `user_notification_channel` (prepared) will hold e.g. the
-  KakaoTalk recipient id. A Google e-mail is never assumed to be a Kakao recipient.
+- **Google login (OIDC, additional provider)** — `googleAuth.ts` / `googleIdentity.ts`, library
+  `openid-client` 6 (OpenID-certified). Flow: `POST /api/auth/google/start` (exact Origin check) →
+  Google (authorization code + PKCE S256, `state`, `nonce`, scope `openid email profile`) →
+  `GET /api/auth/google/callback`: the flow is looked up by the opaque flow cookie AND the `state` and
+  deleted in the same statement (one-time); the code is exchanged server-side; the ID token is verified
+  (signature against Google's JWKS, issuer `https://accounts.google.com`, audience = client id, expiry,
+  nonce) and `email_verified` must be true. The employee is resolved **only by Google `sub`** — the
+  Google e-mail is metadata and never identifies or links an employee.
+  - **Known `sub`** → active employee → new ANDON session (previous session revoked) → redirect to an
+    allow-listed page (`/respond[/AND-…]`, `/me`, `/dashboard`, `/history`, `/operator`).
+  - **Unknown `sub`** → onboarding (`/onboarding`): employee ID, name, department, phone, KakaoTalk
+    ID, optional company e-mail → new employee, role RESPONDER, active (same policy as local
+    registration). The Google identity stays on the server; nothing from the browser can change it.
+    An employee ID that already belongs to someone cannot be claimed (409).
+  - **Existing local employee → link Google** (from `/me`): requires an active local session AND
+    re-entering the local password; the flow is bound to that exact session, which must still be the
+    same at callback and onboarding. Linking keeps name, department, role, local login and history; it
+    sets the employee ID (if not set yet) and contact fields. One Google account per employee and one
+    employee per Google account (unique indexes).
+  - Logs contain only error codes — never authorization codes, tokens, claims or the client secret.
+    Tokens are not stored. The callback always redirects (303) so the code leaves the address bar;
+    `Referrer-Policy: no-referrer`.
+  - Config: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` (exactly
+    `<origin>/api/auth/google/callback`; HTTPS, or http://localhost for development). Without them the
+    Google button is hidden and the API answers 503 `GOOGLE_NOT_CONFIGURED`; local login is unaffected.
+  - Routing and eligibility only use `app_user` (department, role, active), never the provider. A Kakao
+    login would be one more `user_identity` provider.
+- **Notification identity is separate**: `user_notification_channel` holds the KakaoTalk recipient id.
+  Notification addresses come **only** from a verified + active channel row (`primaryRecipients`);
+  the typed `app_user.kakao_id` and a Google e-mail are never used as recipients.
 
 **Responder identity** (`validateResponder`): ACK / ACTION / CLOSE over HTTP require a session
 (401 `AUTH_REQUIRED`); the responder is **always the session user**. A body that names a different
@@ -293,6 +325,9 @@ See `.env.example`. Copy to `.env`. No secrets in source code.
 | Variable | Default | Meaning |
 |---|---|---|
 | `SESSION_TTL_HOURS` | `168` | login session lifetime (hours) |
+| `GOOGLE_CLIENT_ID` | — | Google OAuth client id (Web application). Empty = Google login hidden |
+| `GOOGLE_CLIENT_SECRET` | — | Google OAuth client secret — **only in `.env`**, never in git / chat / logs |
+| `GOOGLE_REDIRECT_URI` | — | exactly `<origin>/api/auth/google/callback` (must match Google Cloud and the address users open) |
 | `COOKIE_SECURE` | `auto` | `auto` = Secure flag only on HTTPS; `true` / `false` to force |
 | `PORT` | `3000` | server port used by `npm run serve` (this dev PC uses `3100`: port 3000 is taken by another app) |
 | `HOST` | (all interfaces) | optional bind address for `npm run serve` |
@@ -345,6 +380,12 @@ npm run dev       # development mode with hot reload
 
 | `npm run test:routing` | 10 unit checks of the routing resolver / eligibility (no server) + 29 API checks: routing of every category, process-level override (→ PCL, shown "PC&L · 물류"), eligible-responder list, no session → 401, body naming another user (id or name) → rejected, wrong department → 403 without side effects, session responder ACK with user id / name / department / role / device / IP / user agent in history, GAP_LEADER (set by admin) may act, invalid device id dropped, server-side inbox (`mine=1`, incl. pre-v3 QUALITY events), pre-v3 event handled by successor department, full ordered history. |
 | `npm run test:auth` | 42 checks — registration (valid, role in body ignored, no secrets in responses, cookie flags, duplicate e-mail incl. case variant, 5 simultaneous registrations → 1 account, invalid e-mail / department / inactive pre-v3 department / short password / no digit / mismatch / empty name), login (valid, wrong password, unknown user with identical message, session fixation, logout + cookie replay, forged token, foreign Origin → 403, inactive → 403, 6th failure → 429), authorization & routing (new QC / MT / PC&L responders automatically eligible, QC cannot ACK MT, body spoofing rejected, no session → 401, audit fields, deactivated after login → 403, OPERATOR role → 403, admin department change moves eligibility). |
+
+| `npm run test:google` | 48 checks with a local fake Google (signed test tokens, fake JWKS) — **real Google is not contacted**. Needs an isolated test server and `DATABASE_PATH` under `work/` (see below). Covers redirect allow-list, Origin checks, PKCE / state / nonce, flow cookie flags, wrong state / missing cookie / replay / expiry, onboarding (no subject exposed, replay, role in body ignored), changed Google e-mail → same employee, duplicate subject, one Google per employee, employee-ID claim protection, immutable employee ID, inactive employee, session rotation, no tokens stored, linking with password re-check bound to the session, Google e-mail never auto-links, wrong nonce / audience / issuer / expired / unverified e-mail / bad signature, Host header, real API: operator call, wrong department, body spoofing, role, deactivation, ACK / ACTION / CLOSE with audit; typed KakaoTalk ID is not a notification address; configured-status endpoint; admin employee-id / unlink-google. |
+
+> **Isolated Google test** (keeps the live DB untouched): copy a backup to `work/google/x.db`, start
+> `next start --hostname 127.0.0.1 --port 3101` with `DATABASE_PATH` / `UPLOAD_DIR` pointing into
+> `work/`, then run all suites with `BASE_URL=http://localhost:3101 DATABASE_PATH=work/google/x.db`.
 
 > **Test accounts:** since 2B every API test registers throw-away accounts (`*@andon.test`, random
 > password never stored or printed) and deactivates all `*@andon.test` accounts at the end via the
@@ -417,6 +458,17 @@ Manual UI test: open `/operator` on a phone-width browser, `/dashboard` in anoth
 - [x] Admin CLI: role / department / activation by id or e-mail, password reset, test-account cleanup
 - [x] Operator ANDON CALL unchanged — no login needed
 
+**Google authentication provider** (implemented by Astra, reviewed and completed; LOCAL login unchanged)
+- [x] Google OIDC login (openid-client, PKCE, state, nonce, signed ID token, issuer / audience / expiry)
+- [x] Employee resolved by Google `sub` only; onboarding for new employees (employee ID, name,
+      department, phone, KakaoTalk ID, optional company e-mail) → RESPONDER
+- [x] Linking an existing local employee requires the local password and the same session
+- [x] Schema v4: employee_id (permanent), contact fields, one Google per employee, google_auth_flow
+- [x] Review fixes: notification address only from a verified channel (not the typed KakaoTalk ID);
+      onboarding department labels / no pre-selected department; Google button hidden when not
+      configured; race-safe 409 messages; safe diagnostic logging; admin `employee-id`, `unlink-google`
+- [ ] **Real Google sign-in not yet tested** — needs a Google Cloud OAuth client (see RUNBOOK.md §9)
+
 **Verified on 2026-10-01** (production build, Node 24.15, Windows 11):
 `typecheck` ✔ · `lint` ✔ · `build` ✔ · `test:golden` 26/26 ✔ (earlier reports said "25/25" — that was a miscount; the test has 26 checks) · UI golden path in browser
 (operator at 375 px → dashboard RED → responder ACK → dashboard YELLOW without reload → ACTION →
@@ -435,7 +487,13 @@ data intact, operator retry succeeds ✔ · backup script ✔.
 - **No sound** on the dashboard for new RED events yet (browsers block autoplay without interaction).
 - Photos are resized on the device; photos sent by other clients (API) are stored as received
   (≤ 10 MB, JPG/PNG/WEBP/HEIC). File content is not verified against the declared type.
-- **Authentication is a prototype (LOCAL accounts), not enterprise SSO.** Limitations:
+- **Google login has only been tested offline** (fake Google with signed test tokens). Real Google
+  sign-in needs a Google Cloud OAuth client and an exact redirect URI. Google allows plain HTTP only for
+  `localhost`: phones on the plant LAN need an **HTTPS host name** for Google login.
+- **Any Google account can onboard** (no company-domain restriction) and **employee IDs are
+  self-asserted** (not checked against HR). An unassigned employee ID could be taken by someone else;
+  administrators can pre-assign employee IDs (`user employee-id`) to prevent that.
+- **Authentication is a prototype (LOCAL accounts + Google), not enterprise SSO.** Limitations:
   - **Plain HTTP on the LAN**: the session cookie and the password at login travel unencrypted and can
     be sniffed on the Wi-Fi. Use HTTPS (then `COOKIE_SECURE=true`) before production.
   - Anyone can self-register with any e-mail and pick any department (no e-mail verification, no
@@ -511,6 +569,10 @@ data intact, operator retry succeeds ✔ · backup script ✔.
 16. **Login identity, notification identity and routing are three separate things**:
     `user_identity` (how you log in), `user_notification_channel` (where you are messaged), `app_user`
     department/role (what you are responsible for).
+17. **Google is an additional provider, linked only with proof of both identities**: an existing
+    employee is never claimed by Google e-mail, company e-mail, name or employee ID; linking needs the
+    Google login AND the local password in the same session. The permanent employee key is the
+    `app_user` row (+ employee ID), never a Gmail address.
 
 ## 14. Pending tasks
 
@@ -523,7 +585,10 @@ data intact, operator retry succeeds ✔ · backup script ✔.
 - [ ] Confirm SAFETY / EHS → UAP with the plant; define ME routing rules
 - [ ] HTTPS on the plant server (then `COOKIE_SECURE=true`)
 - [ ] Self-service password change; admin approval or e-mail verification for registrations (if required)
-- [ ] Google login (`user_identity` provider GOOGLE) / Kakao login (provider KAKAO) — not started
+- [x] Google login (provider GOOGLE) — implemented, offline-tested
+- [ ] Configure a real Google Cloud OAuth client and test real Google sign-in (HTTPS host for phones)
+- [ ] Optional: restrict Google onboarding (company domain / admin approval / HR employee-ID list)
+- [ ] Kakao login (provider KAKAO) — not started
 - [ ] **CANCEL / false-call outcome** (pending requirement): new terminal status or action with a reason,
       excluded from KPIs; must use the same responder validation and device audit
 - [ ] Small fixes: `limit` validation (500 on `?limit=abc`), `nosniff` + `poweredByHeader: false`,
@@ -572,3 +637,4 @@ data intact, operator retry succeeds ✔ · backup script ✔.
 | 2026-10-01 | Milestone 2 part 1 — H1: photo problems never block the ANDON call (server warning instead of 400; on-device resize to ≤1600 px JPEG; `test:reliability`). H2: `scripts/supervisor.ts` (`npm run serve/status/stop`), restart + watchdog + auto-rebuild + stale-process cleanup + daily logs, Windows auto-start scripts, RUNBOOK.md. Verified: typecheck/lint/build ✔, `test:golden` 26/26, `test:reliability` 6/6, browser: 12.2 MB 4000×3000 photo → 631 KB 1600×1200 JPEG; undecodable photo → note, call still possible; supervisor: crash → back in 2 s, stale server stopped, double start refused, failing health → restart after 3 checks, missing build → rebuilt (healthy 5 s after start), stop → port free. Auto-start task validated by dry run only (not registered). |
 | 2026-10-01 | Milestone 2A — responsibility & routing foundation: schema v2 with migration runner + pre-migration backup; plant / role / routing_rule / escalation_policy / escalation_step tables; app_user with role FK (MANAGER → SUPERVISOR); deterministic routing (process rule > line rule > category default) stored per event; server-side responder validation; device id / IP / user agent on every history row; eligible-only responder picker; `npm run masterdata`; `npm run test:routing`. Verified: fresh DB + seed, live-DB copy v1→v2 (40 events / 136 history rows preserved), live DB migrated with backup; typecheck / lint / build ✔; test:routing 38/38, test:golden 26/26, test:reliability 6/6; mobile UI ACK shows device + IP + "Android · Chrome" in history. |
 | 2026-10-01 | Milestone 2B — user registration & authentication: schema v3 (departments ME / MT / UAP / QC / PCL with old codes kept inactive + successor; app_user rebuilt with e-mail, non-unique name; user_identity, user_session, user_notification_channel; actor department / role on history rows); scrypt passwords; server-side sessions (HttpOnly, SameSite=Lax); /register, /login, /me; responder actions only as the logged-in user; masterdata CLI admin commands; tests use registered throw-away accounts. Migration verified on a copy and on the live DB: events 73 / history 239 / notifications 67 / users 10 unchanged, event-department and history checksums identical. Verified: typecheck / lint / build ✔; test:auth 42/42, test:routing 39/39, test:golden 26/26, test:reliability 6/6; browser (mobile): register → back to the event → ACK / ACTION / CLOSE as the logged-in QC user → timeline shows name, QC · 품질 · RESPONDER, device, IP, browser; QC user on an MT ANDON: no buttons + 403 from the API; logout. |
+| 2026-10-01 | Google authentication provider (Astra implemented; reviewed and completed after Astra's usage limit): schema v4 (employee_id permanent + unique, phone, company_email, user_identity.provider_email, one Google identity per employee, google_auth_flow); Google OIDC via openid-client (PKCE, state, nonce, JWKS signature, issuer / audience / expiry); onboarding; linking with local password re-check bound to the session. Review fixes: notification address only from verified channel; onboarding department labels; Google button hidden when unconfigured; 409 on races; safe logging; admin employee-id / unlink-google. Migration v3→v4 verified on a fresh copy of the live DB (all old rows / columns unchanged) and then on the live DB. Isolated v4 regression: test:google 48/48, test:auth 42/42, test:routing 39/39, test:golden 26/26, test:reliability 6/6. Real Google sign-in NOT tested (no Google Cloud client configured). |

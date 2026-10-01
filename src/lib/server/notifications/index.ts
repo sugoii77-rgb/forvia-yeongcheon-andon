@@ -65,7 +65,7 @@ function resolveRecipients(event: AndonEvent): NotificationRecipient[] {
   return primaryRecipients(event.departmentCode).map((u) => ({
     name: u.name,
     departmentCode: u.departmentCode,
-    address: u.kakaoId,
+    address: u.kakaoRecipientId,
   }));
 }
 

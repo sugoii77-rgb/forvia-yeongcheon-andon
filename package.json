@@ -22,10 +22,12 @@
     "test:reliability": "node scripts/test-reliability.ts",
     "test:routing": "node scripts/test-routing.ts",
     "masterdata": "node scripts/masterdata.ts",
-    "test:auth": "node scripts/test-auth.ts"
+    "test:auth": "node scripts/test-auth.ts",
+    "test:google": "node scripts/test-google.ts"
   },
   "dependencies": {
     "next": "16.3.8",
+    "openid-client": "6.8.8",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
@@ -35,6 +37,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.8",
+    "jose": "6.2.12",
     "typescript": "^5"
   }
 }

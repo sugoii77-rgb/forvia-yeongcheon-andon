@@ -45,6 +45,7 @@ next-env.d.ts
 
 # ANDON runtime data (SQLite DB, uploaded photos, backups)
 /data/
+/work/
 
 # local Claude Code / editor settings
 /.claude/

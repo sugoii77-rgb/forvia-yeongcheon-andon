@@ -92,7 +92,7 @@ npm run backup        # → data\backups\andon-<시각>.db  (운영 중 실행 �
 
 ## 7. 기준정보 관리 · Master data (users, routing)
 
-서버 실행 중에도 가능 (관리자 전용). `<user>` = 사용자 ID 또는 이메일. 사용자는 **삭제하지 말고 비활성화**하세요 (이력 보존).
+서버 실행 중에도 가능 (관리자 전용). `<user>` = 사용자 ID, 로컬 로그인 이메일, 또는 `emp:<사번>`. 사용자는 **삭제하지 말고 비활성화**하세요 (이력 보존).
 Works while the server runs. Never delete users — deactivate them (history must stay intact).
 
 ```powershell
@@ -104,6 +104,8 @@ npm run masterdata -- user activate 12
 npm run masterdata -- user reset-password hong@example.com    # 임시 비밀번호 1회 표시, 기존 로그인 종료
 npm run masterdata -- user add "T-GDI 2 작업자" UAP OPERATOR  # 로그인 없는 계정 (데모/작업자)
 npm run masterdata -- user deactivate-test-accounts        # 테스트 계정(*@andon.test) 정리
+npm run masterdata -- user employee-id hong@example.com A1234   # 사번 지정 (한 번 지정하면 변경 불가)
+npm run masterdata -- user unlink-google emp:A1234         # Google 로그인 연결 해제 (분실 등), 로그인 종료
 npm run masterdata -- route add OTHER TGDI1 5 PCL "포장 라벨은 물류"   # 공정별 라우팅 규칙
 npm run masterdata -- route add MATERIAL MUF1 UAP            # 라인별 라우팅 규칙
 npm run masterdata -- route deactivate 3
@@ -128,3 +130,28 @@ npm run masterdata -- category default SAFETY UAP            # 유형 기본 담
 - [ ] `npm run build` → `npm run serve` → 휴대폰에서 `http://<서버IP>:<PORT>/operator` 접속 확인
 - [ ] 자동 시작 등록 (4절)
 - [ ] 현황판 모니터: 브라우저 전체화면(F11), 화면 보호기/절전 해제
+
+## 9. Google 로그인 설정 · Google sign-in setup (선택 / optional)
+
+Google 로그인은 **추가** 로그인 방식입니다. 설정하지 않으면 버튼이 보이지 않고 로컬 로그인만 사용됩니다.
+
+1. Google Cloud Console → *APIs & Services* → *OAuth consent screen* 설정 → *Credentials* →
+   **Create OAuth client ID** → 유형 **Web application**.
+2. **Authorized redirect URI** 에 정확히 입력:
+   - 이 PC에서 시험: `http://localhost:3100/api/auth/google/callback`
+   - 공장 휴대폰용: `https://<서버 HTTPS 주소>/api/auth/google/callback`
+     (Google은 localhost 외에는 **HTTPS만** 허용합니다.)
+3. 서버의 `C:andon.env` 에만 입력 (git에 올라가지 않음, 채팅/메일로 보내지 마세요):
+   ```
+   GOOGLE_CLIENT_ID=...
+   GOOGLE_CLIENT_SECRET=...
+   GOOGLE_REDIRECT_URI=http://localhost:3100/api/auth/google/callback
+   ```
+   HTTPS 운영 시 `COOKIE_SECURE=true` 도 설정.
+4. `npm run stop` → `npm run serve` (재시작) → `/login` 에 "Google로 로그인" 버튼이 보이면 설정 완료.
+
+- 사용자는 **같은 주소**(redirect URI의 주소)로 접속해야 합니다 (예: localhost 설정이면 localhost로 접속).
+- 처음 Google로 로그인한 사람은 **직원 정보 등록**(사번, 이름, 부서, 휴대전화, 카카오톡 ID)을 합니다 → 담당자(RESPONDER).
+- 기존 로컬 계정 사용자는 로그인 후 **내 정보 → 비밀번호 확인 → Google 계정 연결**.
+  Google 이메일이 같아도 자동 연결되지 않습니다.
+- 카카오톡 ID는 연락 참고용이며 알림 발송 주소로 사용되지 않습니다.

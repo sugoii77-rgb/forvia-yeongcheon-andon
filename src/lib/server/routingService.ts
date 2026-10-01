@@ -139,11 +139,19 @@ export function eligibleResponders(eventDepartmentCode: string): ResponderSummar
     .map((r) => summary(toCandidate(r)));
 }
 
-/** First responders of a department: receive the initial notification (escalation roles come later). */
-export function primaryRecipients(eventDepartmentCode: string): (ResponderSummary & { kakaoId: string | null })[] {
+/**
+ * First responders of a department: receive the initial notification (escalation roles come later).
+ * The KakaoTalk address comes ONLY from a verified, active user_notification_channel row — never from
+ * app_user.kakao_id, which is a manually typed contact reference and not a verified recipient.
+ */
+export function primaryRecipients(eventDepartmentCode: string): (ResponderSummary & { kakaoRecipientId: string | null })[] {
   return getDb()
     .prepare(
-      `SELECT u.id, u.name, u.department_code, u.role, u.kakao_id FROM app_user u
+      `SELECT u.id, u.name, u.department_code, u.role,
+              (SELECT c.recipient_id FROM user_notification_channel c
+               WHERE c.user_id = u.id AND c.provider = 'KAKAO' AND c.verified = 1 AND c.active = 1
+               ORDER BY c.id LIMIT 1) AS kakao_recipient_id
+       FROM app_user u
        WHERE u.active = 1 AND u.role = 'RESPONDER' AND u.department_code = ? ORDER BY u.id`,
     )
     .all(effectiveDepartment(eventDepartmentCode))
@@ -152,7 +160,7 @@ export function primaryRecipients(eventDepartmentCode: string): (ResponderSummar
       name: r.name as string,
       role: r.role as RoleCode,
       departmentCode: r.department_code as string,
-      kakaoId: (r.kakao_id as string | null) ?? null,
+      kakaoRecipientId: (r.kakao_recipient_id as string | null) ?? null,
     }));
 }
 
