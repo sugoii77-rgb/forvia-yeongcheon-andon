@@ -9,6 +9,7 @@ import {
   DEPARTMENTS,
   ESCALATION_POLICIES,
   ESCALATION_STEPS,
+  LEGACY_DEPARTMENT_SUCCESSORS,
   LINES,
   PLANTS,
   PROCESSES,
@@ -221,9 +222,121 @@ function migrateV2(db: DatabaseSync) {
   `);
 }
 
-const MIGRATIONS: { version: number; up: (db: DatabaseSync) => void }[] = [
+/**
+ * v3 — Milestone 2B: departments ME / MT / UAP / QC / PCL, user registration & sessions.
+ *  - department.display_code / sort_order / successor_code. Old departments (QUALITY, …) stay as
+ *    INACTIVE rows with successor_code → historical events keep their original department code.
+ *  - Master data (users, category defaults, routing rules, escalation scope) moves to the new codes.
+ *  - app_user rebuilt: name no longer unique (people share names), email (unique, normalized),
+ *    created_at, source. Ids are preserved, so history user_id references stay valid.
+ *  - user_identity (auth provider + subject + password hash; LOCAL now, GOOGLE/KAKAO later),
+ *    user_session (hashed session tokens), user_notification_channel (prepared, unused).
+ *  - andon_transition.user_department / user_role: snapshot of the actor at the time of the action.
+ * Never touches andon_event / andon_transition / notification_log rows.
+ */
+function migrateV3(db: DatabaseSync) {
+  db.exec(`
+    ALTER TABLE department ADD COLUMN display_code TEXT;
+    ALTER TABLE department ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE department ADD COLUMN successor_code TEXT REFERENCES department(code);
+  `);
+  const dep = db.prepare(
+    `INSERT INTO department (code, name_ko, name_en, display_code, sort_order, active) VALUES (?, ?, ?, ?, ?, 1)
+     ON CONFLICT(code) DO UPDATE SET display_code = excluded.display_code, sort_order = excluded.sort_order, active = 1`,
+  );
+  for (const d of DEPARTMENTS) dep.run(d.code, d.nameKo, d.nameEn, d.displayCode, d.sortOrder);
+
+  // Legacy departments: keep the rows (history refers to them), deactivate, point to the successor.
+  const legacy = db.prepare(
+    "UPDATE department SET active = 0, successor_code = ?, display_code = COALESCE(display_code, code), sort_order = 100 WHERE code = ?",
+  );
+  const remap = (table: string, column: string, from: string, to: string) =>
+    db.prepare(`UPDATE ${table} SET ${column} = ? WHERE ${column} = ?`).run(to, from);
+  for (const [oldCode, newCode] of Object.entries(LEGACY_DEPARTMENT_SUCCESSORS)) {
+    legacy.run(newCode, oldCode);
+    // Configuration only (not history):
+    remap("category", "default_department", oldCode, newCode);
+    remap("routing_rule", "department_code", oldCode, newCode);
+    remap("escalation_policy", "department_code", oldCode, newCode);
+  }
+
+  db.exec(`
+    CREATE TABLE app_user_v3 (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      name            TEXT NOT NULL,
+      email           TEXT,                    -- normalized (trim + lowercase); NULL for accounts without login
+      department_code TEXT NOT NULL REFERENCES department(code),
+      role            TEXT NOT NULL REFERENCES role(code),
+      kakao_id        TEXT,                    -- legacy placeholder; see user_notification_channel
+      active          INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      source          TEXT NOT NULL DEFAULT 'SEED' CHECK (source IN ('SEED', 'REGISTRATION', 'ADMIN')),
+      created_at      TEXT
+    );
+  `);
+  const successors = JSON.stringify(LEGACY_DEPARTMENT_SUCCESSORS);
+  db.prepare(
+    `INSERT INTO app_user_v3 (id, name, email, department_code, role, kakao_id, active, source, created_at)
+     SELECT id, name, NULL, COALESCE(json_extract(?, '$."' || department_code || '"'), department_code),
+            role, kakao_id, active, 'SEED', NULL
+     FROM app_user`,
+  ).run(successors);
+  db.exec(`
+    DROP TABLE app_user;
+    ALTER TABLE app_user_v3 RENAME TO app_user;
+    CREATE UNIQUE INDEX ux_app_user_email ON app_user(email) WHERE email IS NOT NULL;
+    CREATE INDEX ix_app_user_department ON app_user(department_code, active);
+
+    -- Authentication identities: how a person proves who they are. One user may later have several
+    -- (LOCAL password now; GOOGLE / KAKAO login later). Routing never looks at this table.
+    CREATE TABLE user_identity (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id       INTEGER NOT NULL REFERENCES app_user(id),
+      provider      TEXT NOT NULL CHECK (provider IN ('LOCAL', 'GOOGLE', 'KAKAO')),
+      subject       TEXT NOT NULL,           -- LOCAL: normalized email; GOOGLE/KAKAO: provider user id
+      password_hash TEXT,                    -- LOCAL only: scrypt$N$r$p$salt$hash — never sent to clients
+      created_at    TEXT NOT NULL,
+      last_login_at TEXT,
+      UNIQUE (provider, subject)
+    );
+    CREATE INDEX ix_user_identity_user ON user_identity(user_id);
+
+    -- Server-side sessions. Only a SHA-256 hash of the cookie token is stored.
+    CREATE TABLE user_session (
+      token_hash   TEXT PRIMARY KEY,
+      user_id      INTEGER NOT NULL REFERENCES app_user(id),
+      created_at   TEXT NOT NULL,
+      expires_at   TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      revoked_at   TEXT,
+      device_id    TEXT,
+      client_ip    TEXT,
+      user_agent   TEXT
+    );
+    CREATE INDEX ix_user_session_user ON user_session(user_id);
+
+    -- Notification identities (PREPARED, NOT USED): where a person receives messages. Separate from
+    -- authentication: a Google login e-mail is never assumed to be a KakaoTalk recipient.
+    CREATE TABLE user_notification_channel (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id      INTEGER NOT NULL REFERENCES app_user(id),
+      provider     TEXT NOT NULL CHECK (provider IN ('KAKAO', 'SMS', 'EMAIL')),
+      recipient_id TEXT NOT NULL,
+      verified     INTEGER NOT NULL DEFAULT 0 CHECK (verified IN (0, 1)),
+      active       INTEGER NOT NULL DEFAULT 0 CHECK (active IN (0, 1)),
+      created_at   TEXT NOT NULL,
+      UNIQUE (provider, recipient_id)
+    );
+
+    ALTER TABLE andon_transition ADD COLUMN user_department TEXT;
+    ALTER TABLE andon_transition ADD COLUMN user_role TEXT;
+  `);
+}
+
+const MIGRATIONS: { version: number; up: (db: DatabaseSync) => void; foreignKeysOff?: boolean }[] = [
   { version: 1, up: (db) => db.exec(V1_SQL) },
   { version: 2, up: migrateV2 },
+  // Rebuilds app_user, which andon_transition references → FKs off during the rebuild, checked after.
+  { version: 3, up: migrateV3, foreignKeysOff: true },
 ];
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
 
@@ -251,10 +364,19 @@ function migrate(db: DatabaseSync) {
   if (pending.length === 0) return;
   if (current > 0) backupBeforeMigration(db, current);
   for (const m of pending) {
-    transaction(db, () => {
-      m.up(db);
-      db.exec(`PRAGMA user_version = ${m.version}`);
-    });
+    // PRAGMA foreign_keys cannot change inside a transaction: switch it off around the migration
+    // and verify every foreign key before switching it back on.
+    if (m.foreignKeysOff) db.exec("PRAGMA foreign_keys = OFF;");
+    try {
+      transaction(db, () => {
+        m.up(db);
+        const fk = db.prepare("PRAGMA foreign_key_check").all();
+        if (fk.length) throw new Error(`foreign key violations in migration v${m.version}: ${JSON.stringify(fk.slice(0, 5))}`);
+        db.exec(`PRAGMA user_version = ${m.version}`);
+      });
+    } finally {
+      if (m.foreignKeysOff) db.exec("PRAGMA foreign_keys = ON;");
+    }
     console.info(`[db] migrated schema to v${m.version}`);
   }
   const fk = db.prepare("PRAGMA foreign_key_check").all();
@@ -275,8 +397,10 @@ function seedPlantsAndRoles(db: DatabaseSync) {
 function seedMasterData(db: DatabaseSync) {
   seedPlantsAndRoles(db);
 
-  const dep = db.prepare("INSERT OR IGNORE INTO department (code, name_ko, name_en) VALUES (?, ?, ?)");
-  for (const d of DEPARTMENTS) dep.run(d.code, d.nameKo, d.nameEn);
+  const dep = db.prepare(
+    "INSERT OR IGNORE INTO department (code, name_ko, name_en, display_code, sort_order) VALUES (?, ?, ?, ?, ?)",
+  );
+  for (const d of DEPARTMENTS) dep.run(d.code, d.nameKo, d.nameEn, d.displayCode, d.sortOrder);
 
   const cat = db.prepare(
     "INSERT OR IGNORE INTO category (code, name_ko, name_en, default_department, sort_order) VALUES (?, ?, ?, ?, ?)",

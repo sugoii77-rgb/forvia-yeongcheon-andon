@@ -3,7 +3,7 @@
 > **Source of truth for AI-to-AI and human handover.** Update this file at the end of every
 > meaningful milestone (sections 11–16 at minimum).
 >
-> Last updated: **2026-10-01** · Milestone 1 — **done** · Milestone 2 — H1 + H2 done · **Milestone 2A (responsibility & routing foundation) — done**
+> Last updated: **2026-10-01** · Milestone 1 — **done** · Milestone 2 — H1 + H2 done · 2A routing foundation — done · **2B registration & authentication — done**
 
 ---
 
@@ -63,6 +63,8 @@ Worker detects issue → creates ANDON → event stored → dashboard turns RED
 - **Real-time = polling** (dashboard 2 s, responder list 3 s, detail 5 s). Simple and survives
   server restarts/network hiccups without reconnection logic. SSE can be added later if needed.
 - **History is append-only**: `andon_transition` rows can't be updated or deleted (SQLite triggers).
+- **Authentication (2B):** local accounts (e-mail + password, scrypt) and server-side sessions
+  (`auth.ts`, HttpOnly cookie). Responder actions take the identity from the session only.
 - **Responsibility & identity are server-side** (`routingService.ts`): routing Line + Process +
   Category → department at creation; every ACK / ACTION / CLOSE is validated against master data and
   recorded with user id, device id, IP and user agent. UI components only display server decisions.
@@ -96,14 +98,16 @@ C:\andon\  (git repository root)
 ├─ scripts/
 │  ├─ supervisor.ts        ← keeps the server running (npm run serve)
 │  ├─ stop.ts / status.ts  ← npm run stop / npm run status
-│  ├─ masterdata.ts        ← list / change users, routing rules, category defaults (npm run masterdata)
+│  ├─ masterdata.ts        ← ADMIN: users (role / department / active / password reset), routing rules (npm run masterdata)
 │  ├─ lib/runtime.ts       ← shared PID / port / health helpers for the three scripts above
 │  ├─ windows/install-autostart.ps1, uninstall-autostart.ps1  ← scheduled task "Digital ANDON"
 │  ├─ seed-demo.mts        ← demo data (npm run seed [-- --reset])
 │  ├─ backup.ts            ← online DB backup (npm run backup)
 │  ├─ test-golden-path.ts  ← end-to-end Golden Path API test, 26 checks (npm run test:golden)
 │  ├─ test-reliability.ts  ← photo-failure tests, 6 checks (npm run test:reliability)
-│  └─ test-routing.ts      ← routing / identity / device audit: 10 unit + 28 API checks (npm run test:routing)
+│  ├─ test-routing.ts      ← routing / identity / device audit: 10 unit + 29 API checks (npm run test:routing)
+│  ├─ test-auth.ts         ← registration / login / session / authorization: 42 checks (npm run test:auth)
+│  └─ lib/testkit.ts       ← test helpers: logged-in throw-away accounts, admin CLI calls
 ├─ data/                   ← runtime data, git-ignored (created automatically)
 │  ├─ andon.db             ← SQLite database (+ -wal / -shm files)
 │  ├─ uploads/             ← ANDON photos
@@ -118,15 +122,19 @@ C:\andon\  (git repository root)
    │  ├─ respond/page.tsx         C. Responder inbox (by department)
    │  ├─ respond/[id]/page.tsx    C. Event detail + ACK / ACTION / CLOSE (notification link target)
    │  ├─ history/page.tsx         D. History & analytics
+   │  ├─ register/page.tsx        회원가입 (name, e-mail, department, password)
+   │  ├─ login/page.tsx           로그인 (?next= returns to the page, e.g. an ANDON from a notification link)
+   │  ├─ me/page.tsx              내 정보 + 로그아웃
    │  └─ api/
-   │     ├─ andons/route.ts                 GET list (scope=board|active|all), POST create (multipart)
-   │     ├─ andons/[id]/route.ts            GET detail + transitions + notifications + responsibility + eligibleResponders
-   │     ├─ andons/[id]/transition/route.ts POST {action, userId | userName, comment}; header x-andon-device
+   │     ├─ andons/route.ts                 GET list (scope=board|active|all, mine=1 = my department via session), POST create (multipart, no login)
+   │     ├─ andons/[id]/route.ts            GET detail + transitions + notifications + responsibility + eligibleResponders + viewer.canRespond
+   │     ├─ andons/[id]/transition/route.ts POST {action, comment} — responder = session user (401 without); header x-andon-device
    │     ├─ stats/route.ts                  GET ?days=N
    │     ├─ meta/route.ts                   GET master data
    │     ├─ photos/[file]/route.ts          GET photo
-   │     └─ health/route.ts                 GET DB health (200 / 503)
-   ├─ components/  TopBar, StatusBadge, ResponderPicker
+   │     ├─ health/route.ts                 GET DB health (200 / 503)
+   │     └─ auth/register|login|logout|me   POST register / login / logout, GET current user
+   ├─ components/  TopBar (shows login / user), StatusBadge
    └─ lib/
       ├─ domain.ts         statuses, state machine rules, shared types (client + server)
       ├─ client.ts         browser helpers: api(), polling, formatting, local storage
@@ -136,7 +144,8 @@ C:\andon\  (git repository root)
          ├─ db.ts          connection, schema, pragmas, master-data bootstrap
          ├─ masterData.ts  initial lines/processes/categories/departments/users
          ├─ andonService.ts  create / transition / queries / stats  (ALL state changes here)
-         ├─ routingService.ts  responsibility, eligible responders, recipients, responder validation
+         ├─ routingService.ts  responsibility, department successors, eligible responders, recipients, responder validation
+         ├─ auth.ts        registration, scrypt password hashing, login throttling, sessions, cookies, origin check
          ├─ errors.ts      AndonError, AuditInfo
          ├─ notifications/index.ts  NotificationProvider + Mock + notifyAndonCreated()
          ├─ photos.ts      photo save/read (type + size checks, path-traversal safe)
@@ -157,26 +166,29 @@ C:\andon\  (git repository root)
 - `ACTION` and `CLOSE` **require a comment** (action note / corrective action).
 - Invalid transition → HTTP 409. Concurrent updates are guarded by `UPDATE … WHERE status = <read status>`.
 
-**Tables** (`src/lib/server/db.ts`, schema **v2**)
+**Tables** (`src/lib/server/db.ts`, schema **v3**)
 
 | Table | Purpose |
 |---|---|
 | `plant` | YC Yeongcheon (single plant for now) |
 | `line` | T-GDI 1, T-GDI 2, Muffler 1 — `plant_code` → plant |
 | `process` | processes per line |
-| `department` | QUALITY, PRODUCTION, MAINTENANCE, LOGISTICS, EHS |
+| `department` | **ME, MT, UAP, QC, PCL** (active); `display_code` ("PC&L"), `sort_order`, `successor_code`. Pre-v3 codes QUALITY, PRODUCTION, MAINTENANCE, LOGISTICS, EHS stay as **inactive** rows with a successor |
 | `category` | issue categories; `default_department` = routing when no rule matches |
 | `role` | OPERATOR, RESPONDER, GAP_LEADER, SUPERVISOR, ENGINEER, PLANT_MANAGER; `can_respond`, `escalation_level` (prepared) |
-| `app_user` | id, name (unique), department_code → department, role → role, active, kakao_id (reserved). Never delete — deactivate |
+| `app_user` | id, name (not unique), email (unique, normalized; NULL = no login), department_code → department, role → role, active, source (SEED / REGISTRATION / ADMIN), created_at. Never delete — deactivate |
+| `user_identity` | how a person logs in: provider (LOCAL now; GOOGLE / KAKAO later), subject (LOCAL: e-mail), password_hash (scrypt, LOCAL only), last_login_at; unique (provider, subject) |
+| `user_session` | server-side sessions: SHA-256 of the cookie token, user_id, expires_at, revoked_at, device / IP / user agent at login |
+| `user_notification_channel` | **prepared, unused**: where a person receives messages (provider KAKAO / SMS / EMAIL, recipient_id, verified, active) — separate from login identity |
 | `routing_rule` | category + line [+ process] → department override; `active`; unique per (category, line, process); trigger: process must belong to line |
 | `andon_event` | **current state** + cached timestamps + `client_request_id` (UNIQUE, idempotency) + `department_code` and `routing_rule_id` (decided at creation, never re-routed) + `escalation_level` (prepared, always 0) |
-| `andon_transition` | **append-only history** (UPDATE/DELETE blocked by triggers): action, from/to status, `user_name`, `user_id`, comment, created_at, `device_id`, `client_ip`, `user_agent` |
+| `andon_transition` | **append-only history** (UPDATE/DELETE blocked by triggers): action, from/to status, `user_name`, `user_id`, `user_department` + `user_role` (snapshot at the time of the action, v3), comment, created_at, `device_id`, `client_ip`, `user_agent` |
 | `notification_log` | every notification attempt: provider, recipient, SENT/FAILED, message, error |
 | `escalation_policy`, `escalation_step` | **prepared, inactive** escalation model (see below) |
 
 - ANDON ID format: `AND-YYYYMMDD-NNN` (KST date, daily sequence).
 - All timestamps stored as UTC ISO-8601 strings; displayed in Asia/Seoul.
-- **Migrations:** `PRAGMA user_version` = applied schema version (now **2**). `db.ts` runs pending
+- **Migrations:** `PRAGMA user_version` = applied schema version (now **3**). `db.ts` runs pending
   migrations in order, each in its own transaction, after writing
   `data/backups/andon-pre-migration-v<from>-to-v<to>-<time>.db`. A DB newer than the app is refused.
   Never edit a released migration; add a new one.
@@ -199,19 +211,66 @@ Line + Process + Category ─► most specific ACTIVE routing_rule
 ```
 
 Deterministic: at most one rule per (category, line, process) (unique index); the result never depends
-on rule order. Seeded override: `기타` at T-GDI 1 / Packing → Logistics.
+on rule order. Seeded override: `기타` at T-GDI 1 / Packing → PCL.
 
-**Responder identity** (`validateResponder`): every ACK / ACTION / CLOSE must name a user (`userId`
-preferred, `userName` accepted) that exists (400 `UNKNOWN_RESPONDER`), is active (403
-`INACTIVE_RESPONDER`), has a role with `can_respond` (403 `ROLE_NOT_ALLOWED`, e.g. OPERATOR) and
-belongs to the event's responsible department (403 `WRONG_DEPARTMENT`). If both id and name are sent
-they must match (400 `RESPONDER_MISMATCH`). Rejected attempts change nothing. Escalation roles of the
-same department (GAP_LEADER, SUPERVISOR, ENGINEER, PLANT_MANAGER) may also respond.
+**Department model (v3) — Category ≠ Department.** A *category* says WHAT happened (QUALITY,
+MAINTENANCE, PRODUCTION, MATERIAL, SAFETY, OTHER). A *department* says WHO is responsible. Routing maps
+one to the other; departments are never used as categories.
+
+| Code | Shown as | Name | Category defaults routed here |
+|---|---|---|---|
+| ME | ME · 생산기술 | Production / Manufacturing Engineering | none yet (add routing rules when the plant defines them) |
+| MT | MT · 보전 | Maintenance | MAINTENANCE |
+| UAP | UAP · 생산 | Production | PRODUCTION, OTHER, SAFETY (*) |
+| QC | QC · 품질 | Quality | QUALITY |
+| PCL | PC&L · 물류 | Production Control & Logistics | MATERIAL (+ rule: 기타 at T-GDI 1 / Packing) |
+
+(*) SAFETY → UAP and old EHS → UAP are prototype decisions (there is no safety department among the
+five) — **to be confirmed by the plant**; change with `npm run masterdata -- category default SAFETY <DEPT>`.
+
+Events created before v3 keep their original code (e.g. `QUALITY`); the inactive department row points
+to its successor (QUALITY → QC, MAINTENANCE → MT, PRODUCTION → UAP, LOGISTICS → PCL, EHS → UAP).
+Eligibility, the inbox and notifications follow the successor, so those events stay actionable by the
+new department without rewriting history. Display: "QUALITY · 품질" (original code is visible).
+
+**Authentication model (2B, LOCAL only)**
+- **Register** (`/register`, `POST /api/auth/register`): name, e-mail, department (one of the five),
+  password + confirmation. Server-side validation: e-mail normalized (trim + lowercase) and unique
+  (unique index — also safe against simultaneous registrations); password 8–128 chars with a letter
+  and a digit; department must be active. **Role is always RESPONDER, active = true** — a role sent by
+  the client is ignored. GAP_LEADER / SUPERVISOR / ENGINEER / PLANT_MANAGER / OPERATOR are assigned by
+  an administrator only (`npm run masterdata -- user role <user> <ROLE>`). Registration logs the user in.
+- **Passwords**: Node `crypto.scrypt` (N=2^15, r=8, p=3, 16-byte salt, 64-byte key; parameters stored
+  with the hash), compared with `timingSafeEqual`. Never stored or logged in plaintext, never returned.
+- **Login** (`/login`, `POST /api/auth/login`): same error for unknown e-mail and wrong password (and a
+  dummy hash for unknown e-mails so timing does not reveal accounts); inactive accounts get 403;
+  5 failures per e-mail + IP within 15 min → 429 (in memory). Every login creates a NEW random 256-bit
+  token (no session fixation) and revokes the session cookie sent with the request.
+- **Session**: cookie `andon_session` — HttpOnly, SameSite=Lax (so opening a notification link keeps
+  the user logged in), Path=/, Secure on HTTPS (`COOKIE_SECURE`). Only the SHA-256 of the token is
+  stored (`user_session`). Lifetime `SESSION_TTL_HOURS` (default 7 days). The user's department, role
+  and active flag are read from the DB on **every** request, so deactivation or a role change applies
+  immediately. Logout revokes the session server-side. State-changing auth requests reject a foreign
+  `Origin` header (403). Nothing auth-related is stored in localStorage.
+- **Future identity providers**: a Google or Kakao login adds a `user_identity` row
+  (provider = GOOGLE / KAKAO, subject = provider user id) for the same `app_user`. Routing and
+  eligibility only use `app_user` (department, role, active), never the provider.
+- **Notification identity is separate**: `user_notification_channel` (prepared) will hold e.g. the
+  KakaoTalk recipient id. A Google e-mail is never assumed to be a Kakao recipient.
+
+**Responder identity** (`validateResponder`): ACK / ACTION / CLOSE over HTTP require a session
+(401 `AUTH_REQUIRED`); the responder is **always the session user**. A body that names a different
+user is rejected (400 `RESPONDER_MISMATCH`). The user must be active (403 `INACTIVE_RESPONDER`), have
+a role with `can_respond` (403 `ROLE_NOT_ALLOWED`, e.g. OPERATOR) and belong to the event's current
+responsible department (403 `WRONG_DEPARTMENT`). Rejected attempts change nothing. Escalation roles of
+the same department may also respond. A newly registered RESPONDER is eligible immediately — no
+routing change needed. (Name-based identity remains only for server-internal callers: the demo seeder.)
 
 **Device audit**: each browser creates a random device id once (`localStorage` `andon.device.id`)
 and sends it as header `x-andon-device` on every request. The server stores it with the client IP
 (as reported via `x-forwarded-for` — not authenticated) and the user agent on every history row
-(CREATE, ACKNOWLEDGE, ACTION, CLOSE). The responder screen shows them in the history timeline.
+(CREATE, ACKNOWLEDGE, ACTION, CLOSE), plus the actor's user id, name, department and role at that time.
+The responder screen shows them in the history timeline.
 
 **Escalation model — prepared, NOT active.** Intended flow:
 `OPEN → RESPONDER notified → no ACK after threshold → GAP_LEADER → SUPERVISOR / ENGINEER → PLANT_MANAGER`.
@@ -233,6 +292,8 @@ See `.env.example`. Copy to `.env`. No secrets in source code.
 
 | Variable | Default | Meaning |
 |---|---|---|
+| `SESSION_TTL_HOURS` | `168` | login session lifetime (hours) |
+| `COOKIE_SECURE` | `auto` | `auto` = Secure flag only on HTTPS; `true` / `false` to force |
 | `PORT` | `3000` | server port used by `npm run serve` (this dev PC uses `3100`: port 3000 is taken by another app) |
 | `HOST` | (all interfaces) | optional bind address for `npm run serve` |
 | `DATABASE_PATH` | `./data/andon.db` | SQLite file |
@@ -282,12 +343,18 @@ npm run dev       # development mode with hot reload
 | `npm run test:golden` | **end-to-end Golden Path against a running server** (set `BASE_URL`, default `http://localhost:3000`). 26 checks: create, idempotent duplicate, validation, board RED, photo, path traversal, notification log, illegal transitions (409), ACK/ACTION/CLOSE, full history, stats delta. Creates one `[TEST]` event (left CLOSED). |
 | `npm run test:reliability` | 6 checks: ANDON is still created (RED, no photo, warning returned) when the photo is GIF / has no MIME type / is 12 MB; valid photo still attached; no photo OK. Creates 5 `[TEST]` events and closes them. |
 
-| `npm run test:routing` | 10 unit checks of the routing resolver / eligibility (no server) + 28 API checks: routing of every category, process-level override, eligible-responder list, unknown name / unknown id / inactive / wrong department / operator role / id-name mismatch / missing user rejected without side effects, valid responder by id and by name, device id + IP + user agent in history, invalid device id dropped, server-side inbox filter, full ordered history. Creates 10 `[TEST] routing` events and closes them. |
+| `npm run test:routing` | 10 unit checks of the routing resolver / eligibility (no server) + 29 API checks: routing of every category, process-level override (→ PCL, shown "PC&L · 물류"), eligible-responder list, no session → 401, body naming another user (id or name) → rejected, wrong department → 403 without side effects, session responder ACK with user id / name / department / role / device / IP / user agent in history, GAP_LEADER (set by admin) may act, invalid device id dropped, server-side inbox (`mine=1`, incl. pre-v3 QUALITY events), pre-v3 event handled by successor department, full ordered history. |
+| `npm run test:auth` | 42 checks — registration (valid, role in body ignored, no secrets in responses, cookie flags, duplicate e-mail incl. case variant, 5 simultaneous registrations → 1 account, invalid e-mail / department / inactive pre-v3 department / short password / no digit / mismatch / empty name), login (valid, wrong password, unknown user with identical message, session fixation, logout + cookie replay, forged token, foreign Origin → 403, inactive → 403, 6th failure → 429), authorization & routing (new QC / MT / PC&L responders automatically eligible, QC cannot ACK MT, body spoofing rejected, no session → 401, audit fields, deactivated after login → 403, OPERATOR role → 403, admin department change moves eligibility). |
 
-> **Test-data contamination (known, not fixed yet):** all three API tests write real `[TEST]` events
-> into the database they run against (Golden Path +1, reliability +5, routing +10 per run). They are
-> closed again, but they count in statistics, averages and repeat TOP 5. Before a demo, stop the
-> server and run `npm run seed -- --reset`. A separate test database is a pending task.
+> **Test accounts:** since 2B every API test registers throw-away accounts (`*@andon.test`, random
+> password never stored or printed) and deactivates all `*@andon.test` accounts at the end via the
+> masterdata CLI — so the tests must run **on the server PC** and **one at a time**.
+
+> **Test-data contamination (known, not fixed yet):** the API tests write real `[TEST]` events and
+> (deactivated) `*@andon.test` users into the database they run against (Golden Path +1 event,
+> reliability +5, routing +10, auth +3 per run). Events are closed again but count in statistics,
+> averages and repeat TOP 5. Before a demo, stop the server and run `npm run seed -- --reset`.
+> A separate test database is a pending task.
 
 Supervisor recovery tests (manual, see change log 2026-10-01 M2): kill server → restart; stale
 server from a previous run → stopped; second supervisor → refused; failing health → restart;
@@ -337,6 +404,19 @@ Manual UI test: open `/operator` on a phone-width browser, `/dashboard` in anoth
 - [x] Escalation model prepared (tables, roles, levels) — inactive, thresholds unset
 - [x] Versioned schema migrations with automatic pre-migration backup (v1 → v2)
 
+**Milestone 2B — User registration & authentication** (LOCAL only; no Google / Kakao, no escalation, no CANCEL)
+- [x] Departments normalized to ME / MT / UAP / QC / PCL ("PC&L"); pre-v3 departments kept inactive with successors
+- [x] Registration (name, e-mail, department, password + confirm) → active RESPONDER of that department
+- [x] Login / logout / current user; server-side sessions (hashed tokens, HttpOnly SameSite=Lax cookie)
+- [x] Responder actions use the logged-in user automatically (no name picker); body identity never trusted
+- [x] Newly registered responders are eligible for their department's ANDONs immediately (existing routing)
+- [x] Audit adds the actor's department and role at the time of the action
+- [x] Pages: /register, /login, /me (내 정보 + 로그아웃); TopBar shows login state; mobile layout
+- [x] Data model prepared for Google / Kakao login (`user_identity`) and for notification channels
+      (`user_notification_channel`), both separate from routing
+- [x] Admin CLI: role / department / activation by id or e-mail, password reset, test-account cleanup
+- [x] Operator ANDON CALL unchanged — no login needed
+
 **Verified on 2026-10-01** (production build, Node 24.15, Windows 11):
 `typecheck` ✔ · `lint` ✔ · `build` ✔ · `test:golden` 26/26 ✔ (earlier reports said "25/25" — that was a miscount; the test has 26 checks) · UI golden path in browser
 (operator at 375 px → dashboard RED → responder ACK → dashboard YELLOW without reload → ACTION →
@@ -355,10 +435,25 @@ data intact, operator retry succeeds ✔ · backup script ✔.
 - **No sound** on the dashboard for new RED events yet (browsers block autoplay without interaction).
 - Photos are resized on the device; photos sent by other clients (API) are stored as received
   (≤ 10 MB, JPG/PNG/WEBP/HEIC). File content is not verified against the declared type.
-- **Device identity is not authentication.** The device id lives in browser storage (new id after
-  clearing data / other browser) and the IP is taken from `x-forwarded-for`, which a client can forge.
-  Anyone on the LAN can still pick any eligible name — validation guarantees the name is *valid*, not
-  that the person is who they claim to be. Real login (SSO / PIN) is still pending.
+- **Authentication is a prototype (LOCAL accounts), not enterprise SSO.** Limitations:
+  - **Plain HTTP on the LAN**: the session cookie and the password at login travel unencrypted and can
+    be sniffed on the Wi-Fi. Use HTTPS (then `COOKIE_SECURE=true`) before production.
+  - Anyone can self-register with any e-mail and pick any department (no e-mail verification, no
+    approval step). The role is fixed to RESPONDER, but a person can register for a department they do
+    not belong to. Mitigation today: administrators review `npm run masterdata -- list` and deactivate.
+  - Login throttling is in memory, per e-mail + IP (reset on restart; distributed guessing is not limited).
+    Registration is not rate-limited. Registration reveals whether an e-mail is already registered (409).
+  - No self-service password change / reset; administrators reset with `user reset-password`.
+  - Sessions last 7 days with no idle timeout and no "log out everywhere" (password reset does end all
+    sessions of that user). Old sessions are not purged from `user_session`.
+  - Event detail shows names of eligible responders to anyone on the LAN.
+- **Device identity is not authentication**: the device id lives in browser storage and the IP comes
+  from `x-forwarded-for`, which a client can forge. They are audit hints only.
+- **SAFETY → UAP and EHS → UAP are prototype decisions** (no safety department among the five) — confirm.
+- **No category routes to ME** yet — add routing rules once the plant defines ME's responsibilities.
+- Demo users created before 2B (품질 담당 A, …) have no login; they remain for history and the seeder.
+- Browsers that used the 2A responder picker still have unused `andon.responder.*` keys in localStorage
+  (harmless, no credentials).
 - **Operators have no accounts**: CREATE rows have `user_id` NULL and the typed operator name.
 - **CANCEL (false call) is not implemented** — pending requirement (see §14). A mistaken ANDON must be
   ACKed and CLOSEd and counts in statistics.
@@ -406,6 +501,16 @@ data intact, operator retry succeeds ✔ · backup script ✔.
     processes proven to be this project's (folder in command line, or `/api/health` reports this DB).
 12. **Tool scope is explicit** (`tsconfig.json` include, `eslint src scripts`) so stray copies of the
     project inside the folder cannot break typecheck / lint / build again.
+13. **Old departments are kept, not renamed** (v3): new codes ME / MT / UAP / QC / PCL; old codes stay
+    as inactive rows with `successor_code`. History keeps its original department; open old events stay
+    actionable via the successor. Users, category defaults and routing rules (configuration) move to the
+    new codes. Internal code `PCL`, displayed "PC&L".
+14. **Server-side sessions, not JWT**: a random token in an HttpOnly cookie, only its hash in the DB;
+    revocation and deactivation take effect immediately; no signing secret to manage.
+15. **scrypt from Node's crypto** for passwords (no native modules to install on plant PCs, no custom crypto).
+16. **Login identity, notification identity and routing are three separate things**:
+    `user_identity` (how you log in), `user_notification_channel` (where you are messaged), `app_user`
+    department/role (what you are responsible for).
 
 ## 14. Pending tasks
 
@@ -414,6 +519,11 @@ data intact, operator retry succeeds ✔ · backup script ✔.
 - [ ] Register the auto-start task on the demo/plant PC (needs admin; `-AtStartup`)
 - [ ] Separate test database for `test:golden` / `test:reliability`; `CANCELLED` (false call) outcome excluded from KPIs
 - [x] Validate responder identity server-side; store user id, device id, IP, user agent per transition (H4) — Milestone 2A
+- [x] User registration, login, sessions; responder actions bound to the logged-in user — Milestone 2B
+- [ ] Confirm SAFETY / EHS → UAP with the plant; define ME routing rules
+- [ ] HTTPS on the plant server (then `COOKIE_SECURE=true`)
+- [ ] Self-service password change; admin approval or e-mail verification for registrations (if required)
+- [ ] Google login (`user_identity` provider GOOGLE) / Kakao login (provider KAKAO) — not started
 - [ ] **CANCEL / false-call outcome** (pending requirement): new terminal status or action with a reason,
       excluded from KPIs; must use the same responder validation and device audit
 - [ ] Small fixes: `limit` validation (500 on `?limit=abc`), `nosniff` + `poweredByHeader: false`,
@@ -449,8 +559,8 @@ data intact, operator retry succeeds ✔ · backup script ✔.
 1. ~~Move the project to a permanent short path and put it under git~~ — done 2026-10-01 (`C:\andon`).
 2. Decide where the demo server runs; on that PC follow RUNBOOK.md §8 (first-time setup) and
    register auto-start with `-AtStartup`. Then reboot it once and confirm the system comes back alone.
-3. Review the 2A routing with the plant (real departments, responders, routing exceptions; enter them
-   with `npm run masterdata`). Then: test-data separation + CANCEL, then Milestone 3 (Kakao), then escalation. Walk the Golden Path with real phones and the actual dashboard monitor.
+3. Let the real responders register (QC, MT, UAP, PC&L, ME) and assign leader roles with
+   `npm run masterdata`; confirm SAFETY → UAP and define ME routing. Then: test-data separation + CANCEL, then Milestone 3 (Kakao), then escalation. Walk the Golden Path with real phones and the actual dashboard monitor.
 
 ## 16. Change log
 
@@ -461,3 +571,4 @@ data intact, operator retry succeeds ✔ · backup script ✔.
 | 2026-10-01 | Recovery: removed an accidental nested copy (`digital-andon/`) that broke typecheck/lint/build; tool scope made explicit (commit `a702b41`). |
 | 2026-10-01 | Milestone 2 part 1 — H1: photo problems never block the ANDON call (server warning instead of 400; on-device resize to ≤1600 px JPEG; `test:reliability`). H2: `scripts/supervisor.ts` (`npm run serve/status/stop`), restart + watchdog + auto-rebuild + stale-process cleanup + daily logs, Windows auto-start scripts, RUNBOOK.md. Verified: typecheck/lint/build ✔, `test:golden` 26/26, `test:reliability` 6/6, browser: 12.2 MB 4000×3000 photo → 631 KB 1600×1200 JPEG; undecodable photo → note, call still possible; supervisor: crash → back in 2 s, stale server stopped, double start refused, failing health → restart after 3 checks, missing build → rebuilt (healthy 5 s after start), stop → port free. Auto-start task validated by dry run only (not registered). |
 | 2026-10-01 | Milestone 2A — responsibility & routing foundation: schema v2 with migration runner + pre-migration backup; plant / role / routing_rule / escalation_policy / escalation_step tables; app_user with role FK (MANAGER → SUPERVISOR); deterministic routing (process rule > line rule > category default) stored per event; server-side responder validation; device id / IP / user agent on every history row; eligible-only responder picker; `npm run masterdata`; `npm run test:routing`. Verified: fresh DB + seed, live-DB copy v1→v2 (40 events / 136 history rows preserved), live DB migrated with backup; typecheck / lint / build ✔; test:routing 38/38, test:golden 26/26, test:reliability 6/6; mobile UI ACK shows device + IP + "Android · Chrome" in history. |
+| 2026-10-01 | Milestone 2B — user registration & authentication: schema v3 (departments ME / MT / UAP / QC / PCL with old codes kept inactive + successor; app_user rebuilt with e-mail, non-unique name; user_identity, user_session, user_notification_channel; actor department / role on history rows); scrypt passwords; server-side sessions (HttpOnly, SameSite=Lax); /register, /login, /me; responder actions only as the logged-in user; masterdata CLI admin commands; tests use registered throw-away accounts. Migration verified on a copy and on the live DB: events 73 / history 239 / notifications 67 / users 10 unchanged, event-department and history checksums identical. Verified: typecheck / lint / build ✔; test:auth 42/42, test:routing 39/39, test:golden 26/26, test:reliability 6/6; browser (mobile): register → back to the event → ACK / ACTION / CLOSE as the logged-in QC user → timeline shows name, QC · 품질 · RESPONDER, device, IP, browser; QC user on an MT ANDON: no buttons + 403 from the API; logout. |

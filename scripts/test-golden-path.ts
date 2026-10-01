@@ -1,7 +1,9 @@
 // End-to-end API test of the Golden Path against a running server.
 // Usage: npm run test:golden          (server must be running; BASE_URL defaults to http://localhost:3000)
 // Creates one real test ANDON (description starts with "[TEST]").
-export {}; // module scope: keeps this script's declarations out of the global namespace
+// Since Milestone 2B responder actions need a logged-in user: a throw-away QC responder is registered
+// (scripts/lib/testkit.ts) and deactivated again at the end.
+import { registerAccount, admin } from "./lib/testkit.ts";
 
 const BASE = (process.env.BASE_URL || "http://localhost:3000").replace(/\/$/, "");
 
@@ -56,7 +58,7 @@ async function main() {
   const id: string = created?.event?.id;
   check(/^AND-\d{8}-\d{3}$/.test(id ?? ""), `ANDON id format (${id})`);
   check(created?.event?.status === "OPEN", "status OPEN (RED)");
-  check(created?.event?.departmentCode === "QUALITY", "routed to QUALITY department");
+  check(created?.event?.departmentCode === "QC", "QUALITY issue routed to QC department");
 
   console.log("2) Duplicate submission is idempotent");
   const dupRes = await fetch(`${BASE}/api/andons`, { method: "POST", body: form() });
@@ -88,11 +90,12 @@ async function main() {
   const detail0 = await fetch(`${BASE}/api/andons/${id}`).then(json);
   check(detail0.notifications.length >= 1 && detail0.notifications.every((n: { status: string }) => n.status === "SENT"), `notification logged (${detail0.notifications.length} recipient(s))`);
 
-  const transition = (action: string, userName: string, comment?: string) =>
+  const qc = await registerAccount("QC", "golden");
+  const transition = (action: string, _who: string, comment?: string) =>
     fetch(`${BASE}/api/andons/${id}/transition`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, userName, comment }),
+      headers: { "Content-Type": "application/json", ...qc.client.headers() },
+      body: JSON.stringify({ action, comment }),
     });
 
   console.log("6) CLOSE before ACK is rejected");
@@ -103,7 +106,7 @@ async function main() {
   const ack = await transition("ACKNOWLEDGE", "품질 담당 A");
   const ackBody = await json(ack);
   check(ack.status === 200 && ackBody.event.status === "ACKNOWLEDGED", "status ACKNOWLEDGED");
-  check(ackBody.event.acknowledgedBy === "품질 담당 A" && ackBody.event.acknowledgedAt, "acknowledgedBy / acknowledgedAt stored");
+  check(ackBody.event.acknowledgedBy === qc.name && ackBody.event.acknowledgedAt, "acknowledgedBy / acknowledgedAt stored");
   const ack2 = await transition("ACKNOWLEDGE", "품질 담당 B");
   check(ack2.status === 409, "second ACKNOWLEDGE rejected (409)");
 
@@ -136,6 +139,7 @@ async function main() {
   check(stats.total === before.total + 1, `total ${before.total} → ${stats.total}`);
   check(stats.closed === before.closed + 1, `closed ${before.closed} → ${stats.closed}`);
 
+  admin("user", "deactivate-test-accounts");
   console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);
   process.exit(failures === 0 ? 0 : 1);
 }

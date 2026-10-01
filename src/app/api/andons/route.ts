@@ -2,16 +2,23 @@ import { createEvent, getBoardCounts, listEvents, AndonError, type ListOptions }
 import { notifyAndonCreated } from "@/lib/server/notifications";
 import { deletePhoto, savePhoto } from "@/lib/server/photos";
 import { handle, requestAudit } from "@/lib/server/http";
+import { getSessionUser } from "@/lib/server/auth";
 
 export async function GET(req: Request) {
   return handle("GET /api/andons", () => {
     const q = new URL(req.url).searchParams;
     const scope = (q.get("scope") ?? "board") as ListOptions["scope"];
-    const responderId = Number(q.get("responderId"));
+    // mine=1: only events of the logged-in user's department (decided on the server from the session).
+    let responderId: number | undefined;
+    if (q.get("mine") === "1") {
+      const user = getSessionUser(req);
+      if (!user) throw new AndonError(401, "로그인이 필요합니다.", "AUTH_REQUIRED");
+      responderId = user.id;
+    }
     const events = listEvents({
       scope,
       department: q.get("department") || undefined,
-      responderId: Number.isInteger(responderId) && responderId > 0 ? responderId : undefined,
+      responderId,
       limit: q.get("limit") ? Number(q.get("limit")) : undefined,
     });
     // serverTime lets clients correct for clock skew when showing elapsed time.

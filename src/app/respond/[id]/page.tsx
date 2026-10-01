@@ -1,17 +1,17 @@
 "use client";
-import { use, useEffect, useState } from "react";
+import { use, useState } from "react";
 import { TopBar } from "@/components/TopBar";
 import { StatusBadge } from "@/components/StatusBadge";
-import { ResponderPicker } from "@/components/ResponderPicker";
-import { api, fmtDateTime, fmtDuration, fmtTime, usePolling, useServerNow, useStoredState } from "@/lib/client";
+import Link from "next/link";
+import { api, fmtDateTime, fmtDuration, fmtTime, usePolling, useServerNow } from "@/lib/client";
 import {
   STATUS_LABEL,
   allowedActions,
   signalColor,
   type AndonEvent,
   type AndonTransition,
-  type MasterData,
   type NotificationLogEntry,
+  type PublicUser,
   type ResponderSummary,
   type Responsibility,
   type TransitionAction,
@@ -23,6 +23,8 @@ interface Detail {
   notifications: NotificationLogEntry[];
   responsibility: Responsibility | null;
   eligibleResponders: ResponderSummary[];
+  /** Logged-in user and whether the SERVER allows them to act on this event. */
+  viewer: { user: PublicUser; canRespond: boolean } | null;
   serverTime: string;
 }
 
@@ -61,8 +63,6 @@ const ACTION_LABEL: Record<string, string> = {
 
 export default function RespondDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const [meta, setMeta] = useState<MasterData | null>(null);
-  const [me, setMe] = useStoredState("andon.responder.id", "");
   const { data, error, clockOffsetMs, refresh } = usePolling<Detail>(`/api/andons/${encodeURIComponent(id)}`, 5000);
   const now = useServerNow(clockOffsetMs);
 
@@ -71,14 +71,10 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
 
-  useEffect(() => {
-    api<MasterData>("/api/meta").then(setMeta, () => {});
-  }, []);
-
   async function run(action: TransitionAction) {
     if (busy) return;
-    if (!me || !data?.eligibleResponders.some((u) => String(u.id) === me)) {
-      setResult({ ok: false, message: "먼저 이 ANDON의 담당자 이름을 선택하세요." });
+    if (!data?.viewer?.canRespond) {
+      setResult({ ok: false, message: "이 ANDON을 조치할 권한이 없습니다." });
       return;
     }
     if (action !== "ACKNOWLEDGE" && !comment.trim()) {
@@ -91,7 +87,8 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
       const res = await api<{ event: AndonEvent }>(`/api/andons/${encodeURIComponent(id)}/transition`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, userId: Number(me), comment: action === "ACKNOWLEDGE" ? undefined : comment.trim() }),
+        // No identity in the body: the server uses the logged-in user (session cookie).
+        body: JSON.stringify({ action, comment: action === "ACKNOWLEDGE" ? undefined : comment.trim() }),
       });
       setResult({ ok: true, message: `저장됨 → ${STATUS_LABEL[res.event.status].ko} (${res.event.status})` });
       setComment("");
@@ -120,8 +117,12 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
   const end = e.closedAt ? new Date(e.closedAt).getTime() : now;
   const elapsed = (end - new Date(e.createdAt).getTime()) / 1000;
   const eligible = data.eligibleResponders;
-  const meEligible = eligible.some((u) => String(u.id) === me);
-  const storedUser = meta?.users.find((u) => String(u.id) === me);
+  const viewer = data.viewer;
+  const responsibleLabel = data.responsibility
+    ? data.responsibility.effectiveDepartmentCode === data.responsibility.departmentCode
+      ? data.responsibility.departmentLabel
+      : `${data.responsibility.departmentLabel} → ${data.responsibility.effectiveDepartmentCode}`
+    : e.departmentLabel;
 
   return (
     <>
@@ -146,7 +147,7 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
             <dd>{e.categoryName}</dd>
             <dt>담당 부서</dt>
             <dd>
-              {e.departmentName}
+              {responsibleLabel}
               {data.responsibility && (
                 <span className="muted" style={{ fontWeight: 500 }}>
                   {" "}
@@ -183,15 +184,31 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
 
         {e.status !== "CLOSED" && (
           <section className="card" style={{ marginTop: 14 }}>
-            {meta && <ResponderPicker meta={meta} options={eligible} value={meEligible ? me : ""} onChange={setMe} />}
-            {storedUser && !meEligible && (
+            {!viewer && (
               <div className="alert alert-warn">
-                {storedUser.name} 님은 이 ANDON의 담당 부서({e.departmentName}) 담당자가 아닙니다. 담당자를 선택하세요.
+                조치하려면 로그인하세요.{" "}
+                <Link href={`/login?next=${encodeURIComponent(`/respond/${e.id}`)}`}>로그인</Link> ·{" "}
+                <Link href={`/register?next=${encodeURIComponent(`/respond/${e.id}`)}`}>회원가입</Link>
+              </div>
+            )}
+            {viewer && (
+              <div style={{ marginBottom: 12 }}>
+                조치자 <strong>{viewer.user.name}</strong>{" "}
+                <span className="muted">· {viewer.user.departmentLabel} · {viewer.user.roleName}</span>
+              </div>
+            )}
+            {viewer && !viewer.canRespond && (
+              <div className="alert alert-warn">
+                {!viewer.user.active
+                  ? "비활성 계정입니다. 조치할 수 없습니다."
+                  : !viewer.user.canRespond
+                    ? "이 역할은 조치 권한이 없습니다."
+                    : `이 ANDON은 ${responsibleLabel} 부서 담당입니다 (내 부서: ${viewer.user.departmentLabel}).`}
               </div>
             )}
             {eligible.length === 0 && <div className="alert alert-error">이 부서에 등록된 담당자가 없습니다 (기준정보 확인 필요).</div>}
 
-            {mode && (
+            {viewer?.canRespond && mode && (
               <div className="field">
                 <label htmlFor="comment">{mode === "CLOSE" ? "시정 조치 내용 (Corrective action)" : "조치 내용 (Action note)"}</label>
                 <textarea
@@ -208,6 +225,7 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
 
             {result && <div className={`alert ${result.ok ? "alert-ok" : "alert-error"}`}>{result.message}</div>}
 
+            {viewer?.canRespond && (
             <div className="row">
               {actions.includes("ACKNOWLEDGE") && (
                 <button className="btn btn-ack btn-big btn-block" disabled={busy} onClick={() => run("ACKNOWLEDGE")}>
@@ -240,6 +258,7 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
                 </>
               )}
             </div>
+            )}
           </section>
         )}
         {e.status === "CLOSED" && result?.ok && <div className="alert alert-ok">{result.message}</div>}
@@ -250,7 +269,9 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
             <li key={t.id} className={`sig-${signalColor(t.toStatus)}`}>
               <strong>{ACTION_LABEL[t.action] ?? t.action}</strong>{" "}
               <span className="muted">
-                {fmtDateTime(t.createdAt)} · {t.userName} · {t.fromStatus ?? "—"} → {t.toStatus}
+                {fmtDateTime(t.createdAt)} · {t.userName}
+                {t.userDepartmentLabel ? ` (${t.userDepartmentLabel} · ${t.userRole})` : ""} ·{" "}
+                {t.fromStatus ?? "—"} → {t.toStatus}
               </span>
               {(t.deviceId || t.clientIp) && (
                 <div className="muted" style={{ fontSize: 13 }}>

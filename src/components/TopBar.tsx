@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useMe } from "@/lib/client";
 
 const LINKS = [
   { href: "/operator", label: "ANDON 호출" },
@@ -11,6 +12,7 @@ const LINKS = [
 
 export function TopBar() {
   const path = usePathname();
+  const { user, loaded } = useMe();
   return (
     <header className="topbar">
       <Link href="/" className="brand">
@@ -22,6 +24,16 @@ export function TopBar() {
             {l.label}
           </Link>
         ))}
+        {loaded &&
+          (user ? (
+            <Link href="/me" className={path.startsWith("/me") ? "active" : ""}>
+              👤 {user.name}
+            </Link>
+          ) : (
+            <Link href={`/login?next=${encodeURIComponent(path)}`} className={path.startsWith("/login") ? "active" : ""}>
+              로그인
+            </Link>
+          ))}
       </nav>
     </header>
   );

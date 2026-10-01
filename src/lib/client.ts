@@ -1,6 +1,7 @@
 "use client";
 // Browser-side helpers shared by all screens.
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import type { PublicUser } from "./domain";
 
 export class ApiError extends Error {
   constructor(
@@ -204,4 +205,29 @@ export function useStoredState(key: string, initial: string): [string, (v: strin
     [key],
   );
   return [value, set];
+}
+
+/** The logged-in user as resolved by the server (null = not logged in). Never stored in the browser. */
+export function useMe(): { user: PublicUser | null; loaded: boolean; refresh: () => void } {
+  const [user, setUser] = useState<PublicUser | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const refresh = useCallback(() => {
+    api<{ user: PublicUser | null }>("/api/auth/me").then(
+      (r) => {
+        setUser(r.user);
+        setLoaded(true);
+      },
+      () => setLoaded(true),
+    );
+  }, []);
+  useEffect(() => {
+    const t = setTimeout(refresh, 0);
+    return () => clearTimeout(t);
+  }, [refresh]);
+  return { user, loaded, refresh };
+}
+
+/** Only allow same-site relative paths as post-login redirect targets. */
+export function safeNextPath(next: string | null | undefined, fallback = "/respond"): string {
+  return next && next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\") ? next : fallback;
 }

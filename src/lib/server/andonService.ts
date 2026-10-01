@@ -12,7 +12,7 @@ import {
 } from "../domain.ts";
 import { getDb, nowIso, transaction } from "./db.ts";
 import { AndonError, type AuditInfo } from "./errors.ts";
-import { resolveResponsibility, validateResponder } from "./routingService.ts";
+import { departmentAliases, departmentLabel, resolveResponsibility, validateResponder } from "./routingService.ts";
 
 export { AndonError, type AuditInfo };
 
@@ -22,7 +22,7 @@ type Row = Record<string, unknown>;
 
 const EVENT_SELECT = `
 SELECT e.*, l.name AS line_name, p.name AS process_name,
-       c.name_ko AS category_name, d.name_ko AS department_name
+       c.name_ko AS category_name, d.name_ko AS department_name, COALESCE(d.display_code, d.code) AS department_display
 FROM andon_event e
 JOIN line l ON l.code = e.line_code
 JOIN process p ON p.id = e.process_id
@@ -42,6 +42,7 @@ function toEvent(r: Row): AndonEvent {
     categoryName: r.category_name as string,
     departmentCode: r.department_code as string,
     departmentName: r.department_name as string,
+    departmentLabel: `${r.department_display as string} · ${r.department_name as string}`,
     description: r.description as string,
     photoFile: (r.photo_file as string) ?? null,
     status: r.status as AndonStatus,
@@ -65,6 +66,9 @@ function toTransition(r: Row): AndonTransition {
     toStatus: r.to_status as AndonStatus,
     userName: r.user_name as string,
     userId: (r.user_id as number | null) ?? null,
+    userDepartment: (r.user_department as string | null) ?? null,
+    userDepartmentLabel: r.user_department ? departmentLabel(r.user_department as string) : null,
+    userRole: (r.user_role as string | null) ?? null,
     comment: (r.comment as string) ?? null,
     createdAt: r.created_at as string,
     deviceId: (r.device_id as string | null) ?? null,
@@ -75,16 +79,31 @@ function toTransition(r: Row): AndonTransition {
 
 function insertTransition(
   eventId: string,
-  t: { action: string; from: AndonStatus | null; to: AndonStatus; userName: string; userId: number | null; comment: string | null; at: string },
+  t: {
+    action: string;
+    from: AndonStatus | null;
+    to: AndonStatus;
+    userName: string;
+    userId: number | null;
+    /** Snapshot of the actor at the time of the action (department / role can change later). */
+    userDepartment: string | null;
+    userRole: string | null;
+    comment: string | null;
+    at: string;
+  },
   audit: AuditInfo,
 ) {
   getDb()
     .prepare(
       `INSERT INTO andon_transition
-         (event_id, action, from_status, to_status, user_name, user_id, comment, created_at, device_id, client_ip, user_agent)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (event_id, action, from_status, to_status, user_name, user_id, user_department, user_role, comment, created_at,
+          device_id, client_ip, user_agent)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(eventId, t.action, t.from, t.to, t.userName, t.userId, t.comment, t.at, audit.deviceId, audit.clientIp, audit.userAgent);
+    .run(
+      eventId, t.action, t.from, t.to, t.userName, t.userId, t.userDepartment, t.userRole, t.comment, t.at,
+      audit.deviceId, audit.clientIp, audit.userAgent,
+    );
 }
 
 // ---------------------------------------------------------------- master data
@@ -116,9 +135,15 @@ export function getMasterData(): MasterData {
         defaultDepartment: r.default_department as string,
       })),
     departments: db
-      .prepare("SELECT code, name_ko, name_en FROM department WHERE active = 1")
+      .prepare("SELECT code, COALESCE(display_code, code) AS display_code, name_ko, name_en FROM department WHERE active = 1 ORDER BY sort_order")
       .all()
-      .map((r) => ({ code: r.code as string, nameKo: r.name_ko as string, nameEn: r.name_en as string })),
+      .map((r) => ({
+        code: r.code as string,
+        displayCode: r.display_code as string,
+        label: `${r.display_code as string} · ${r.name_ko as string}`,
+        nameKo: r.name_ko as string,
+        nameEn: r.name_en as string,
+      })),
     roles: db
       .prepare("SELECT code, name_ko, name_en, can_respond, escalation_level FROM role ORDER BY sort_order")
       .all()
@@ -129,15 +154,6 @@ export function getMasterData(): MasterData {
         canRespond: r.can_respond === 1,
         escalationLevel: (r.escalation_level as number | null) ?? null,
       })),
-    users: db
-      .prepare("SELECT id, name, department_code, role FROM app_user WHERE active = 1 ORDER BY id")
-      .all()
-      .map((r) => ({
-        id: r.id as number,
-        name: r.name as string,
-        departmentCode: r.department_code as string,
-        role: r.role as RoleCode,
-      })),
   };
 }
 
@@ -147,7 +163,7 @@ export interface ListOptions {
   /** active = OPEN/ACK/IN_PROGRESS; board = active + closed in the last N minutes; all = everything */
   scope?: "active" | "board" | "all";
   department?: string;
-  /** Only events this user is responsible for (their department). Unknown/inactive user → none. */
+  /** Only events this user is responsible for (their department, incl. pre-v3 department codes). */
   responderId?: number;
   limit?: number;
   recentClosedMinutes?: number;
@@ -171,8 +187,13 @@ export function listEvents(opts: ListOptions = {}): AndonEvent[] {
     params.push(opts.department);
   }
   if (opts.responderId != null) {
-    where.push("e.department_code = (SELECT department_code FROM app_user WHERE id = ? AND active = 1)");
-    params.push(opts.responderId);
+    const u = db.prepare("SELECT department_code FROM app_user WHERE id = ? AND active = 1").get(opts.responderId) as
+      | { department_code: string }
+      | undefined;
+    const codes = u ? departmentAliases(u.department_code) : [];
+    if (codes.length === 0) return [];
+    where.push(`e.department_code IN (${codes.map(() => "?").join(",")})`);
+    params.push(...codes);
   }
   // History: newest first. Boards: RED first, then YELLOW, then GREEN; oldest first within each.
   const order =
@@ -298,7 +319,7 @@ export function createEvent(input: CreateAndonInput): { event: AndonEvent; dupli
     // Operators have no accounts yet: user_id stays NULL, the typed name is recorded as-is.
     insertTransition(
       newId,
-      { action: "CREATE", from: null, to: "OPEN", userName: createdBy, userId: null, comment: description, at: createdAt },
+      { action: "CREATE", from: null, to: "OPEN", userName: createdBy, userId: null, userDepartment: null, userRole: null, comment: description, at: createdAt },
       input.audit ?? NO_AUDIT,
     );
     return newId;
@@ -311,9 +332,9 @@ export function createEvent(input: CreateAndonInput): { event: AndonEvent; dupli
 
 export interface TransitionInput {
   action: TransitionAction;
-  /** Responder from master data (preferred). */
+  /** Responder (from the session for HTTP requests). */
   userId?: number | null;
-  /** Accepted for compatibility; must match an active, eligible user. */
+  /** Server-internal callers only (demo seeder): must match exactly one active, eligible user. */
   userName?: string | null;
   comment?: string;
   audit?: AuditInfo;
@@ -370,7 +391,17 @@ export function transitionEvent(id: string, input: TransitionInput): AndonEvent 
 
     insertTransition(
       id,
-      { action: input.action, from: row.status, to: rule.to, userName, userId: responder.id, comment: comment || null, at },
+      {
+        action: input.action,
+        from: row.status,
+        to: rule.to,
+        userName,
+        userId: responder.id,
+        userDepartment: responder.departmentCode,
+        userRole: responder.role,
+        comment: comment || null,
+        at,
+      },
       input.audit ?? NO_AUDIT,
     );
   });

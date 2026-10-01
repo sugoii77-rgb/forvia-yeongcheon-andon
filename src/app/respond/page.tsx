@@ -1,26 +1,18 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { TopBar } from "@/components/TopBar";
 import { StatusBadge } from "@/components/StatusBadge";
-import { ResponderPicker, responderCapableUsers } from "@/components/ResponderPicker";
-import { api, fmtDuration, fmtTime, usePolling, useServerNow, useStoredState } from "@/lib/client";
-import { signalColor, type AndonEvent, type MasterData } from "@/lib/domain";
+import { fmtDuration, fmtTime, useMe, usePolling, useServerNow } from "@/lib/client";
+import { signalColor, type AndonEvent } from "@/lib/domain";
 
 export default function RespondListPage() {
-  const [meta, setMeta] = useState<MasterData | null>(null);
-  const [metaError, setMetaError] = useState<string | null>(null);
-  const [me, setMe] = useStoredState("andon.responder.id", "");
+  const { user, loaded } = useMe();
   const [allDepts, setAllDepts] = useState(false);
 
-  useEffect(() => {
-    api<MasterData>("/api/meta").then(setMeta, (e: Error) => setMetaError(e.message));
-  }, []);
-
-  const myUser = meta?.users.find((u) => String(u.id) === me);
-  const myDept = myUser?.departmentCode ?? "";
-  // The server decides which events belong to this responder (their department).
-  const url = `/api/andons?scope=active${!allDepts && myUser ? `&responderId=${myUser.id}` : ""}`;
+  // Which events belong to me is decided on the server from my session (mine=1).
+  const mine = !!user && user.canRespond && !allDepts;
+  const url = loaded ? `/api/andons?scope=active${mine ? "&mine=1" : ""}` : null;
   const { data, error, clockOffsetMs } = usePolling<{ events: AndonEvent[] }>(url, 3000);
   const now = useServerNow(clockOffsetMs);
 
@@ -29,18 +21,30 @@ export default function RespondListPage() {
       <TopBar />
       <main className="page">
         <h1>담당자 조치 <span className="muted" style={{ fontSize: 16 }}>Responder</span></h1>
-        {metaError && <div className="alert alert-error">기준정보 로드 실패: {metaError}</div>}
-        {meta && <ResponderPicker meta={meta} options={responderCapableUsers(meta)} value={me} onChange={setMe} />}
+
+        {loaded && !user && (
+          <div className="alert alert-warn">
+            조치(접수·조치·완료)하려면 로그인하세요.{" "}
+            <Link href="/login?next=/respond">로그인</Link> · <Link href="/register">회원가입</Link>
+          </div>
+        )}
+        {user && (
+          <div className="card" style={{ marginBottom: 12 }}>
+            <strong>{user.name}</strong> <span className="muted">· {user.departmentLabel} · {user.roleName}</span>
+            {!user.active && <div className="alert alert-error">비활성 계정입니다. 조치할 수 없습니다.</div>}
+            {user.active && !user.canRespond && <div className="alert alert-warn">이 역할은 조치 권한이 없습니다.</div>}
+          </div>
+        )}
 
         <div className="row" style={{ marginBottom: 12 }}>
-          <strong>
-            진행 중 ANDON {myDept && !allDepts ? `· ${meta?.departments.find((d) => d.code === myDept)?.nameKo} 담당` : "· 전체"}
-          </strong>
+          <strong>진행 중 ANDON {mine ? `· ${user?.departmentLabel} 담당` : "· 전체"}</strong>
           <span className="spacer" />
-          <label className="row" style={{ gap: 6 }}>
-            <input type="checkbox" checked={allDepts} onChange={(e) => setAllDepts(e.target.checked)} />
-            전체 부서 보기
-          </label>
+          {user?.canRespond && (
+            <label className="row" style={{ gap: 6 }}>
+              <input type="checkbox" checked={allDepts} onChange={(e) => setAllDepts(e.target.checked)} />
+              전체 부서 보기
+            </label>
+          )}
         </div>
 
         {error && <div className="alert alert-error">목록 갱신 실패: {error}</div>}
@@ -62,7 +66,7 @@ export default function RespondListPage() {
               </div>
               <div>{e.description}</div>
               <div className="muted" style={{ fontSize: 14, marginTop: 4 }}>
-                발생 {fmtTime(e.createdAt)} · 담당 {e.departmentName}
+                발생 {fmtTime(e.createdAt)} · 담당 {e.departmentLabel}
               </div>
             </Link>
           ))}

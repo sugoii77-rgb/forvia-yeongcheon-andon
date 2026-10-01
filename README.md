@@ -20,7 +20,8 @@ npm run serve                 # http://localhost:<PORT from .env>  (builds if ne
 |---|---|
 | Operator ANDON call (tablet/phone) | `/operator` |
 | Live dashboard (large monitor) | `/dashboard` |
-| Responder inbox / event (phone, notification link) | `/respond`, `/respond/<ANDON-ID>` |
+| Responder inbox / event (phone, notification link) — **login required to act** | `/respond`, `/respond/<ANDON-ID>` |
+| Register / login / my info | `/register`, `/login`, `/me` |
 | History & analytics | `/history` |
 | Health check | `/api/health` |
 
@@ -34,8 +35,11 @@ npm run serve                 # http://localhost:<PORT from .env>  (builds if ne
 | `npm run test:golden` | end-to-end Golden Path test against a running server (`BASE_URL=http://localhost:3000`) |
 | `npm run test:reliability` | photo-failure tests (ANDON must still be created) |
 | `npm run test:routing` | routing / responder identity / device audit tests |
-| `npm run masterdata -- list` | show / change users, roles, routing rules (see RUNBOOK.md §7) |
+| `npm run test:auth` | registration / login / session / authorization tests |
+| `npm run masterdata -- list` | ADMIN: show / change users (role, department, active, password reset), routing rules (RUNBOOK.md §7) |
 | `npm run backup` | online DB backup → `data/backups/` |
 | `npm run seed -- --reset` | reset to demo data (stop server first; old DB is backed up) |
+
+Operators call ANDON without login. Responders **register** (`/register`: name, e-mail, department ME / MT / UAP / QC / PC&L) and become RESPONDER of that department automatically; other roles are set by an administrator. API tests register throw-away `*@andon.test` accounts and must run on the server PC, one at a time.
 
 All runtime data lives in `data/` (SQLite DB, photos, logs). Operations and recovery: **[RUNBOOK.md](RUNBOOK.md)**. Auto-start at boot: `scripts/windows/install-autostart.ps1 -AtStartup`.

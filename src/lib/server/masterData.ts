@@ -24,22 +24,43 @@ export const ROLES: {
   { code: "PLANT_MANAGER", nameKo: "공장장", nameEn: "Plant Manager", canRespond: true, escalationLevel: 3, sortOrder: 6 },
 ];
 
+/**
+ * Operational departments = WHO is responsible (not the issue category). Since schema v3.
+ * code: stable internal id; displayCode: shown to users ("PC&L").
+ */
 export const DEPARTMENTS = [
-  { code: "QUALITY", nameKo: "품질", nameEn: "Quality" },
-  { code: "PRODUCTION", nameKo: "생산", nameEn: "Production" },
-  { code: "MAINTENANCE", nameKo: "보전", nameEn: "Maintenance" },
-  { code: "LOGISTICS", nameKo: "물류", nameEn: "Logistics" },
-  { code: "EHS", nameKo: "안전환경", nameEn: "EHS / Safety" },
+  { code: "ME", displayCode: "ME", nameKo: "생산기술", nameEn: "Production Engineering / Manufacturing Engineering", sortOrder: 1 },
+  { code: "MT", displayCode: "MT", nameKo: "보전", nameEn: "Maintenance", sortOrder: 2 },
+  { code: "UAP", displayCode: "UAP", nameKo: "생산", nameEn: "Production", sortOrder: 3 },
+  { code: "QC", displayCode: "QC", nameKo: "품질", nameEn: "Quality", sortOrder: 4 },
+  { code: "PCL", displayCode: "PC&L", nameKo: "물류", nameEn: "Production Control & Logistics", sortOrder: 5 },
 ];
 
-/** defaultDepartment = routing for the whole category unless a routing rule overrides it. */
+/**
+ * Pre-v3 department codes → current department (schema v3 migration). Old departments stay in the
+ * table as inactive rows with successor_code, so historical events keep their original code.
+ * EHS → UAP is a prototype decision (no safety department among the five) — confirm with the plant.
+ */
+export const LEGACY_DEPARTMENT_SUCCESSORS: Record<string, string> = {
+  QUALITY: "QC",
+  MAINTENANCE: "MT",
+  PRODUCTION: "UAP",
+  LOGISTICS: "PCL",
+  EHS: "UAP",
+};
+
+/**
+ * Issue categories = WHAT kind of problem. defaultDepartment = routing for the whole category unless a
+ * routing rule overrides it. No category routes to ME yet (no business rule defined) — add routing
+ * rules for ME when the plant defines them. SAFETY → UAP: prototype decision, confirm with the plant.
+ */
 export const CATEGORIES = [
-  { code: "QUALITY", nameKo: "품질", nameEn: "Quality", defaultDepartment: "QUALITY", sortOrder: 1 },
-  { code: "MAINTENANCE", nameKo: "설비", nameEn: "Maintenance", defaultDepartment: "MAINTENANCE", sortOrder: 2 },
-  { code: "PRODUCTION", nameKo: "생산", nameEn: "Production", defaultDepartment: "PRODUCTION", sortOrder: 3 },
-  { code: "MATERIAL", nameKo: "자재/물류", nameEn: "Material / Logistics", defaultDepartment: "LOGISTICS", sortOrder: 4 },
-  { code: "SAFETY", nameKo: "안전", nameEn: "Safety", defaultDepartment: "EHS", sortOrder: 5 },
-  { code: "OTHER", nameKo: "기타", nameEn: "Other", defaultDepartment: "PRODUCTION", sortOrder: 6 },
+  { code: "QUALITY", nameKo: "품질", nameEn: "Quality", defaultDepartment: "QC", sortOrder: 1 },
+  { code: "MAINTENANCE", nameKo: "설비", nameEn: "Maintenance", defaultDepartment: "MT", sortOrder: 2 },
+  { code: "PRODUCTION", nameKo: "생산", nameEn: "Production", defaultDepartment: "UAP", sortOrder: 3 },
+  { code: "MATERIAL", nameKo: "자재/물류", nameEn: "Material / Logistics", defaultDepartment: "PCL", sortOrder: 4 },
+  { code: "SAFETY", nameKo: "안전", nameEn: "Safety", defaultDepartment: "UAP", sortOrder: 5 },
+  { code: "OTHER", nameKo: "기타", nameEn: "Other", defaultDepartment: "UAP", sortOrder: 6 },
 ];
 
 export const LINES = [
@@ -68,22 +89,23 @@ export const PROCESSES: { lineCode: string; name: string; sortOrder: number }[] 
  * "기타" issues at T-GDI 1 Packing (label printer, boxes) go to Logistics instead of Production.
  */
 export const ROUTING_RULES: { categoryCode: string; lineCode: string; processName: string | null; departmentCode: string; note: string }[] = [
-  { categoryCode: "OTHER", lineCode: "TGDI1", processName: "Packing", departmentCode: "LOGISTICS", note: "포장 라벨/박스 문제는 물류 담당" },
+  { categoryCode: "OTHER", lineCode: "TGDI1", processName: "Packing", departmentCode: "PCL", note: "포장 라벨/박스 문제는 물류 담당" },
 ];
 
-// Demo users (fictional). Phase 1 has no login; the responder picks a name, the server validates it.
+// Demo users (fictional) without login credentials: they exist for demo history and the seeder.
+// Real people register themselves (role RESPONDER) via /register; roles are changed by an administrator.
 export const USERS: { name: string; departmentCode: string; role: RoleCode; active: boolean }[] = [
-  { name: "품질 담당 A", departmentCode: "QUALITY", role: "RESPONDER", active: true },
-  { name: "품질 담당 B", departmentCode: "QUALITY", role: "RESPONDER", active: true },
-  { name: "생산 반장", departmentCode: "PRODUCTION", role: "RESPONDER", active: true },
-  { name: "보전 담당", departmentCode: "MAINTENANCE", role: "RESPONDER", active: true },
-  { name: "물류 담당", departmentCode: "LOGISTICS", role: "RESPONDER", active: true },
-  { name: "안전 담당", departmentCode: "EHS", role: "RESPONDER", active: true },
-  { name: "생산 팀장", departmentCode: "PRODUCTION", role: "SUPERVISOR", active: true },
-  { name: "품질 GAP 리더", departmentCode: "QUALITY", role: "GAP_LEADER", active: true },
-  { name: "T-GDI 1 작업자", departmentCode: "PRODUCTION", role: "OPERATOR", active: true },
+  { name: "품질 담당 A", departmentCode: "QC", role: "RESPONDER", active: true },
+  { name: "품질 담당 B", departmentCode: "QC", role: "RESPONDER", active: true },
+  { name: "생산 반장", departmentCode: "UAP", role: "RESPONDER", active: true },
+  { name: "보전 담당", departmentCode: "MT", role: "RESPONDER", active: true },
+  { name: "물류 담당", departmentCode: "PCL", role: "RESPONDER", active: true },
+  { name: "안전 담당", departmentCode: "UAP", role: "RESPONDER", active: true },
+  { name: "생산 팀장", departmentCode: "UAP", role: "SUPERVISOR", active: true },
+  { name: "품질 GAP 리더", departmentCode: "QC", role: "GAP_LEADER", active: true },
+  { name: "T-GDI 1 작업자", departmentCode: "UAP", role: "OPERATOR", active: true },
   // Example of a deactivated account (left the company): kept for history, cannot respond.
-  { name: "품질 담당 C (퇴직)", departmentCode: "QUALITY", role: "RESPONDER", active: false },
+  { name: "품질 담당 C (퇴직)", departmentCode: "QC", role: "RESPONDER", active: false },
 ];
 
 /**

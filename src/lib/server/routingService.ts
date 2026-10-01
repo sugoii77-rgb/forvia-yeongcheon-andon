@@ -1,5 +1,9 @@
 // Responsibility & identity: which department owns an ANDON, who may respond, who is notified.
 // All routing decisions are made here (server side). UI components never decide routing.
+//
+// Departments (schema v3): ME, MT, UAP, QC, PCL. Events created before v3 keep their original
+// department code (e.g. QUALITY); `department.successor_code` maps it to the current department
+// (QUALITY → QC), so those events stay actionable without rewriting history.
 import type { ResponderSummary, Responsibility, RoleCode } from "../domain.ts";
 import { resolveDepartment, responderProblem, type ResponderCandidate, type RoutingRule } from "../routing.ts";
 import { getDb } from "./db.ts";
@@ -24,9 +28,51 @@ function loadRules(categoryCode: string, lineCode: string): RoutingRule[] {
     }));
 }
 
-function departmentName(code: string): string {
-  const r = getDb().prepare("SELECT name_ko FROM department WHERE code = ?").get(code) as { name_ko: string } | undefined;
-  return r?.name_ko ?? code;
+interface DepartmentRow {
+  code: string;
+  name_ko: string;
+  display_code: string | null;
+  successor_code: string | null;
+}
+
+function department(code: string): DepartmentRow | undefined {
+  return getDb().prepare("SELECT code, name_ko, display_code, successor_code FROM department WHERE code = ?").get(code) as
+    | DepartmentRow
+    | undefined;
+}
+
+/** "PC&L · 물류" — display label of a department code. */
+export function departmentLabel(code: string): string {
+  const d = department(code);
+  return d ? `${d.display_code ?? d.code} · ${d.name_ko}` : code;
+}
+
+/** Current operational department for a (possibly pre-v3) department code. */
+export function effectiveDepartment(code: string): string {
+  let current = code;
+  for (let i = 0; i < 5; i++) {
+    const next = department(current)?.successor_code;
+    if (!next) return current;
+    current = next;
+  }
+  return current;
+}
+
+/** All department codes whose events belong to `code` today (itself + legacy codes mapped to it). */
+export function departmentAliases(code: string): string[] {
+  const all = getDb().prepare("SELECT code FROM department").all() as { code: string }[];
+  return all.map((d) => d.code).filter((c) => effectiveDepartment(c) === code);
+}
+
+function responsibility(departmentCode: string, matchedBy: Responsibility["matchedBy"], routingRuleId: number | null): Responsibility {
+  return {
+    departmentCode,
+    effectiveDepartmentCode: effectiveDepartment(departmentCode),
+    departmentName: department(departmentCode)?.name_ko ?? departmentCode,
+    departmentLabel: departmentLabel(departmentCode),
+    matchedBy,
+    routingRuleId,
+  };
 }
 
 /** Line + Process + Category → responsible department (deterministic, see src/lib/routing.ts). */
@@ -41,7 +87,7 @@ export function resolveResponsibility(lineCode: string, processId: number, categ
     categoryCode,
     categoryDefaultDepartment: cat.default_department,
   });
-  return { ...r, departmentName: departmentName(r.departmentCode) };
+  return responsibility(r.departmentCode, r.matchedBy, r.routingRuleId);
 }
 
 /** Responsibility of a stored event: the department recorded at creation (never re-routed later). */
@@ -57,12 +103,7 @@ export function eventResponsibility(eventId: string): Responsibility | null {
       | undefined;
     matchedBy = rule?.process_id != null ? "LINE_PROCESS_CATEGORY" : "LINE_CATEGORY";
   }
-  return {
-    departmentCode: r.department_code,
-    departmentName: departmentName(r.department_code),
-    matchedBy,
-    routingRuleId: r.routing_rule_id,
-  };
+  return responsibility(r.department_code, matchedBy, r.routing_rule_id);
 }
 
 const USER_SELECT = `
@@ -87,22 +128,25 @@ const summary = (u: ResponderCandidate): ResponderSummary => ({
   departmentCode: u.departmentCode,
 });
 
-/** Everyone who may ACK / ACTION / CLOSE events of this department. */
-export function eligibleResponders(departmentCode: string): ResponderSummary[] {
+/**
+ * Everyone who may ACK / ACTION / CLOSE events of this department: active users of the (current)
+ * department whose role can respond. A newly registered RESPONDER appears here immediately.
+ */
+export function eligibleResponders(eventDepartmentCode: string): ResponderSummary[] {
   return getDb()
     .prepare(`${USER_SELECT} WHERE u.active = 1 AND r.can_respond = 1 AND u.department_code = ? ORDER BY r.sort_order, u.id`)
-    .all(departmentCode)
+    .all(effectiveDepartment(eventDepartmentCode))
     .map((r) => summary(toCandidate(r)));
 }
 
 /** First responders of a department: receive the initial notification (escalation roles come later). */
-export function primaryRecipients(departmentCode: string): (ResponderSummary & { kakaoId: string | null })[] {
+export function primaryRecipients(eventDepartmentCode: string): (ResponderSummary & { kakaoId: string | null })[] {
   return getDb()
     .prepare(
       `SELECT u.id, u.name, u.department_code, u.role, u.kakao_id FROM app_user u
        WHERE u.active = 1 AND u.role = 'RESPONDER' AND u.department_code = ? ORDER BY u.id`,
     )
-    .all(departmentCode)
+    .all(effectiveDepartment(eventDepartmentCode))
     .map((r) => ({
       id: r.id as number,
       name: r.name as string,
@@ -114,14 +158,15 @@ export function primaryRecipients(departmentCode: string): (ResponderSummary & {
 
 export interface ResponderIdentity {
   userId?: number | null;
+  /** Server-internal callers only (demo seeder). HTTP requests identify the responder by session. */
   userName?: string | null;
 }
 
 /**
  * Server-side responder validation. The responder must exist, be active, have a role that may
- * respond, and belong to the event's responsible department. Throws AndonError otherwise.
+ * respond, and belong to the event's (current) responsible department. Throws AndonError otherwise.
  */
-export function validateResponder(identity: ResponderIdentity, departmentCode: string): ResponderSummary {
+export function validateResponder(identity: ResponderIdentity, eventDepartmentCode: string): ResponderSummary {
   const db = getDb();
   let row: Row | undefined;
   if (identity.userId != null) {
@@ -129,26 +174,25 @@ export function validateResponder(identity: ResponderIdentity, departmentCode: s
       throw new AndonError(400, "등록되지 않은 담당자입니다.", "UNKNOWN_RESPONDER");
     }
     row = db.prepare(`${USER_SELECT} WHERE u.id = ?`).get(identity.userId);
-    // If both are sent they must refer to the same person.
-    if (row && identity.userName && identity.userName.trim() !== row.name) {
-      throw new AndonError(400, "담당자 정보가 일치하지 않습니다.", "RESPONDER_MISMATCH");
-    }
   } else if (identity.userName && identity.userName.trim()) {
-    row = db.prepare(`${USER_SELECT} WHERE u.name = ?`).get(identity.userName.trim());
+    const rows = db.prepare(`${USER_SELECT} WHERE u.name = ?`).all(identity.userName.trim());
+    if (rows.length > 1) throw new AndonError(400, "같은 이름의 사용자가 여러 명입니다.", "AMBIGUOUS_RESPONDER");
+    row = rows[0];
   } else {
     throw new AndonError(400, "담당자를 선택하세요.", "USER_REQUIRED");
   }
   if (!row) throw new AndonError(400, "등록되지 않은 담당자입니다.", "UNKNOWN_RESPONDER");
 
   const user = toCandidate(row);
-  const problem = responderProblem(user, departmentCode);
-  if (problem === "INACTIVE") throw new AndonError(403, `${user.name}: 비활성(사용 중지)된 담당자입니다.`, "INACTIVE_RESPONDER");
+  const responsible = effectiveDepartment(eventDepartmentCode);
+  const problem = responderProblem(user, responsible);
+  if (problem === "INACTIVE") throw new AndonError(403, `${user.name}: 비활성(사용 중지)된 계정입니다.`, "INACTIVE_RESPONDER");
   if (problem === "ROLE_NOT_ALLOWED")
     throw new AndonError(403, `${user.name}: 조치 권한이 없는 역할입니다 (${user.role}).`, "ROLE_NOT_ALLOWED");
   if (problem === "WRONG_DEPARTMENT")
     throw new AndonError(
       403,
-      `${user.name}: 이 ANDON의 담당 부서(${departmentName(departmentCode)}) 소속이 아닙니다.`,
+      `${user.name}: 이 ANDON의 담당 부서(${departmentLabel(responsible)}) 소속이 아닙니다.`,
       "WRONG_DEPARTMENT",
     );
   return summary(user);

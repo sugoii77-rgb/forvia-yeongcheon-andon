@@ -165,7 +165,7 @@ export default function OperatorPage() {
             ✔ ANDON 호출 완료 (sent)
             <div style={{ fontSize: 34, fontWeight: 900, margin: "8px 0" }}>{e.id}</div>
             <div style={{ fontWeight: 500, fontSize: 18 }}>
-              {e.lineName} / {e.processName} · {e.categoryName} · 담당: {e.departmentName}
+              {e.lineName} / {e.processName} · {e.categoryName} · 담당: {e.departmentLabel}
               <br />
               발생시각 {fmtTime(e.createdAt)} — 현황판에 표시되고 담당자에게 알림이 전송됩니다.
               {state.duplicate && <><br />(이미 접수된 호출입니다 · already registered)</>}

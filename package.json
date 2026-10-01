@@ -21,7 +21,8 @@
     "test:golden": "node scripts/test-golden-path.ts",
     "test:reliability": "node scripts/test-reliability.ts",
     "test:routing": "node scripts/test-routing.ts",
-    "masterdata": "node scripts/masterdata.ts"
+    "masterdata": "node scripts/masterdata.ts",
+    "test:auth": "node scripts/test-auth.ts"
   },
   "dependencies": {
     "next": "16.3.8",

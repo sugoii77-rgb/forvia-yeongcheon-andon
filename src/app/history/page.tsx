@@ -162,7 +162,7 @@ export default function HistoryPage() {
                     </td>
                     <td>{e.categoryName}</td>
                     <td>{e.description}</td>
-                    <td>{e.departmentName}</td>
+                    <td>{e.departmentLabel}</td>
                     <td style={{ whiteSpace: "nowrap" }}>{fmtDurationKo(resp)}</td>
                     <td style={{ whiteSpace: "nowrap" }}>{fmtDurationKo(reso)}</td>
                   </tr>

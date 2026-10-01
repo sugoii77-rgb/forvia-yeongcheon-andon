@@ -88,7 +88,7 @@ export default function DashboardPage() {
                 <div>
                   발생 {fmtTime(e.createdAt)}
                   <br />
-                  담당 {e.departmentName}
+                  담당 {e.departmentLabel}
                   {e.acknowledgedBy ? ` · ${e.acknowledgedBy}` : ""}
                 </div>
                 <div>
