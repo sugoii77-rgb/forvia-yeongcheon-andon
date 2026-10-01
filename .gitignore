@@ -56,3 +56,6 @@ next-env.d.ts
 *.db
 *.db-wal
 *.db-shm
+
+# local review notes (not part of the repository)
+/REVIEW-M1.md
