@@ -13,8 +13,7 @@ Requires **Node.js 24** (`node --version`). Install in a short path (e.g. `C:\an
 npm install
 cp .env.example .env          # Windows: copy .env.example .env
 npm run seed -- --reset       # optional demo data
-npm run build
-npm run start                 # http://localhost:3000
+npm run serve                 # http://localhost:<PORT from .env>  (builds if needed, auto-restarts)
 ```
 
 | Screen | URL |
@@ -29,10 +28,12 @@ npm run start                 # http://localhost:3000
 
 | Command | Purpose |
 |---|---|
+| `npm run serve` / `npm run status` / `npm run stop` | run under the supervisor / check / stop (see RUNBOOK.md) |
 | `npm run dev` | development server with hot reload |
 | `npm run typecheck` / `npm run lint` | static checks |
 | `npm run test:golden` | end-to-end Golden Path test against a running server (`BASE_URL=http://localhost:3000`) |
+| `npm run test:reliability` | photo-failure tests (ANDON must still be created) |
 | `npm run backup` | online DB backup → `data/backups/` |
 | `npm run seed -- --reset` | reset to demo data (stop server first; old DB is backed up) |
 
-All runtime data lives in `data/` (SQLite DB + photos). To recover: restart the process.
+All runtime data lives in `data/` (SQLite DB, photos, logs). Operations and recovery: **[RUNBOOK.md](RUNBOOK.md)**. Auto-start at boot: `scripts/windows/install-autostart.ps1 -AtStartup`.

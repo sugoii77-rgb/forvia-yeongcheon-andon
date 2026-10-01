@@ -3,12 +3,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { TopBar } from "@/components/TopBar";
 import { api, fmtTime, newRequestId, useStoredState } from "@/lib/client";
+import { preparePhoto } from "@/lib/photoPrep";
 import type { AndonEvent, MasterData } from "@/lib/domain";
 
 type SubmitState =
   | { kind: "idle" }
   | { kind: "sending" }
-  | { kind: "ok"; event: AndonEvent; duplicate: boolean }
+  | { kind: "ok"; event: AndonEvent; duplicate: boolean; photoWarning: string | null }
   | { kind: "error"; message: string };
 
 export default function OperatorPage() {
@@ -21,7 +22,12 @@ export default function OperatorPage() {
   const [operator, setOperator] = useStoredState("andon.operator.name", "");
   const [categoryCode, setCategoryCode] = useState("");
   const [description, setDescription] = useState("");
+  // `photo` is the already-resized JPEG. Resizing starts as soon as a photo is picked.
   const [photo, setPhoto] = useState<File | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoNote, setPhotoNote] = useState<string | null>(null);
+  const pendingPhoto = useRef<Promise<File | null> | null>(null);
+  const photoToken = useRef(0);
   const photoUrl = useMemo(() => (photo ? URL.createObjectURL(photo) : null), [photo]);
   const [state, setState] = useState<SubmitState>({ kind: "idle" });
   const [validation, setValidation] = useState<string | null>(null);
@@ -48,6 +54,44 @@ export default function OperatorPage() {
     };
   }, [photoUrl]);
 
+  function pickPhoto(file: File | null) {
+    const token = ++photoToken.current;
+    setPhoto(null);
+    setPhotoNote(null);
+    if (!file) {
+      pendingPhoto.current = null;
+      setPhotoBusy(false);
+      return;
+    }
+    setPhotoBusy(true);
+    const job = preparePhoto(file).then(
+      (prepared) => {
+        if (token === photoToken.current) setPhoto(prepared);
+        return prepared;
+      },
+      (err) => {
+        console.warn("photo could not be prepared", err);
+        if (token === photoToken.current) {
+          setPhotoNote("이 사진은 사용할 수 없습니다 (형식 미지원). 사진 없이 호출할 수 있습니다.");
+          if (fileInput.current) fileInput.current.value = "";
+        }
+        return null;
+      },
+    );
+    pendingPhoto.current = job;
+    job.finally(() => {
+      if (token === photoToken.current) {
+        setPhotoBusy(false);
+        pendingPhoto.current = null;
+      }
+    });
+  }
+
+  function clearPhoto() {
+    pickPhoto(null);
+    if (fileInput.current) fileInput.current.value = "";
+  }
+
   const processes = meta?.processes.filter((p) => p.lineCode === lineCode) ?? [];
   const validProcess = processes.some((p) => String(p.id) === processId);
 
@@ -66,6 +110,17 @@ export default function OperatorPage() {
     setValidation(null);
     setState({ kind: "sending" });
 
+    // Never let photo processing delay the call for long: wait at most 5 s, then send without it.
+    let photoToSend = photo;
+    let localPhotoNote: string | null = null;
+    if (pendingPhoto.current) {
+      photoToSend = await Promise.race([
+        pendingPhoto.current,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+      ]);
+      if (!photoToSend) localPhotoNote = "사진 처리가 지연되어 사진 없이 호출했습니다.";
+    }
+
     const form = new FormData();
     form.set("lineCode", lineCode);
     form.set("processId", processId);
@@ -73,15 +128,20 @@ export default function OperatorPage() {
     form.set("description", description.trim());
     form.set("createdBy", operator.trim());
     form.set("clientRequestId", requestId.current);
-    if (photo) form.set("photo", photo);
+    if (photoToSend) form.set("photo", photoToSend);
 
     try {
-      const res = await api<{ event: AndonEvent; duplicate: boolean }>(
+      const res = await api<{ event: AndonEvent; duplicate: boolean; photoWarning?: string | null }>(
         "/api/andons",
         { method: "POST", body: form },
         20000,
       );
-      setState({ kind: "ok", event: res.event, duplicate: res.duplicate });
+      setState({
+        kind: "ok",
+        event: res.event,
+        duplicate: res.duplicate,
+        photoWarning: res.photoWarning ?? localPhotoNote,
+      });
     } catch (e) {
       setState({ kind: "error", message: (e as Error).message });
     }
@@ -91,8 +151,7 @@ export default function OperatorPage() {
     requestId.current = newRequestId();
     setCategoryCode("");
     setDescription("");
-    setPhoto(null);
-    if (fileInput.current) fileInput.current.value = "";
+    clearPhoto();
     setState({ kind: "idle" });
   }
 
@@ -112,6 +171,11 @@ export default function OperatorPage() {
               {state.duplicate && <><br />(이미 접수된 호출입니다 · already registered)</>}
             </div>
           </div>
+          {state.photoWarning && (
+            <div className="alert alert-warn" role="status">
+              ⚠ 사진은 첨부되지 않았습니다 (photo not attached): {state.photoWarning}
+            </div>
+          )}
           <div className="row">
             <button className="btn btn-primary btn-big" onClick={reset}>
               새 ANDON 호출
@@ -225,22 +289,17 @@ export default function OperatorPage() {
                     accept="image/*"
                     capture="environment"
                     hidden
-                    onChange={(e) => setPhoto(e.target.files?.[0] ?? null)}
+                    onChange={(e) => pickPhoto(e.target.files?.[0] ?? null)}
                   />
                 </label>
-                {photo && (
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => {
-                      setPhoto(null);
-                      if (fileInput.current) fileInput.current.value = "";
-                    }}
-                  >
+                {(photo || photoBusy) && (
+                  <button type="button" className="btn" onClick={clearPhoto}>
                     사진 삭제
                   </button>
                 )}
+                {photoBusy && <span className="muted">사진 처리 중…</span>}
               </div>
+              {photoNote && <div className="alert alert-warn">{photoNote}</div>}
               {photoUrl && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={photoUrl} alt="첨부 사진 미리보기" style={{ marginTop: 10, maxWidth: "100%", maxHeight: 240, borderRadius: 10 }} />

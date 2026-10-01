@@ -11,11 +11,15 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "serve": "node scripts/supervisor.ts",
+    "stop": "node scripts/stop.ts",
+    "status": "node scripts/status.ts",
     "lint": "eslint src scripts",
     "typecheck": "next typegen && tsc --noEmit",
     "seed": "node scripts/seed-demo.mts",
     "backup": "node scripts/backup.ts",
-    "test:golden": "node scripts/test-golden-path.ts"
+    "test:golden": "node scripts/test-golden-path.ts",
+    "test:reliability": "node scripts/test-reliability.ts"
   },
   "dependencies": {
     "next": "16.3.8",
