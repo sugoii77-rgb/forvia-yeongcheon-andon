@@ -3,7 +3,7 @@
 > **Source of truth for AI-to-AI and human handover.** Update this file at the end of every
 > meaningful milestone (sections 11–16 at minimum).
 >
-> Last updated: **2026-10-01** · Milestone 1 — **done** · Milestone 2 — H1 + H2 done · 2A routing foundation — done · 2B registration & authentication — done · **Google authentication provider — done (offline-tested; real Google not yet configured)**
+> Last updated: **2026-10-01** · Milestone 1 — **done** · Milestone 2 — H1 + H2 done · 2A routing foundation — done · 2B registration & authentication — done · **Google authentication provider — done (offline-tested; real Google not yet configured)** · NEXT: Reaction Rules (Appendix A, not started)
 
 ---
 
@@ -599,6 +599,14 @@ data intact, operator retry succeeds ✔ · backup script ✔.
 - [ ] Map users → Kakao recipient (`app_user.kakao_id`); correct `APP_BASE_URL` (LAN IP + port)
 - [ ] Retry policy for failed notifications (re-send from `notification_log` FAILED rows)
 
+**NEXT PLANNED MILESTONE — Reaction Rules (plant ANDON procedure)** — requirements and proposed
+design in **Appendix A**. Not started. Do not code before the open business decisions (A.10) are
+answered by UAP and the real line / process master data has been delivered.
+- [ ] Confirm open business decisions OBD-1 … OBD-17 (Appendix A.10) with UAP
+- [ ] Load real lines / processes (Gamma 1차, Gamma 2차, Nu 1차, Nu 2차, NX4, JX, …) from UAP
+- [ ] Implement trigger / reaction-rule master data (revisioned), trigger selection in the operator
+      call, next-action guidance, rule reference stored per ANDON, arrival / QRCI milestones
+
 **Milestone 4 — Escalation / proactive (rule-based first, AI later)** — data model prepared in 2A
 - [ ] Configure `escalation_step.after_minutes` per policy (no defaults in code) and activate
 - [ ] Periodic check in the server process; per-event escalation log; notify (department, role) targets
@@ -638,3 +646,146 @@ data intact, operator retry succeeds ✔ · backup script ✔.
 | 2026-10-01 | Milestone 2A — responsibility & routing foundation: schema v2 with migration runner + pre-migration backup; plant / role / routing_rule / escalation_policy / escalation_step tables; app_user with role FK (MANAGER → SUPERVISOR); deterministic routing (process rule > line rule > category default) stored per event; server-side responder validation; device id / IP / user agent on every history row; eligible-only responder picker; `npm run masterdata`; `npm run test:routing`. Verified: fresh DB + seed, live-DB copy v1→v2 (40 events / 136 history rows preserved), live DB migrated with backup; typecheck / lint / build ✔; test:routing 38/38, test:golden 26/26, test:reliability 6/6; mobile UI ACK shows device + IP + "Android · Chrome" in history. |
 | 2026-10-01 | Milestone 2B — user registration & authentication: schema v3 (departments ME / MT / UAP / QC / PCL with old codes kept inactive + successor; app_user rebuilt with e-mail, non-unique name; user_identity, user_session, user_notification_channel; actor department / role on history rows); scrypt passwords; server-side sessions (HttpOnly, SameSite=Lax); /register, /login, /me; responder actions only as the logged-in user; masterdata CLI admin commands; tests use registered throw-away accounts. Migration verified on a copy and on the live DB: events 73 / history 239 / notifications 67 / users 10 unchanged, event-department and history checksums identical. Verified: typecheck / lint / build ✔; test:auth 42/42, test:routing 39/39, test:golden 26/26, test:reliability 6/6; browser (mobile): register → back to the event → ACK / ACTION / CLOSE as the logged-in QC user → timeline shows name, QC · 품질 · RESPONDER, device, IP, browser; QC user on an MT ANDON: no buttons + 403 from the API; logout. |
 | 2026-10-01 | Google authentication provider (Astra implemented; reviewed and completed after Astra's usage limit): schema v4 (employee_id permanent + unique, phone, company_email, user_identity.provider_email, one Google identity per employee, google_auth_flow); Google OIDC via openid-client (PKCE, state, nonce, JWKS signature, issuer / audience / expiry); onboarding; linking with local password re-check bound to the session. Review fixes: notification address only from verified channel; onboarding department labels; Google button hidden when unconfigured; 409 on races; safe logging; admin employee-id / unlink-google. Migration v3→v4 verified on a fresh copy of the live DB (all old rows / columns unchanged) and then on the live DB. Isolated v4 regression: test:google 48/48, test:auth 42/42, test:routing 39/39, test:golden 26/26, test:reliability 6/6. Real Google sign-in NOT tested (no Google Cloud client configured). |
+
+
+---
+
+## Appendix A — Plant reaction-rule requirements (next milestone, NOT implemented)
+
+> Source: the plant ANDON procedure workbook (reviewed 2026-10-01; trigger sheets "TRIGGERS (한글판)"
+> and the newer "TRIGGERS (한글판) (2)"). These are the **authoritative business requirements** for the
+> next ANDON reaction-rule milestone. Nothing in this appendix is implemented yet. Items marked
+> **OBD-n** are open business decisions that must be confirmed by UAP before coding (A.10).
+
+### A.1 Architecture finding
+
+The plant process is not just `Category → Department → Responder`. It is:
+
+```
+Trigger → Operator self-action → GAP Leader call / action → time / repetition / condition threshold
+        → ANDON activation → Responsible Department → required response (gather ≤ 10 min) → QRCI
+```
+
+The current routing model stays and is **extended** with a configurable Trigger / Reaction Rule model.
+Rules are master data (revisioned), never hard-coded in React components.
+
+### A.2 Trigger groups and triggers (as written in the procedure)
+
+Trigger group = WHAT happened (business grouping). Department = WHO is responsible. They are not the
+same thing and are not merged.
+
+| Code | Group | Trigger | Operator | GAP Leader | ANDON when | QRCI |
+|---|---|---|---|---|---|---|
+| Q1 | QUALITY ISSUE | 라인 정지 기준 외 불량 | Stop the line, call GAP Leader | Investigate after line stop; clean jig / jig clamp contamination; replace tip if needed; clean critical area (e.g. welding); produce one additional part | Defect repeats → QUALITY ANDON | yes |
+| Q2 | QUALITY ISSUE | 라인 정지 기준 내 불량 | Stop line; resolve per standard work / documented cause; if it recurs after removing the cause → follow line-stop criteria | Confirm the actions | "If standard procedure was followed" → QUALITY ANDON (OBD-10) | yes |
+| Q3 | QUALITY ISSUE | 부품의 품질문제 | Try another suspect component with its mating component; if still defective call GAP Leader; verify defective component together | Change to another lot; attach red label to defective component | Defect repeats after lot change → QUALITY ANDON | yes |
+| L1 | LOGISTICS ISSUE | 자재 결품 | Check / start the last box in the flow rack; call GAP Leader | Call small-train / material delivery; **not arrived within 10 min → call PC&L GAP Leader** | Material exhausted AND line stops → material-shortage ANDON | not stated |
+| L2 | LOGISTICS ISSUE | 이종 부품 | First box wrong → check next box. Next box correct → call GAP Leader to remove the wrong box. Next box also wrong → call GAP Leader immediately | Stop the remaining line as required | Immediately (next box also wrong) → material / logistics ANDON | not stated |
+| L3 | LOGISTICS ISSUE | 파렛트 결품 | No empty pallet → call GAP Leader | Request empty pallet from small-train / forklift logistics | All pallets full / none available → logistics ANDON | not stated |
+| E1 | EQUIPMENT ISSUE | 설비고장 | Simple recovery first (jig 5S, sensor check, …); cannot repair OR > **5 min** → call GAP Leader | Stop line, investigate, attempt repair | GAP Leader cannot repair OR repair > **10 min** → EQUIPMENT ANDON | not stated |
+| E2 | EQUIPMENT ISSUE | 반복되는 설비 문제 | — | Stop line, investigate and repair | Same issue **≥ 2 / shift** (newer sheet) — older sheet says **≥ 3 / shift** (**OBD-1**); if unable to resolve → EQUIPMENT ANDON | yes |
+| H1 | HSE ISSUE | 니어미스 / Fr2t / Fr1t / Fr0t / 중대재해 | Leave everything as-is; move outside the line; call GAP Leader. If injured and unable to move: call loudly or phone a nearby colleague / GAP Leader | Activate ANDON; in an emergency arrange vehicle / ambulance per procedure; check operator condition; inform HSE Coordinator | GAP Leader activates (immediately) | yes |
+
+No additional HSE automation or routing is assumed beyond this text (OBD-2).
+
+### A.3 Global reaction rule
+
+After ANDON activation, the required participants must **gather at the line within 10 minutes** and
+conduct **QRCI**. The system should eventually measure: ANDON called_at → ACK at → arrival / response
+at → QRCI started_at → ACTION at → CLOSED at, and 10-minute compliance (OBD-6, OBD-7, OBD-16).
+
+### A.4 Coexistence with the current state machine (proposal — no change to OPEN / ACKNOWLEDGED / IN_PROGRESS / CLOSED)
+
+- **Keep the four statuses and all existing transitions exactly as they are.** Existing history, tests
+  and statistics stay valid.
+- Add **milestones** as a separate append-only table (`andon_milestone`: event, type, user, department,
+  role, device, time), e.g. `ARRIVED_AT_LINE`, `QRCI_STARTED`, later `QRCI_COMPLETED`. A milestone never
+  changes the status; it records a fact with the same audit fields as transitions.
+- Derived timings: called_at = event.created_at; ack_at = ACKNOWLEDGE transition; arrival_at /
+  qrci_started_at = first milestone of that type; action_at = first ACTION; closed_at = CLOSE.
+  10-minute compliance = arrival_at (or qrci_started_at, OBD-6) − created_at ≤ 10 min.
+- Allowed while ACKNOWLEDGED / IN_PROGRESS only; recording ARRIVED_AT_LINE could optionally imply ACK
+  for a responder who has not acknowledged yet (decision OBD-7) — still as a normal ACKNOWLEDGE
+  transition, so the state machine itself is untouched.
+- Pre-ANDON steps (operator self-action, GAP Leader call, 5 / 10-minute timers) are **guidance** in the
+  first version; whether the system also records them (e.g. a "GAP Leader called" record before the
+  ANDON exists) is OBD-8.
+
+### A.5 Proposed data model (minimal — not a generic workflow engine)
+
+| Table | Purpose / key fields |
+|---|---|
+| `trigger_group` | code (QUALITY / LOGISTICS / EQUIPMENT / HSE), names, sort, active |
+| `trigger` | code (Q1 … H1), group, name_ko / name_en, active. Stable identity of "what happened" |
+| `reaction_rule` | **revisioned**: trigger, optional line / process scope (override, like routing_rule), `revision`, `effective_from`, `effective_to` (NULL = current), `active`, `qrci_required`, `responsible_department` (NULL = use routing until confirmed), `source_ref` (workbook sheet / row), `approved_by`. Unique (trigger, scope, revision) |
+| `reaction_step` | rule, `step_no`, `actor_role` (OPERATOR, GAP_LEADER, PCL_GAP_LEADER?, …), `instruction_ko` (short, shown on screen), `threshold_type`, `threshold_value`, `threshold_unit`, `outcome` (NEXT_STEP / CALL_GAP_LEADER / CALL_OTHER / ACTIVATE_ANDON / QRCI) |
+| `andon_event` (+ columns) | `trigger_code`, `reaction_rule_id` (the exact revision used at creation), `shift_code` / shift date (for per-shift analytics) |
+| `andon_milestone` | append-only arrival / QRCI facts (A.4) |
+| `shift` | shift definitions (needed for REPEAT_PER_SHIFT, OBD-5) |
+
+Threshold types (only what the procedure needs): `IMMEDIATE`, `ELAPSED_MINUTES` (E1 5 / 10 min, L1 10
+min), `REPEAT_PER_SHIFT` (E2), `REPEAT_AFTER_ACTION` (Q1 "defect repeats", Q3 "repeats after lot
+change"), `LINE_STOP`, `MATERIAL_EXHAUSTED` (L1), `MANUAL_CONFIRMATION` (GAP Leader judgement: "cannot
+repair", "standard procedure followed", "all pallets full").
+
+Engine scope: "If X happens, actor Y performs action Z; if threshold T is reached, call / activate ANDON"
+— evaluated mostly by people (guidance + confirmation buttons); the system itself only evaluates
+`REPEAT_PER_SHIFT` (counting events of the same trigger / line / process / equipment in the shift) and
+`ELAPSED_MINUTES` reminders. No arbitrary workflow designer.
+
+Routing: Trigger groups map approximately to today's categories (QUALITY → QUALITY, LOGISTICS →
+MATERIAL, EQUIPMENT → MAINTENANCE, HSE → SAFETY); category stays for routing and history
+compatibility. Expected default departments QUALITY ISSUE → QC, LOGISTICS ISSUE → PC&L, EQUIPMENT
+ISSUE → MT are **not hard-coded** until confirmed (OBD-3); HSE (OBD-2) and ME (OBD-4) are open.
+**Actor role ≠ responsible department**: UAP operators / GAP Leaders act first, but that does not make
+UAP the responsible department.
+
+Model chain: `Plant → Line → Process → Trigger → Reaction Rule (revision) → Responsible Department →
+Eligible Responders`, with optional line / process-specific rule overrides (same pattern as
+`routing_rule`).
+
+### A.6 UI principle
+
+Operator / MOD screen stays minimal: **LINE → PROCESS → PROBLEM (trigger)** → show only the **next
+action** for that role, e.g. 설비 이상 → "지그 5S / 센서 확인" · "5분 이상 해결되지 않으면 GAP Leader 호출".
+GAP Leader sees only GAP-Leader steps. Never show the whole procedure document during an abnormality.
+
+### A.7 Analytics to keep possible
+
+ANDON count by line, process, trigger, trigger group, department, shift; repeat issues; response and
+resolution time; 10-minute QRCI compliance; repeated-equipment threshold hits; material-shortage
+frequency. Requires: trigger_code + rule revision + shift stored on the event, milestones table.
+
+### A.8 Revision control
+
+Reaction rules are controlled plant procedures: revision, effective date, active / inactive, approver,
+source reference. Each ANDON stores the rule revision it was created under; a rule change never alters
+the meaning of historical ANDONs (same principle as routing_rule_id on events).
+
+### A.9 Line / process master data
+
+Real lines and processes are being collected from UAP (Gamma 1차, Gamma 2차, Nu 1차, Nu 2차, NX4, JX,
+…). The current demo lines (T-GDI 1, T-GDI 2, Muffler 1) are placeholders. **Do not invent the full
+list.**
+
+### A.10 Open business decisions (confirm with UAP before coding)
+
+| ID | Question |
+|---|---|
+| **OBD-1** | **Source conflict E2**: older sheet "TRIGGERS (한글판)" says repeated equipment issue **≥ 3 / shift**; newer sheet "TRIGGERS (한글판) (2)" says **≥ 2 / shift**. Candidate = ≥ 2 (newer), **not confirmed**. Which is valid, and is the older sheet withdrawn? |
+| OBD-2 | HSE ISSUE: which department is responsible / notified (no HSE department among ME, MT, UAP, QC, PC&L; today SAFETY → UAP is a prototype placeholder)? How is the HSE Coordinator represented (role? person?) |
+| OBD-3 | Confirm default responsible departments: QUALITY → QC, LOGISTICS → PC&L, EQUIPMENT → MT |
+| OBD-4 | ME responsibilities: which triggers / lines / processes route to ME? |
+| OBD-5 | Shift definitions (start / end times, shift codes) for "per shift" counting |
+| OBD-6 | "Required participants must gather within 10 minutes": who exactly per trigger group, and is compliance measured by arrival or by QRCI start? |
+| OBD-7 | Who records arrival / QRCI start (responder tap "현장 도착", GAP Leader, either)? May arrival imply ACK? |
+| OBD-8 | Should pre-ANDON stages (operator self-action, GAP Leader called, 5 / 10-minute timers) be recorded in the system, or only shown as guidance? |
+| OBD-9 | L1 "not arrived within 10 min → call PC&L GAP Leader": is this an ANDON, a notification, or a phone call outside the system? |
+| OBD-10 | Q2 wording "If standard procedure was followed, activate QUALITY ANDON" — activate when the standard procedure was followed **and the defect persists**? Please confirm the exact condition |
+| OBD-11 | Q1 "produce one additional part; if defect repeats": repeat = defect on that one additional part? Q1 is "outside line-stop criteria" yet the operator stops the line — confirm |
+| OBD-12 | E1 timers (operator 5 min, GAP Leader 10 min): measured from when, and should the system run / remind these timers or only display them? |
+| OBD-13 | H1 severity (near miss / Fr2t / Fr1t / Fr0t / 중대재해): capture severity on the ANDON? Any different handling per severity (no rules invented)? |
+| OBD-14 | Today's categories PRODUCTION and OTHER have no trigger group in the procedure: keep, remap, or retire? |
+| OBD-15 | E2 "same issue": same equipment / process / trigger / defect text? Needed for automatic repeat counting |
+| OBD-16 | QRCI: record start / completion in the system, link to the QRCI document, or keep outside? |
+| OBD-17 | Which roles are "GAP Leader" per line (UAP GAP Leader vs PC&L GAP Leader in L1) — one role with department, or separate roles? |
