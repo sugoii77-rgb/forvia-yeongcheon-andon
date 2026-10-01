@@ -6,15 +6,15 @@ import { handle } from "@/lib/server/http";
 export async function GET(req: Request, ctx: RouteContext<"/api/andons/[id]">) {
   return handle("GET /api/andons/[id]", async () => {
     const { id } = await ctx.params;
-    const event = getEvent(id);
+    const event = await getEvent(id);
     if (!event) throw new AndonError(404, "ANDON을 찾을 수 없습니다.", "NOT_FOUND");
-    const responsibility = eventResponsibility(id);
-    const eligible = eligibleResponders(event.departmentCode);
-    const viewer = getSessionUser(req);
+    const responsibility = await eventResponsibility(id);
+    const eligible = await eligibleResponders(event.departmentCode);
+    const viewer = await getSessionUser(req);
     return Response.json({
       event,
-      transitions: getTransitions(id),
-      notifications: getNotifications(id),
+      transitions: await getTransitions(id),
+      notifications: await getNotifications(id),
       // Routing and permission are decided by the server; the UI only displays them.
       responsibility,
       eligibleResponders: eligible,

@@ -16,7 +16,7 @@ export async function POST(req: Request) {
       password: body.password,
       passwordConfirm: body.passwordConfirm,
     });
-    const { token, expiresAt } = createSession(user.id, requestAudit(req));
+    const { token, expiresAt } = await createSession(user.id, requestAudit(req));
     return Response.json({ user }, { status: 201, headers: { "Set-Cookie": sessionCookie(req, token, expiresAt) } });
   });
 }

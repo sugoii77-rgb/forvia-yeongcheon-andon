@@ -1,9 +1,12 @@
-// SQLite access via Node's built-in `node:sqlite` (Node >= 22.13; project uses Node 24).
-// One file = the whole database. Backup = copy the file (or use `npm run backup`).
-import { DatabaseSync } from "node:sqlite";
+// Database access. Two backends behind one async API (see sql.ts):
+//   - TURSO_DATABASE_URL set → Turso / libSQL (Vercel). Schema is migrated ONLY by `npm run db:migrate`;
+//     a request never migrates or seeds a remote database (serverless instances start concurrently).
+//   - otherwise → SQLite file DATABASE_PATH via node:sqlite (local PC / plant server). Migrated + master
+//     data seeded on first use, with a backup before every migration. Backup = copy the file.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { DatabaseSync } from "node:sqlite";
 import {
   CATEGORIES,
   DEPARTMENTS,
@@ -17,9 +20,12 @@ import {
   ROUTING_RULES,
   USERS,
 } from "./masterData.ts";
+import { FileDriver, RemoteDriver, type Driver, type Param, type Sql } from "./sql.ts";
 
 export const DATABASE_PATH = path.resolve(/*turbopackIgnore: true*/ process.env.DATABASE_PATH || "./data/andon.db");
 export const UPLOAD_DIR = path.resolve(/*turbopackIgnore: true*/ process.env.UPLOAD_DIR || "./data/uploads");
+/** Turso / libSQL URL (set by the Vercel Marketplace integration). Empty = local SQLite file. */
+export const REMOTE_DATABASE_URL = (process.env.TURSO_DATABASE_URL || "").trim();
 
 // ---------------------------------------------------------------- schema migrations
 //
@@ -135,8 +141,8 @@ CREATE INDEX IF NOT EXISTS idx_notification_event ON notification_log(event_id);
  *  - andon_transition.user_id / device_id / client_ip / user_agent (audit; older rows stay NULL)
  *  - escalation_policy / escalation_step (prepared, inactive, thresholds NULL)
  */
-function migrateV2(db: DatabaseSync) {
-  db.exec(`
+async function migrateV2(db: Sql) {
+  await db.exec(`
     CREATE TABLE plant (
       code    TEXT PRIMARY KEY,
       name    TEXT NOT NULL,
@@ -153,9 +159,9 @@ function migrateV2(db: DatabaseSync) {
     );
   `);
   // Plants and roles must exist before the foreign keys below can be satisfied.
-  seedPlantsAndRoles(db);
+  await seedPlantsAndRoles(db);
 
-  db.exec(`
+  await db.exec(`
     ALTER TABLE line ADD COLUMN plant_code TEXT REFERENCES plant(code);
     UPDATE line SET plant_code = '${PLANTS[0].code}' WHERE plant_code IS NULL;
 
@@ -234,33 +240,35 @@ function migrateV2(db: DatabaseSync) {
  *  - andon_transition.user_department / user_role: snapshot of the actor at the time of the action.
  * Never touches andon_event / andon_transition / notification_log rows.
  */
-function migrateV3(db: DatabaseSync) {
-  db.exec(`
+async function migrateV3(db: Sql) {
+  await db.exec(`
     ALTER TABLE department ADD COLUMN display_code TEXT;
     ALTER TABLE department ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE department ADD COLUMN successor_code TEXT REFERENCES department(code);
   `);
-  const dep = db.prepare(
-    `INSERT INTO department (code, name_ko, name_en, display_code, sort_order, active) VALUES (?, ?, ?, ?, ?, 1)
-     ON CONFLICT(code) DO UPDATE SET display_code = excluded.display_code, sort_order = excluded.sort_order, active = 1`,
-  );
-  for (const d of DEPARTMENTS) dep.run(d.code, d.nameKo, d.nameEn, d.displayCode, d.sortOrder);
-
-  // Legacy departments: keep the rows (history refers to them), deactivate, point to the successor.
-  const legacy = db.prepare(
-    "UPDATE department SET active = 0, successor_code = ?, display_code = COALESCE(display_code, code), sort_order = 100 WHERE code = ?",
-  );
-  const remap = (table: string, column: string, from: string, to: string) =>
-    db.prepare(`UPDATE ${table} SET ${column} = ? WHERE ${column} = ?`).run(to, from);
-  for (const [oldCode, newCode] of Object.entries(LEGACY_DEPARTMENT_SUCCESSORS)) {
-    legacy.run(newCode, oldCode);
-    // Configuration only (not history):
-    remap("category", "default_department", oldCode, newCode);
-    remap("routing_rule", "department_code", oldCode, newCode);
-    remap("escalation_policy", "department_code", oldCode, newCode);
+  for (const d of DEPARTMENTS) {
+    await db.run(
+      `INSERT INTO department (code, name_ko, name_en, display_code, sort_order, active) VALUES (?, ?, ?, ?, ?, 1)
+       ON CONFLICT(code) DO UPDATE SET display_code = excluded.display_code, sort_order = excluded.sort_order, active = 1`,
+      d.code, d.nameKo, d.nameEn, d.displayCode, d.sortOrder,
+    );
   }
 
-  db.exec(`
+  // Legacy departments: keep the rows (history refers to them), deactivate, point to the successor.
+  const remap = (table: string, column: string, from: string, to: string) =>
+    db.run(`UPDATE ${table} SET ${column} = ? WHERE ${column} = ?`, to, from);
+  for (const [oldCode, newCode] of Object.entries(LEGACY_DEPARTMENT_SUCCESSORS)) {
+    await db.run(
+      "UPDATE department SET active = 0, successor_code = ?, display_code = COALESCE(display_code, code), sort_order = 100 WHERE code = ?",
+      newCode, oldCode,
+    );
+    // Configuration only (not history):
+    await remap("category", "default_department", oldCode, newCode);
+    await remap("routing_rule", "department_code", oldCode, newCode);
+    await remap("escalation_policy", "department_code", oldCode, newCode);
+  }
+
+  await db.exec(`
     CREATE TABLE app_user_v3 (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
       name            TEXT NOT NULL,
@@ -274,13 +282,14 @@ function migrateV3(db: DatabaseSync) {
     );
   `);
   const successors = JSON.stringify(LEGACY_DEPARTMENT_SUCCESSORS);
-  db.prepare(
+  await db.run(
     `INSERT INTO app_user_v3 (id, name, email, department_code, role, kakao_id, active, source, created_at)
      SELECT id, name, NULL, COALESCE(json_extract(?, '$."' || department_code || '"'), department_code),
             role, kakao_id, active, 'SEED', NULL
      FROM app_user`,
-  ).run(successors);
-  db.exec(`
+    successors,
+  );
+  await db.exec(`
     DROP TABLE app_user;
     ALTER TABLE app_user_v3 RENAME TO app_user;
     CREATE UNIQUE INDEX ux_app_user_email ON app_user(email) WHERE email IS NOT NULL;
@@ -333,8 +342,8 @@ function migrateV3(db: DatabaseSync) {
 }
 
 /** v4: additive employee/contact fields and short-lived Google login transactions. */
-function migrateV4(db: DatabaseSync) {
-  db.exec(`
+async function migrateV4(db: Sql) {
+  await db.exec(`
     ALTER TABLE app_user ADD COLUMN employee_id TEXT;
     ALTER TABLE app_user ADD COLUMN phone TEXT;
     ALTER TABLE app_user ADD COLUMN company_email TEXT;
@@ -358,158 +367,213 @@ function migrateV4(db: DatabaseSync) {
   `);
 }
 
-const MIGRATIONS: { version: number; up: (db: DatabaseSync) => void; foreignKeysOff?: boolean }[] = [
+/**
+ * v5 — Vercel / serverless: login throttling must be shared by all server instances, so the failure
+ * counter moves from process memory into the database. Key = SHA-256 of "e-mail|IP" (no plain e-mail).
+ */
+async function migrateV5(db: Sql) {
+  await db.exec(`
+    CREATE TABLE login_throttle (
+      throttle_key     TEXT PRIMARY KEY,
+      failures         INTEGER NOT NULL,
+      first_failure_at TEXT NOT NULL
+    );
+  `);
+}
+
+const MIGRATIONS: { version: number; up: (db: Sql) => Promise<void>; foreignKeysOff?: boolean }[] = [
   { version: 1, up: (db) => db.exec(V1_SQL) },
   { version: 2, up: migrateV2 },
   // Rebuilds app_user, which andon_transition references → FKs off during the rebuild, checked after.
   { version: 3, up: migrateV3, foreignKeysOff: true },
   { version: 4, up: migrateV4 },
+  { version: 5, up: migrateV5 },
 ];
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
 
-function backupBeforeMigration(db: DatabaseSync, from: number) {
+export async function schemaVersion(d: Sql): Promise<number> {
+  return Number((await d.get("PRAGMA user_version"))?.user_version ?? 0);
+}
+
+function backupBeforeMigration(conn: DatabaseSync, from: number) {
   const dir = path.join(path.dirname(DATABASE_PATH), "backups");
   fs.mkdirSync(dir, { recursive: true });
   const target = path.join(dir, `andon-pre-migration-v${from}-to-v${SCHEMA_VERSION}-${new Date().toISOString().replace(/[:.]/g, "-")}.db`);
   // VACUUM INTO a short temp path first (SQLite on Windows fails on paths > 260 chars), then copy.
   const tmp = path.join(os.tmpdir(), `andon-premigration-${process.pid}.db`);
   fs.rmSync(tmp, { force: true });
-  db.prepare("VACUUM INTO ?").run(tmp);
+  conn.prepare("VACUUM INTO ?").run(tmp);
   fs.copyFileSync(tmp, target);
   fs.rmSync(tmp, { force: true });
   console.info(`[db] backup before migration: ${target}`);
 }
 
-function migrate(db: DatabaseSync) {
-  const current = (db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
+/**
+ * Applies pending migrations in order, each in its own transaction, then verifies foreign keys.
+ * File databases are backed up first. A remote database (Turso) cannot switch foreign keys off, so a
+ * migration that needs it (v3) can only run on a remote database that is still empty (fresh install).
+ */
+export async function migrate(d: Driver, conn?: DatabaseSync): Promise<void> {
+  const current = await schemaVersion(d);
   if (current > SCHEMA_VERSION) {
-    throw new Error(
-      `Database schema v${current} is newer than this application (v${SCHEMA_VERSION}). Update the application; do not downgrade.`,
-    );
+    throw new Error(`Database schema v${current} is newer than this application (v${SCHEMA_VERSION}). Update the application; do not downgrade.`);
   }
   const pending = MIGRATIONS.filter((m) => m.version > current);
   if (pending.length === 0) return;
-  if (current > 0) backupBeforeMigration(db, current);
+  if (d.kind === "remote" && current > 0 && pending.some((m) => m.foreignKeysOff)) {
+    throw new Error("This migration rebuilds a referenced table and must run on a SQLite file copy, not on Turso.");
+  }
+  if (current > 0 && conn) backupBeforeMigration(conn, current);
   for (const m of pending) {
-    // PRAGMA foreign_keys cannot change inside a transaction: switch it off around the migration
-    // and verify every foreign key before switching it back on.
-    if (m.foreignKeysOff) db.exec("PRAGMA foreign_keys = OFF;");
-    try {
-      transaction(db, () => {
-        m.up(db);
-        const fk = db.prepare("PRAGMA foreign_key_check").all();
+    await d.transaction(
+      async () => {
+        await m.up(d);
+        const fk = await d.all("PRAGMA foreign_key_check");
         if (fk.length) throw new Error(`foreign key violations in migration v${m.version}: ${JSON.stringify(fk.slice(0, 5))}`);
-        db.exec(`PRAGMA user_version = ${m.version}`);
-      });
-    } finally {
-      if (m.foreignKeysOff) db.exec("PRAGMA foreign_keys = ON;");
-    }
+        await d.exec(`PRAGMA user_version = ${m.version}`);
+      },
+      { foreignKeysOff: m.foreignKeysOff },
+    );
     console.info(`[db] migrated schema to v${m.version}`);
   }
-  const fk = db.prepare("PRAGMA foreign_key_check").all();
+  const fk = await d.all("PRAGMA foreign_key_check");
   if (fk.length) throw new Error(`foreign key violations after migration: ${JSON.stringify(fk.slice(0, 5))}`);
 }
 
 // ---------------------------------------------------------------- master data bootstrap
 
-function seedPlantsAndRoles(db: DatabaseSync) {
-  const plant = db.prepare("INSERT OR IGNORE INTO plant (code, name, name_ko) VALUES (?, ?, ?)");
-  for (const p of PLANTS) plant.run(p.code, p.name, p.nameKo);
-  const role = db.prepare(
-    "INSERT OR IGNORE INTO role (code, name_ko, name_en, can_respond, escalation_level, sort_order) VALUES (?, ?, ?, ?, ?, ?)",
-  );
-  for (const r of ROLES) role.run(r.code, r.nameKo, r.nameEn, r.canRespond ? 1 : 0, r.escalationLevel, r.sortOrder);
+async function seedPlantsAndRoles(db: Sql) {
+  for (const p of PLANTS) await db.run("INSERT OR IGNORE INTO plant (code, name, name_ko) VALUES (?, ?, ?)", p.code, p.name, p.nameKo);
+  for (const r of ROLES) {
+    await db.run(
+      "INSERT OR IGNORE INTO role (code, name_ko, name_en, can_respond, escalation_level, sort_order) VALUES (?, ?, ?, ?, ?, ?)",
+      r.code, r.nameKo, r.nameEn, r.canRespond ? 1 : 0, r.escalationLevel, r.sortOrder,
+    );
+  }
 }
 
-function seedMasterData(db: DatabaseSync) {
-  seedPlantsAndRoles(db);
-
-  const dep = db.prepare(
-    "INSERT OR IGNORE INTO department (code, name_ko, name_en, display_code, sort_order) VALUES (?, ?, ?, ?, ?)",
-  );
-  for (const d of DEPARTMENTS) dep.run(d.code, d.nameKo, d.nameEn, d.displayCode, d.sortOrder);
-
-  const cat = db.prepare(
-    "INSERT OR IGNORE INTO category (code, name_ko, name_en, default_department, sort_order) VALUES (?, ?, ?, ?, ?)",
-  );
-  for (const c of CATEGORIES) cat.run(c.code, c.nameKo, c.nameEn, c.defaultDepartment, c.sortOrder);
-
-  const line = db.prepare("INSERT OR IGNORE INTO line (code, name, sort_order, plant_code) VALUES (?, ?, ?, ?)");
-  for (const l of LINES) line.run(l.code, l.name, l.sortOrder, l.plantCode);
-
+/** Inserts missing master data only — edits made in the DB are never overwritten. */
+export async function seedMasterData(db: Sql): Promise<void> {
+  await seedPlantsAndRoles(db);
+  for (const d of DEPARTMENTS) {
+    await db.run(
+      "INSERT OR IGNORE INTO department (code, name_ko, name_en, display_code, sort_order) VALUES (?, ?, ?, ?, ?)",
+      d.code, d.nameKo, d.nameEn, d.displayCode, d.sortOrder,
+    );
+  }
+  for (const c of CATEGORIES) {
+    await db.run(
+      "INSERT OR IGNORE INTO category (code, name_ko, name_en, default_department, sort_order) VALUES (?, ?, ?, ?, ?)",
+      c.code, c.nameKo, c.nameEn, c.defaultDepartment, c.sortOrder,
+    );
+  }
+  for (const l of LINES) {
+    await db.run("INSERT OR IGNORE INTO line (code, name, sort_order, plant_code) VALUES (?, ?, ?, ?)", l.code, l.name, l.sortOrder, l.plantCode);
+  }
   // AUTOINCREMENT tables: "INSERT ... WHERE NOT EXISTS" instead of INSERT OR IGNORE, which would
   // consume an id from the sequence on every start-up even when the row already exists.
-  const proc = db.prepare(
-    `INSERT INTO process (line_code, name, sort_order) SELECT ?1, ?2, ?3
-     WHERE NOT EXISTS (SELECT 1 FROM process WHERE line_code = ?1 AND name = ?2)`,
-  );
-  for (const p of PROCESSES) proc.run(p.lineCode, p.name, p.sortOrder);
-
-  const user = db.prepare(
-    `INSERT INTO app_user (name, department_code, role, active) SELECT ?1, ?2, ?3, ?4
-     WHERE NOT EXISTS (SELECT 1 FROM app_user WHERE name = ?1)`,
-  );
-  for (const u of USERS) user.run(u.name, u.departmentCode, u.role, u.active ? 1 : 0);
-
-  const procId = db.prepare("SELECT id FROM process WHERE line_code = ? AND name = ?");
-  const rule = db.prepare(
-    `INSERT INTO routing_rule (category_code, line_code, process_id, department_code, note, created_at)
-     SELECT ?1, ?2, ?3, ?4, ?5, ?6
-     WHERE NOT EXISTS (SELECT 1 FROM routing_rule WHERE category_code = ?1 AND line_code = ?2 AND IFNULL(process_id, 0) = IFNULL(?3, 0))`,
-  );
-  for (const r of ROUTING_RULES) {
-    const pid = r.processName ? (procId.get(r.lineCode, r.processName) as { id: number } | undefined)?.id : null;
-    if (r.processName && pid == null) continue;
-    rule.run(r.categoryCode, r.lineCode, pid ?? null, r.departmentCode, r.note, nowIso());
+  for (const p of PROCESSES) {
+    await db.run(
+      `INSERT INTO process (line_code, name, sort_order) SELECT ?1, ?2, ?3
+       WHERE NOT EXISTS (SELECT 1 FROM process WHERE line_code = ?1 AND name = ?2)`,
+      p.lineCode, p.name, p.sortOrder,
+    );
   }
-
-  const pol = db.prepare("INSERT OR IGNORE INTO escalation_policy (code, name, active) VALUES (?, ?, 0)");
-  for (const p of ESCALATION_POLICIES) pol.run(p.code, p.name);
-  const step = db.prepare(
-    `INSERT INTO escalation_step (policy_code, step_no, target_role, after_minutes, active) SELECT ?1, ?2, ?3, NULL, 0
-     WHERE NOT EXISTS (SELECT 1 FROM escalation_step WHERE policy_code = ?1 AND step_no = ?2 AND target_role = ?3)`,
-  );
-  for (const s of ESCALATION_STEPS) step.run(s.policyCode, s.stepNo, s.targetRole);
+  for (const u of USERS) {
+    await db.run(
+      `INSERT INTO app_user (name, department_code, role, active) SELECT ?1, ?2, ?3, ?4
+       WHERE NOT EXISTS (SELECT 1 FROM app_user WHERE name = ?1)`,
+      u.name, u.departmentCode, u.role, u.active ? 1 : 0,
+    );
+  }
+  for (const r of ROUTING_RULES) {
+    const pid = r.processName
+      ? ((await db.get("SELECT id FROM process WHERE line_code = ? AND name = ?", r.lineCode, r.processName))?.id as number | undefined)
+      : null;
+    if (r.processName && pid == null) continue;
+    await db.run(
+      `INSERT INTO routing_rule (category_code, line_code, process_id, department_code, note, created_at)
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6
+       WHERE NOT EXISTS (SELECT 1 FROM routing_rule WHERE category_code = ?1 AND line_code = ?2 AND IFNULL(process_id, 0) = IFNULL(?3, 0))`,
+      r.categoryCode, r.lineCode, pid ?? null, r.departmentCode, r.note, nowIso(),
+    );
+  }
+  for (const p of ESCALATION_POLICIES) {
+    await db.run("INSERT OR IGNORE INTO escalation_policy (code, name, active) VALUES (?, ?, 0)", p.code, p.name);
+  }
+  for (const st of ESCALATION_STEPS) {
+    await db.run(
+      `INSERT INTO escalation_step (policy_code, step_no, target_role, after_minutes, active) SELECT ?1, ?2, ?3, NULL, 0
+       WHERE NOT EXISTS (SELECT 1 FROM escalation_step WHERE policy_code = ?1 AND step_no = ?2 AND target_role = ?3)`,
+      st.policyCode, st.stepNo, st.targetRole,
+    );
+  }
 }
 
-function openDatabase(): DatabaseSync {
+// ---------------------------------------------------------------- connection
+
+/** Opens the configured database. `maintenance` = called by the migrate script (remote may be migrated). */
+export async function openDatabase(opts: { maintenance?: boolean } = {}): Promise<Driver> {
+  if (REMOTE_DATABASE_URL) {
+    const { createClient } = await import("@libsql/client/web");
+    const client = createClient({ url: REMOTE_DATABASE_URL, authToken: process.env.TURSO_AUTH_TOKEN || undefined });
+    const label = `turso ${new URL(REMOTE_DATABASE_URL).host}`;
+    const d = new RemoteDriver(client, label);
+    if (!opts.maintenance) {
+      const v = await schemaVersion(d);
+      if (v !== SCHEMA_VERSION) {
+        d.close();
+        throw new Error(`Remote database is at schema v${v}, the application needs v${SCHEMA_VERSION}. Run "npm run db:migrate" with the Turso credentials.`);
+      }
+    }
+    return d;
+  }
+
   fs.mkdirSync(path.dirname(DATABASE_PATH), { recursive: true });
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-
-  const db = new DatabaseSync(DATABASE_PATH);
-  db.exec("PRAGMA journal_mode = WAL;");
-  db.exec("PRAGMA synchronous = FULL;"); // durability over speed: ANDON write volume is tiny
-  db.exec("PRAGMA foreign_keys = ON;");
-  db.exec("PRAGMA busy_timeout = 5000;");
-
-  migrate(db);
-  transaction(db, () => seedMasterData(db));
-  return db;
+  const { DatabaseSync } = await import("node:sqlite");
+  const conn = new DatabaseSync(DATABASE_PATH);
+  conn.exec("PRAGMA journal_mode = WAL;");
+  conn.exec("PRAGMA synchronous = FULL;"); // durability over speed: ANDON write volume is tiny
+  conn.exec("PRAGMA foreign_keys = ON;");
+  conn.exec("PRAGMA busy_timeout = 5000;");
+  const d = new FileDriver(conn, DATABASE_PATH);
+  if (!opts.maintenance) {
+    await migrate(d, conn);
+    await d.transaction(() => seedMasterData(d));
+  }
+  return d;
 }
 
-// Keep a single connection across Next.js dev hot-reloads.
-const globalForDb = globalThis as unknown as { __andonDb?: DatabaseSync };
+// One connection per process, shared across Next.js dev hot-reloads.
+const globalForDb = globalThis as unknown as { __andonDb?: Promise<Driver> };
 
-export function getDb(): DatabaseSync {
-  if (!globalForDb.__andonDb) {
-    globalForDb.__andonDb = openDatabase();
-    console.info(`[db] opened ${DATABASE_PATH}`);
-  }
+function ready(): Promise<Driver> {
+  globalForDb.__andonDb ??= openDatabase().then(
+    (d) => {
+      console.info(`[db] opened ${d.label}`);
+      return d;
+    },
+    (err) => {
+      globalForDb.__andonDb = undefined; // retry on the next request
+      throw err;
+    },
+  );
   return globalForDb.__andonDb;
 }
 
-/** Run fn inside BEGIN IMMEDIATE / COMMIT; rolls back on any thrown error. */
-export function transaction<T>(db: DatabaseSync, fn: () => T): T {
-  db.exec("BEGIN IMMEDIATE");
-  try {
-    const result = fn();
-    db.exec("COMMIT");
-    return result;
-  } catch (err) {
-    db.exec("ROLLBACK");
-    throw err;
-  }
-}
+/** The application database. Every call is async; queries inside db.transaction() join the transaction. */
+export const db = {
+  all: async (sql: string, ...p: Param[]) => (await ready()).all(sql, ...p),
+  get: async (sql: string, ...p: Param[]) => (await ready()).get(sql, ...p),
+  run: async (sql: string, ...p: Param[]) => (await ready()).run(sql, ...p),
+  exec: async (sql: string) => (await ready()).exec(sql),
+  transaction: async <T>(fn: () => Promise<T>) => (await ready()).transaction(fn),
+  info: async () => {
+    const d = await ready();
+    return { kind: d.kind, label: d.label };
+  },
+};
 
 export function nowIso(): string {
   return new Date().toISOString();

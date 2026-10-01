@@ -11,7 +11,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/andons/[id]/tra
   return handle("POST /api/andons/[id]/transition", async () => {
     assertSameOrigin(req);
     const { id } = await ctx.params;
-    const user = getSessionUser(req);
+    const user = await getSessionUser(req);
     if (!user) throw new AndonError(401, "로그인이 필요합니다.", "AUTH_REQUIRED");
 
     const body = await req.json().catch(() => null);
@@ -24,13 +24,13 @@ export async function POST(req: Request, ctx: RouteContext<"/api/andons/[id]/tra
     if (claimsOther) throw new AndonError(400, "담당자 정보가 로그인 사용자와 다릅니다.", "RESPONDER_MISMATCH");
 
     const audit = requestAudit(req);
-    const event = transitionEvent(id, {
+    const event = await transitionEvent(id, {
       action: body.action as TransitionAction,
       userId: user.id,
       comment: body.comment == null ? undefined : String(body.comment),
       audit,
     });
     console.info(`[andon] ${id} ${body.action} by user #${user.id} (${user.departmentCode}) device ${audit.deviceId ?? "-"} ${audit.clientIp ?? ""} -> ${event.status}`);
-    return Response.json({ event, transitions: getTransitions(id) });
+    return Response.json({ event, transitions: await getTransitions(id) });
   });
 }

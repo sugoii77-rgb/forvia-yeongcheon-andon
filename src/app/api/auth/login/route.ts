@@ -11,8 +11,8 @@ export async function POST(req: Request) {
     if (!body || typeof body !== "object") throw new AndonError(400, "요청 형식이 올바르지 않습니다.", "BAD_REQUEST");
     const audit = requestAudit(req);
     const user = await authenticate(body.email, body.password, audit);
-    revokeSession(req);
-    const { token, expiresAt } = createSession(user.id, audit);
+    await revokeSession(req);
+    const { token, expiresAt } = await createSession(user.id, audit);
     console.info(`[auth] login user #${user.id}`);
     return Response.json({ user }, { headers: { "Set-Cookie": sessionCookie(req, token, expiresAt) } });
   });

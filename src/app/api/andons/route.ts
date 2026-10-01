@@ -1,28 +1,29 @@
 import { createEvent, getBoardCounts, listEvents, AndonError, type ListOptions } from "@/lib/server/andonService";
 import { notifyAndonCreated } from "@/lib/server/notifications";
 import { deletePhoto, savePhoto } from "@/lib/server/photos";
+import { after } from "next/server";
 import { handle, requestAudit } from "@/lib/server/http";
 import { getSessionUser } from "@/lib/server/auth";
 
 export async function GET(req: Request) {
-  return handle("GET /api/andons", () => {
+  return handle("GET /api/andons", async () => {
     const q = new URL(req.url).searchParams;
     const scope = (q.get("scope") ?? "board") as ListOptions["scope"];
     // mine=1: only events of the logged-in user's department (decided on the server from the session).
     let responderId: number | undefined;
     if (q.get("mine") === "1") {
-      const user = getSessionUser(req);
+      const user = await getSessionUser(req);
       if (!user) throw new AndonError(401, "로그인이 필요합니다.", "AUTH_REQUIRED");
       responderId = user.id;
     }
-    const events = listEvents({
+    const events = await listEvents({
       scope,
       department: q.get("department") || undefined,
       responderId,
       limit: q.get("limit") ? Number(q.get("limit")) : undefined,
     });
     // serverTime lets clients correct for clock skew when showing elapsed time.
-    return Response.json({ events, counts: getBoardCounts(), serverTime: new Date().toISOString() });
+    return Response.json({ events, counts: await getBoardCounts(), serverTime: new Date().toISOString() });
   });
 }
 
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
 
     let result;
     try {
-      result = createEvent({
+      result = await createEvent({
         lineCode: str("lineCode"),
         processId: Number(str("processId")),
         categoryCode: str("categoryCode"),
@@ -74,8 +75,10 @@ export async function POST(req: Request) {
 
     if (!result.duplicate) {
       console.info(`[andon] created ${result.event.id} ${result.event.lineName}/${result.event.processName}`);
-      // Fire-and-forget: the operator gets confirmation immediately; every attempt is logged.
-      void notifyAndonCreated(result.event);
+      // After the response: the operator gets confirmation immediately; every attempt is logged.
+      // after() keeps the work alive until it finishes, also on serverless platforms.
+      const created = result.event;
+      after(() => notifyAndonCreated(created));
     }
     return Response.json(
       { ...result, photoWarning: result.duplicate ? null : photoWarning },

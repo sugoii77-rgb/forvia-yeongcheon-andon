@@ -7,9 +7,9 @@
 import crypto from "node:crypto";
 import { promisify } from "node:util";
 import { DEPARTMENT_CODES, SELF_REGISTRATION_ROLE, type PublicUser, type RoleCode } from "../domain.ts";
-import { getDb, nowIso, transaction } from "./db.ts";
+import { db, nowIso } from "./db.ts";
 import { AndonError, type AuditInfo } from "./errors.ts";
-import { departmentLabel } from "./routingService.ts";
+import { departmentLabelMap } from "./routingService.ts";
 
 const scrypt = promisify(crypto.scrypt) as (
   password: crypto.BinaryLike,
@@ -68,7 +68,7 @@ SELECT u.id, u.employee_id, u.name, u.email, u.department_code, u.role, u.active
        EXISTS(SELECT 1 FROM user_identity i WHERE i.user_id=u.id AND i.provider='GOOGLE') AS google_linked
 FROM app_user u JOIN role r ON r.code = u.role`;
 
-function toPublicUser(r: Record<string, unknown>): PublicUser {
+function toPublicUser(r: Record<string, unknown>, labels: Map<string, string>): PublicUser {
   return {
     id: r.id as number,
     employeeId: (r.employee_id as string | null) ?? null,
@@ -76,7 +76,7 @@ function toPublicUser(r: Record<string, unknown>): PublicUser {
     name: r.name as string,
     email: (r.email as string | null) ?? null,
     departmentCode: r.department_code as string,
-    departmentLabel: departmentLabel(r.department_code as string),
+    departmentLabel: labels.get(r.department_code as string) ?? (r.department_code as string),
     role: r.role as RoleCode,
     roleName: r.role_name as string,
     active: r.active === 1,
@@ -84,9 +84,9 @@ function toPublicUser(r: Record<string, unknown>): PublicUser {
   };
 }
 
-export function getPublicUser(userId: number): PublicUser | null {
-  const r = getDb().prepare(`${PUBLIC_USER_SELECT} WHERE u.id = ?`).get(userId);
-  return r ? toPublicUser(r) : null;
+export async function getPublicUser(userId: number): Promise<PublicUser | null> {
+  const r = await db.get(`${PUBLIC_USER_SELECT} WHERE u.id = ?`, userId);
+  return r ? toPublicUser(r, await departmentLabelMap()) : null;
 }
 
 export interface RegistrationInput {
@@ -112,7 +112,7 @@ export async function registerUser(input: RegistrationInput): Promise<PublicUser
     throw new AndonError(400, "이름을 1~40자로 입력하세요.", "INVALID_NAME");
   }
   if (!EMAIL.test(email) || email.length > 254) throw new AndonError(400, "이메일 형식이 올바르지 않습니다.", "INVALID_EMAIL");
-  const dep = getDb().prepare("SELECT code FROM department WHERE code = ? AND active = 1").get(department);
+  const dep = (await db.get("SELECT code FROM department WHERE code = ? AND active = 1", department));
   if (!dep || !(DEPARTMENT_CODES as readonly string[]).includes(department)) {
     throw new AndonError(400, "부서를 목록에서 선택하세요.", "INVALID_DEPARTMENT");
   }
@@ -121,24 +121,17 @@ export async function registerUser(input: RegistrationInput): Promise<PublicUser
 
   const hash = await hashPassword(password); // async: before the (synchronous) transaction
   const now = nowIso();
-  const db = getDb();
   let userId: number;
   try {
-    userId = transaction(db, () => {
+    userId = await db.transaction(async () => {
       const taken =
-        db.prepare("SELECT 1 FROM app_user WHERE email = ?").get(email) ??
-        db.prepare("SELECT 1 FROM user_identity WHERE provider = 'LOCAL' AND subject = ?").get(email);
+        (await db.get("SELECT 1 FROM app_user WHERE email = ?", email)) ??
+        (await db.get("SELECT 1 FROM user_identity WHERE provider = 'LOCAL' AND subject = ?", email));
       if (taken) throw new AndonError(409, "이미 가입된 이메일입니다.", "EMAIL_TAKEN");
-      const u = db
-        .prepare(
-          `INSERT INTO app_user (name, email, department_code, role, active, source, created_at)
-           VALUES (?, ?, ?, ?, 1, 'REGISTRATION', ?)`,
-        )
-        .run(name, email, department, SELF_REGISTRATION_ROLE, now);
+      const u = (await db.run(`INSERT INTO app_user (name, email, department_code, role, active, source, created_at)
+           VALUES (?, ?, ?, ?, 1, 'REGISTRATION', ?)`, name, email, department, SELF_REGISTRATION_ROLE, now));
       const id = Number(u.lastInsertRowid);
-      db.prepare(
-        "INSERT INTO user_identity (user_id, provider, subject, password_hash, created_at) VALUES (?, 'LOCAL', ?, ?, ?)",
-      ).run(id, email, hash, now);
+      (await db.run("INSERT INTO user_identity (user_id, provider, subject, password_hash, created_at) VALUES (?, 'LOCAL', ?, ?, ?)", id, email, hash, now));
       return id;
     });
   } catch (err) {
@@ -150,30 +143,43 @@ export async function registerUser(input: RegistrationInput): Promise<PublicUser
     throw err;
   }
   console.info(`[auth] registered user #${userId} (${department}, ${SELF_REGISTRATION_ROLE})`);
-  return getPublicUser(userId)!;
+  return (await getPublicUser(userId))!;
 }
 
 // ---------------------------------------------------------------- login throttling
 
-// In-memory, per e-mail + IP: 5 failures within 15 minutes → locked until the window ends.
-// Resets when the server restarts (prototype).
+// Per e-mail + IP: 5 failures within 15 minutes → locked until the window ends. Stored in the database
+// (table login_throttle, schema v5) so that every server instance — also on Vercel — shares the counter.
+// The key is a SHA-256 hash, so the table holds no plain e-mail addresses.
 const FAIL_WINDOW_MS = 15 * 60_000;
 const FAIL_LIMIT = 5;
-const failures = new Map<string, { count: number; first: number }>();
 
 function throttleKey(email: string, ip: string | null) {
-  return `${email}|${ip ?? "-"}`;
+  return crypto.createHash("sha256").update(`${email}|${ip ?? "-"}`).digest("hex");
 }
-function assertNotLocked(key: string) {
-  const f = failures.get(key);
-  if (f && Date.now() - f.first < FAIL_WINDOW_MS && f.count >= FAIL_LIMIT) {
+async function assertNotLocked(key: string) {
+  const f = (await db.get("SELECT failures, first_failure_at FROM login_throttle WHERE throttle_key = ?", key)) as
+    | { failures: number; first_failure_at: string }
+    | undefined;
+  if (f && Date.now() - new Date(f.first_failure_at).getTime() < FAIL_WINDOW_MS && f.failures >= FAIL_LIMIT) {
     throw new AndonError(429, "로그인 실패가 많습니다. 15분 후 다시 시도하세요.", "TOO_MANY_ATTEMPTS");
   }
 }
-function recordFailure(key: string) {
-  const f = failures.get(key);
-  if (!f || Date.now() - f.first >= FAIL_WINDOW_MS) failures.set(key, { count: 1, first: Date.now() });
-  else f.count++;
+async function recordFailure(key: string) {
+  const windowStart = new Date(Date.now() - FAIL_WINDOW_MS).toISOString();
+  // One atomic upsert: start a new window if the old one expired, otherwise count up.
+  await db.run(
+    `INSERT INTO login_throttle (throttle_key, failures, first_failure_at) VALUES (?1, 1, ?2)
+     ON CONFLICT(throttle_key) DO UPDATE SET
+       failures = CASE WHEN first_failure_at < ?3 THEN 1 ELSE failures + 1 END,
+       first_failure_at = CASE WHEN first_failure_at < ?3 THEN ?2 ELSE first_failure_at END`,
+    key,
+    nowIso(),
+    windowStart,
+  );
+}
+async function clearFailures(key: string) {
+  await db.run("DELETE FROM login_throttle WHERE throttle_key = ?", key);
 }
 
 /** Verifies e-mail + password. Returns the user or throws (same message for unknown e-mail and wrong password). */
@@ -181,23 +187,21 @@ export async function authenticate(emailInput: unknown, passwordInput: unknown, 
   const email = normalizeEmail(emailInput);
   const password = typeof passwordInput === "string" ? passwordInput : "";
   const key = throttleKey(email, audit.clientIp);
-  assertNotLocked(key);
+  await assertNotLocked(key);
 
-  const row = getDb()
-    .prepare("SELECT user_id, password_hash FROM user_identity WHERE provider = 'LOCAL' AND subject = ?")
-    .get(email) as { user_id: number; password_hash: string | null } | undefined;
+  const row = (await db.get("SELECT user_id, password_hash FROM user_identity WHERE provider = 'LOCAL' AND subject = ?", email)) as { user_id: number; password_hash: string | null } | undefined;
   const ok = row?.password_hash
     ? await verifyPassword(password, row.password_hash)
     : (await verifyPassword(password, await getDummyHash()), false);
   if (!row || !ok) {
-    recordFailure(key);
+    await recordFailure(key);
     throw new AndonError(401, "이메일 또는 비밀번호가 올바르지 않습니다.", "INVALID_CREDENTIALS");
   }
-  failures.delete(key);
-  const user = getPublicUser(row.user_id);
+  await clearFailures(key);
+  const user = await getPublicUser(row.user_id);
   if (!user) throw new AndonError(401, "이메일 또는 비밀번호가 올바르지 않습니다.", "INVALID_CREDENTIALS");
   if (!user.active) throw new AndonError(403, "비활성(사용 중지)된 계정입니다. 관리자에게 문의하세요.", "ACCOUNT_INACTIVE");
-  getDb().prepare("UPDATE user_identity SET last_login_at = ? WHERE provider = 'LOCAL' AND subject = ?").run(nowIso(), email);
+  (await db.run("UPDATE user_identity SET last_login_at = ? WHERE provider = 'LOCAL' AND subject = ?", nowIso(), email));
   return user;
 }
 
@@ -209,16 +213,12 @@ const SESSION_TTL_MS = Math.max(1, Number(process.env.SESSION_TTL_HOURS || 168))
 const sha256 = (s: string) => crypto.createHash("sha256").update(s).digest("hex");
 
 /** Always a NEW random token (prevents session fixation); only its hash is stored. */
-export function createSession(userId: number, audit: AuditInfo): { token: string; expiresAt: Date } {
+export async function createSession(userId: number, audit: AuditInfo): Promise<{ token: string; expiresAt: Date }> {
   const token = crypto.randomBytes(32).toString("base64url");
   const now = new Date();
   const expiresAt = new Date(now.getTime() + SESSION_TTL_MS);
-  getDb()
-    .prepare(
-      `INSERT INTO user_session (token_hash, user_id, created_at, expires_at, last_seen_at, device_id, client_ip, user_agent)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(sha256(token), userId, now.toISOString(), expiresAt.toISOString(), now.toISOString(), audit.deviceId, audit.clientIp, audit.userAgent);
+  (await db.run(`INSERT INTO user_session (token_hash, user_id, created_at, expires_at, last_seen_at, device_id, client_ip, user_agent)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, sha256(token), userId, now.toISOString(), expiresAt.toISOString(), now.toISOString(), audit.deviceId, audit.clientIp, audit.userAgent));
   return { token, expiresAt };
 }
 
@@ -238,25 +238,22 @@ export function readCookie(req: Request, name: string): string | null {
  * The logged-in user of this request, resolved from the server on every call (current department,
  * role and active flag — a deactivated user is returned with active=false and cannot respond).
  */
-export function getSessionUser(req: Request): PublicUser | null {
+export async function getSessionUser(req: Request): Promise<PublicUser | null> {
   const token = readCookie(req, SESSION_COOKIE);
   if (!token || token.length > 100) return null;
-  const db = getDb();
-  const s = db
-    .prepare("SELECT user_id, expires_at, last_seen_at FROM user_session WHERE token_hash = ? AND revoked_at IS NULL")
-    .get(sha256(token)) as { user_id: number; expires_at: string; last_seen_at: string } | undefined;
+  const s = (await db.get("SELECT user_id, expires_at, last_seen_at FROM user_session WHERE token_hash = ? AND revoked_at IS NULL", sha256(token))) as { user_id: number; expires_at: string; last_seen_at: string } | undefined;
   if (!s || s.expires_at <= nowIso()) return null;
   // Touch at most every 5 minutes (dashboards poll constantly).
   if (Date.now() - new Date(s.last_seen_at).getTime() > 5 * 60_000) {
-    db.prepare("UPDATE user_session SET last_seen_at = ? WHERE token_hash = ?").run(nowIso(), sha256(token));
+    (await db.run("UPDATE user_session SET last_seen_at = ? WHERE token_hash = ?", nowIso(), sha256(token)));
   }
   return getPublicUser(s.user_id);
 }
 
-export function revokeSession(req: Request) {
+export async function revokeSession(req: Request): Promise<void> {
   const token = readCookie(req, SESSION_COOKIE);
   if (!token || token.length > 100) return;
-  getDb().prepare("UPDATE user_session SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL").run(nowIso(), sha256(token));
+  (await db.run("UPDATE user_session SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL", nowIso(), sha256(token)));
 }
 
 function secureCookie(req: Request): boolean {

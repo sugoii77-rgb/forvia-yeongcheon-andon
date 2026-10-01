@@ -10,9 +10,9 @@ import {
   type RoleCode,
   type TransitionAction,
 } from "../domain.ts";
-import { getDb, nowIso, transaction } from "./db.ts";
+import { db, nowIso } from "./db.ts";
 import { AndonError, type AuditInfo } from "./errors.ts";
-import { departmentAliases, departmentLabel, resolveResponsibility, validateResponder } from "./routingService.ts";
+import { departmentAliases, departmentLabelMap, resolveResponsibility, validateResponder } from "./routingService.ts";
 
 export { AndonError, type AuditInfo };
 
@@ -57,7 +57,7 @@ function toEvent(r: Row): AndonEvent {
   };
 }
 
-function toTransition(r: Row): AndonTransition {
+function toTransition(r: Row, labels: Map<string, string>): AndonTransition {
   return {
     id: r.id as number,
     eventId: r.event_id as string,
@@ -67,7 +67,7 @@ function toTransition(r: Row): AndonTransition {
     userName: r.user_name as string,
     userId: (r.user_id as number | null) ?? null,
     userDepartment: (r.user_department as string | null) ?? null,
-    userDepartmentLabel: r.user_department ? departmentLabel(r.user_department as string) : null,
+    userDepartmentLabel: r.user_department ? (labels.get(r.user_department as string) ?? (r.user_department as string)) : null,
     userRole: (r.user_role as string | null) ?? null,
     comment: (r.comment as string) ?? null,
     createdAt: r.created_at as string,
@@ -77,7 +77,7 @@ function toTransition(r: Row): AndonTransition {
   };
 }
 
-function insertTransition(
+async function insertTransition(
   eventId: string,
   t: {
     action: string;
@@ -93,50 +93,33 @@ function insertTransition(
   },
   audit: AuditInfo,
 ) {
-  getDb()
-    .prepare(
-      `INSERT INTO andon_transition
+  (await db.run(`INSERT INTO andon_transition
          (event_id, action, from_status, to_status, user_name, user_id, user_department, user_role, comment, created_at,
           device_id, client_ip, user_agent)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(
-      eventId, t.action, t.from, t.to, t.userName, t.userId, t.userDepartment, t.userRole, t.comment, t.at,
-      audit.deviceId, audit.clientIp, audit.userAgent,
-    );
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, eventId, t.action, t.from, t.to, t.userName, t.userId, t.userDepartment, t.userRole, t.comment, t.at,
+      audit.deviceId, audit.clientIp, audit.userAgent));
 }
 
 // ---------------------------------------------------------------- master data
 
-export function getMasterData(): MasterData {
-  const db = getDb();
-  const plants = db
-    .prepare("SELECT code, name, name_ko FROM plant WHERE active = 1 ORDER BY code")
-    .all()
+export async function getMasterData(): Promise<MasterData> {
+  const plants = (await db.all("SELECT code, name, name_ko FROM plant WHERE active = 1 ORDER BY code"))
     .map((r) => ({ code: r.code as string, name: r.name as string, nameKo: r.name_ko as string }));
   return {
     plant: plants[0]?.name ?? "",
     plants,
-    lines: db
-      .prepare("SELECT code, name, plant_code FROM line WHERE active = 1 ORDER BY sort_order")
-      .all()
+    lines: (await db.all("SELECT code, name, plant_code FROM line WHERE active = 1 ORDER BY sort_order"))
       .map((r) => ({ code: r.code as string, name: r.name as string, plantCode: r.plant_code as string })),
-    processes: db
-      .prepare("SELECT id, line_code, name FROM process WHERE active = 1 ORDER BY line_code, sort_order")
-      .all()
+    processes: (await db.all("SELECT id, line_code, name FROM process WHERE active = 1 ORDER BY line_code, sort_order"))
       .map((r) => ({ id: r.id as number, lineCode: r.line_code as string, name: r.name as string })),
-    categories: db
-      .prepare("SELECT code, name_ko, name_en, default_department FROM category WHERE active = 1 ORDER BY sort_order")
-      .all()
+    categories: (await db.all("SELECT code, name_ko, name_en, default_department FROM category WHERE active = 1 ORDER BY sort_order"))
       .map((r) => ({
         code: r.code as string,
         nameKo: r.name_ko as string,
         nameEn: r.name_en as string,
         defaultDepartment: r.default_department as string,
       })),
-    departments: db
-      .prepare("SELECT code, COALESCE(display_code, code) AS display_code, name_ko, name_en FROM department WHERE active = 1 ORDER BY sort_order")
-      .all()
+    departments: (await db.all("SELECT code, COALESCE(display_code, code) AS display_code, name_ko, name_en FROM department WHERE active = 1 ORDER BY sort_order"))
       .map((r) => ({
         code: r.code as string,
         displayCode: r.display_code as string,
@@ -144,9 +127,7 @@ export function getMasterData(): MasterData {
         nameKo: r.name_ko as string,
         nameEn: r.name_en as string,
       })),
-    roles: db
-      .prepare("SELECT code, name_ko, name_en, can_respond, escalation_level FROM role ORDER BY sort_order")
-      .all()
+    roles: (await db.all("SELECT code, name_ko, name_en, can_respond, escalation_level FROM role ORDER BY sort_order"))
       .map((r) => ({
         code: r.code as RoleCode,
         nameKo: r.name_ko as string,
@@ -169,8 +150,7 @@ export interface ListOptions {
   recentClosedMinutes?: number;
 }
 
-export function listEvents(opts: ListOptions = {}): AndonEvent[] {
-  const db = getDb();
+export async function listEvents(opts: ListOptions = {}): Promise<AndonEvent[]> {
   const where: string[] = [];
   const params: (string | number)[] = [];
   const active = ACTIVE_STATUSES.map((s) => `'${s}'`).join(",");
@@ -187,10 +167,10 @@ export function listEvents(opts: ListOptions = {}): AndonEvent[] {
     params.push(opts.department);
   }
   if (opts.responderId != null) {
-    const u = db.prepare("SELECT department_code FROM app_user WHERE id = ? AND active = 1").get(opts.responderId) as
+    const u = (await db.get("SELECT department_code FROM app_user WHERE id = ? AND active = 1", opts.responderId)) as
       | { department_code: string }
       | undefined;
-    const codes = u ? departmentAliases(u.department_code) : [];
+    const codes = u ? await departmentAliases(u.department_code) : [];
     if (codes.length === 0) return [];
     where.push(`e.department_code IN (${codes.map(() => "?").join(",")})`);
     params.push(...codes);
@@ -202,25 +182,21 @@ export function listEvents(opts: ListOptions = {}): AndonEvent[] {
       : "CASE e.status WHEN 'OPEN' THEN 0 WHEN 'CLOSED' THEN 2 ELSE 1 END, e.created_at ASC";
   const sql = EVENT_SELECT + (where.length ? ` WHERE ${where.join(" AND ")}` : "") + ` ORDER BY ${order} LIMIT ?`;
   params.push(opts.limit ?? 500);
-  return db.prepare(sql).all(...params).map(toEvent);
+  return (await db.all(sql, ...params)).map(toEvent);
 }
 
-export function getEvent(id: string): AndonEvent | null {
-  const r = getDb().prepare(`${EVENT_SELECT} WHERE e.id = ?`).get(id);
+export async function getEvent(id: string): Promise<AndonEvent | null> {
+  const r = (await db.get(`${EVENT_SELECT} WHERE e.id = ?`, id));
   return r ? toEvent(r) : null;
 }
 
-export function getTransitions(id: string): AndonTransition[] {
-  return getDb()
-    .prepare("SELECT * FROM andon_transition WHERE event_id = ? ORDER BY id")
-    .all(id)
-    .map(toTransition);
+export async function getTransitions(id: string): Promise<AndonTransition[]> {
+  const labels = await departmentLabelMap(); // one query for all rows
+  return (await db.all("SELECT * FROM andon_transition WHERE event_id = ? ORDER BY id", id)).map((r) => toTransition(r, labels));
 }
 
-export function getNotifications(id: string): NotificationLogEntry[] {
-  return getDb()
-    .prepare("SELECT * FROM notification_log WHERE event_id = ? ORDER BY id")
-    .all(id)
+export async function getNotifications(id: string): Promise<NotificationLogEntry[]> {
+  return (await db.all("SELECT * FROM notification_log WHERE event_id = ? ORDER BY id", id))
     .map((r) => ({
       id: r.id as number,
       eventId: r.event_id as string,
@@ -253,8 +229,8 @@ function kstDateKey(iso: string): string {
   return new Date(new Date(iso).getTime() + 9 * 3600_000).toISOString().slice(0, 10).replaceAll("-", "");
 }
 
-export function findByClientRequestId(clientRequestId: string): AndonEvent | null {
-  const r = getDb().prepare(`${EVENT_SELECT} WHERE e.client_request_id = ?`).get(clientRequestId);
+export async function findByClientRequestId(clientRequestId: string): Promise<AndonEvent | null> {
+  const r = (await db.get(`${EVENT_SELECT} WHERE e.client_request_id = ?`, clientRequestId));
   return r ? toEvent(r) : null;
 }
 
@@ -262,47 +238,37 @@ export function findByClientRequestId(clientRequestId: string): AndonEvent | nul
  * Creates an ANDON event and its CREATE history row in one transaction.
  * Returns `duplicate: true` (and the original event) if the same clientRequestId was already stored.
  */
-export function createEvent(input: CreateAndonInput): { event: AndonEvent; duplicate: boolean } {
-  const db = getDb();
+export async function createEvent(input: CreateAndonInput): Promise<{ event: AndonEvent; duplicate: boolean }> {
   const description = (input.description ?? "").trim();
   const createdBy = (input.createdBy ?? "").trim() || "작업자";
 
   if (input.clientRequestId) {
-    const existing = findByClientRequestId(input.clientRequestId);
+    const existing = await findByClientRequestId(input.clientRequestId);
     if (existing) return { event: existing, duplicate: true };
   }
 
   if (!description) throw new AndonError(400, "이상 내용을 입력하세요.", "DESCRIPTION_REQUIRED");
   if (description.length > 500) throw new AndonError(400, "이상 내용은 500자 이내로 입력하세요.", "DESCRIPTION_TOO_LONG");
 
-  const proc = db
-    .prepare("SELECT id FROM process WHERE id = ? AND line_code = ? AND active = 1")
-    .get(input.processId, input.lineCode);
+  const proc = (await db.get("SELECT id FROM process WHERE id = ? AND line_code = ? AND active = 1", input.processId, input.lineCode));
   if (!proc) throw new AndonError(400, "라인/공정 선택이 올바르지 않습니다.", "INVALID_PROCESS");
 
-  const cat = db.prepare("SELECT 1 FROM category WHERE code = ? AND active = 1").get(input.categoryCode);
+  const cat = (await db.get("SELECT 1 FROM category WHERE code = ? AND active = 1", input.categoryCode));
   if (!cat) throw new AndonError(400, "이상 유형 선택이 올바르지 않습니다.", "INVALID_CATEGORY");
 
-  const plant = db
-    .prepare("SELECT p.name FROM line l JOIN plant p ON p.code = l.plant_code WHERE l.code = ?")
-    .get(input.lineCode) as { name: string } | undefined;
+  const plant = (await db.get("SELECT p.name FROM line l JOIN plant p ON p.code = l.plant_code WHERE l.code = ?", input.lineCode)) as { name: string } | undefined;
   const createdAt = input.createdAt ?? nowIso();
-  const id = transaction(db, () => {
+  const id = await db.transaction(async () => {
     const prefix = `AND-${kstDateKey(createdAt)}-`;
-    const last = db
-      .prepare("SELECT id FROM andon_event WHERE id LIKE ? ORDER BY id DESC LIMIT 1")
-      .get(`${prefix}%`) as { id: string } | undefined;
+    const last = (await db.get("SELECT id FROM andon_event WHERE id LIKE ? ORDER BY id DESC LIMIT 1", `${prefix}%`)) as { id: string } | undefined;
     const seq = last ? Number(last.id.slice(prefix.length)) + 1 : 1;
     const newId = `${prefix}${String(seq).padStart(3, "0")}`;
     // Responsibility is decided once, at creation, by the routing rules (src/lib/routing.ts).
-    const resp = resolveResponsibility(input.lineCode, input.processId, input.categoryCode);
+    const resp = await resolveResponsibility(input.lineCode, input.processId, input.categoryCode);
 
-    db.prepare(
-      `INSERT INTO andon_event (id, plant, line_code, process_id, category_code, department_code, routing_rule_id,
+    (await db.run(`INSERT INTO andon_event (id, plant, line_code, process_id, category_code, department_code, routing_rule_id,
          description, photo_file, status, created_by, created_at, updated_at, client_request_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)`,
-    ).run(
-      newId,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)`, newId,
       plant?.name ?? "",
       input.lineCode,
       input.processId,
@@ -314,10 +280,9 @@ export function createEvent(input: CreateAndonInput): { event: AndonEvent; dupli
       createdBy,
       createdAt,
       createdAt,
-      input.clientRequestId ?? null,
-    );
+      input.clientRequestId ?? null));
     // Operators have no accounts yet: user_id stays NULL, the typed name is recorded as-is.
-    insertTransition(
+    await insertTransition(
       newId,
       { action: "CREATE", from: null, to: "OPEN", userName: createdBy, userId: null, userDepartment: null, userRole: null, comment: description, at: createdAt },
       input.audit ?? NO_AUDIT,
@@ -325,7 +290,7 @@ export function createEvent(input: CreateAndonInput): { event: AndonEvent; dupli
     return newId;
   });
 
-  return { event: getEvent(id)!, duplicate: false };
+  return { event: (await getEvent(id))!, duplicate: false };
 }
 
 // ---------------------------------------------------------------- transitions
@@ -342,8 +307,7 @@ export interface TransitionInput {
   at?: string;
 }
 
-export function transitionEvent(id: string, input: TransitionInput): AndonEvent {
-  const db = getDb();
+export async function transitionEvent(id: string, input: TransitionInput): Promise<AndonEvent> {
   const rule = TRANSITION_RULES[input.action];
   if (!rule) throw new AndonError(400, "알 수 없는 조치입니다.", "INVALID_ACTION");
 
@@ -358,13 +322,13 @@ export function transitionEvent(id: string, input: TransitionInput): AndonEvent 
 
   const at = input.at ?? nowIso();
 
-  transaction(db, () => {
-    const row = db.prepare("SELECT status, department_code FROM andon_event WHERE id = ?").get(id) as
+  await db.transaction(async () => {
+    const row = (await db.get("SELECT status, department_code FROM andon_event WHERE id = ?", id)) as
       | { status: AndonStatus; department_code: string }
       | undefined;
     if (!row) throw new AndonError(404, "ANDON을 찾을 수 없습니다.", "NOT_FOUND");
     // Who: must be an active, responder-capable user of the event's responsible department.
-    const responder = validateResponder({ userId: input.userId, userName: input.userName }, row.department_code);
+    const responder = await validateResponder({ userId: input.userId, userName: input.userName }, row.department_code);
     const userName = responder.name;
     if (!rule.from.includes(row.status)) {
       throw new AndonError(
@@ -384,12 +348,10 @@ export function transitionEvent(id: string, input: TransitionInput): AndonEvent 
       params.push(at, userName, comment);
     }
     // Guard on the status we just read, so a concurrent change can never be overwritten.
-    const res = db
-      .prepare(`UPDATE andon_event SET ${sets.join(", ")} WHERE id = ? AND status = ?`)
-      .run(...params, id, row.status);
+    const res = (await db.run(`UPDATE andon_event SET ${sets.join(", ")} WHERE id = ? AND status = ?`, ...params, id, row.status));
     if (res.changes !== 1) throw new AndonError(409, "다른 사용자가 먼저 처리했습니다. 화면을 새로고침하세요.", "CONFLICT");
 
-    insertTransition(
+    await insertTransition(
       id,
       {
         action: input.action,
@@ -406,7 +368,7 @@ export function transitionEvent(id: string, input: TransitionInput): AndonEvent 
     );
   });
 
-  return getEvent(id)!;
+  return (await getEvent(id))!;
 }
 
 // ---------------------------------------------------------------- stats
@@ -419,16 +381,12 @@ export function kstStartOfToday(): string {
 }
 
 /** Counters for the dashboard header: current open / in progress, closed since 00:00 KST. */
-export function getBoardCounts() {
-  const r = getDb()
-    .prepare(
-      `SELECT SUM(status = 'OPEN') AS open,
+export async function getBoardCounts() {
+  const r = (await db.get(`SELECT SUM(status = 'OPEN') AS open,
               SUM(status IN ('ACKNOWLEDGED','IN_PROGRESS')) AS in_progress,
               SUM(status = 'CLOSED' AND closed_at >= ?) AS closed_today,
               SUM(created_at >= ?) AS created_today
-       FROM andon_event`,
-    )
-    .get(kstStartOfToday(), kstStartOfToday()) as Row;
+       FROM andon_event`, kstStartOfToday(), kstStartOfToday())) as Row;
   return {
     open: Number(r.open ?? 0),
     inProgress: Number(r.in_progress ?? 0),
@@ -451,12 +409,9 @@ export interface AndonStats {
   repeatTop5: { lineName: string; processName: string; categoryName: string; description: string; count: number }[];
 }
 
-export function getStats(from: string, to: string): AndonStats {
-  const db = getDb();
+export async function getStats(from: string, to: string): Promise<AndonStats> {
   const range = "e.created_at >= ? AND e.created_at < ?";
-  const summary = db
-    .prepare(
-      `SELECT COUNT(*) AS total,
+  const summary = (await db.get(`SELECT COUNT(*) AS total,
          SUM(e.status = 'OPEN') AS open,
          SUM(e.status IN ('ACKNOWLEDGED','IN_PROGRESS')) AS in_progress,
          SUM(e.status = 'CLOSED') AS closed,
@@ -464,19 +419,13 @@ export function getStats(from: string, to: string): AndonStats {
              THEN (julianday(e.acknowledged_at) - julianday(e.created_at)) * 86400 END) AS avg_response,
          AVG(CASE WHEN e.closed_at IS NOT NULL
              THEN (julianday(e.closed_at) - julianday(e.created_at)) * 86400 END) AS avg_resolution
-       FROM andon_event e WHERE ${range}`,
-    )
-    .get(from, to) as Row;
+       FROM andon_event e WHERE ${range}`, from, to)) as Row;
 
-  const group = (col: string, join: string) =>
-    db
-      .prepare(`SELECT ${col} AS name, COUNT(*) AS count FROM andon_event e ${join} WHERE ${range} GROUP BY ${col} ORDER BY count DESC`)
-      .all(from, to)
+  const group = async (col: string, join: string) =>
+    (await db.all(`SELECT ${col} AS name, COUNT(*) AS count FROM andon_event e ${join} WHERE ${range} GROUP BY ${col} ORDER BY count DESC`, from, to))
       .map((r) => ({ name: r.name as string, count: r.count as number }));
 
-  const repeatTop5 = db
-    .prepare(
-      `SELECT l.name AS line_name, p.name AS process_name, c.name_ko AS category_name,
+  const repeatTop5 = (await db.all(`SELECT l.name AS line_name, p.name AS process_name, c.name_ko AS category_name,
               MIN(e.description) AS description, COUNT(*) AS count
        FROM andon_event e
        JOIN line l ON l.code = e.line_code
@@ -485,9 +434,7 @@ export function getStats(from: string, to: string): AndonStats {
        WHERE ${range}
        GROUP BY e.line_code, e.process_id, e.category_code, lower(trim(e.description))
        HAVING COUNT(*) >= 2
-       ORDER BY count DESC LIMIT 5`,
-    )
-    .all(from, to)
+       ORDER BY count DESC LIMIT 5`, from, to))
     .map((r) => ({
       lineName: r.line_name as string,
       processName: r.process_name as string,
@@ -506,8 +453,8 @@ export function getStats(from: string, to: string): AndonStats {
     closed: Number(summary.closed ?? 0),
     avgResponseSec: num(summary.avg_response),
     avgResolutionSec: num(summary.avg_resolution),
-    byLine: group("l.name", "JOIN line l ON l.code = e.line_code"),
-    byCategory: group("c.name_ko", "JOIN category c ON c.code = e.category_code"),
+    byLine: await group("l.name", "JOIN line l ON l.code = e.line_code"),
+    byCategory: await group("c.name_ko", "JOIN category c ON c.code = e.category_code"),
     repeatTop5,
   };
 }

@@ -5,7 +5,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22.13"
+    "node": "24.x"
   },
   "scripts": {
     "dev": "next dev",
@@ -23,9 +23,12 @@
     "test:routing": "node scripts/test-routing.ts",
     "masterdata": "node scripts/masterdata.ts",
     "test:auth": "node scripts/test-auth.ts",
-    "test:google": "node scripts/test-google.ts"
+    "test:google": "node scripts/test-google.ts",
+    "db:migrate": "node scripts/db-migrate.ts"
   },
   "dependencies": {
+    "@libsql/client": "^0.18.0",
+    "@vercel/blob": "^2.8.0",
     "next": "16.3.8",
     "openid-client": "6.8.8",
     "react": "19.2.8",

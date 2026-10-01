@@ -7,8 +7,12 @@ import path from "node:path";
 
 if (fs.existsSync(".env")) process.loadEnvFile(".env");
 
-const { DATABASE_PATH } = await import("../src/lib/server/db.ts");
+const { DATABASE_PATH, REMOTE_DATABASE_URL } = await import("../src/lib/server/db.ts");
 
+if (process.argv.includes("--reset") && REMOTE_DATABASE_URL) {
+  console.error("--reset is only for the local SQLite file. A remote (Turso) database is never deleted by this script.");
+  process.exit(1);
+}
 if (process.argv.includes("--reset") && fs.existsSync(DATABASE_PATH)) {
   const backupDir = path.join(path.dirname(DATABASE_PATH), "backups");
   fs.mkdirSync(backupDir, { recursive: true });
@@ -19,12 +23,11 @@ if (process.argv.includes("--reset") && fs.existsSync(DATABASE_PATH)) {
   console.log(`Previous DB backed up to ${target} and removed.`);
 }
 
-const { getDb } = await import("../src/lib/server/db.ts");
+const { db } = await import("../src/lib/server/db.ts");
 const { createEvent, transitionEvent } = await import("../src/lib/server/andonService.ts");
 
-const db = getDb();
-const proc = (line: string, name: string) =>
-  (db.prepare("SELECT id FROM process WHERE line_code = ? AND name = ?").get(line, name) as { id: number }).id;
+const proc = async (line: string, name: string) =>
+  ((await db.get("SELECT id FROM process WHERE line_code = ? AND name = ?", line, name)) as { id: number }).id;
 
 interface Demo {
   line: string;
@@ -86,17 +89,17 @@ for (const d of demo) {
   }
   const at = (min: number) => new Date(t0 + min * 60_000 + Math.floor(Math.random() * 50) * 1000).toISOString();
 
-  const { event } = createEvent({
+  const { event } = await createEvent({
     lineCode: d.line,
-    processId: proc(d.line, d.process),
+    processId: await proc(d.line, d.process),
     categoryCode: d.category,
     description: d.desc,
     createdBy: d.by,
     createdAt: new Date(t0).toISOString(),
   });
-  if (d.ackMin != null) transitionEvent(event.id, { action: "ACKNOWLEDGE", userName: d.responder!, at: at(d.ackMin) });
-  if (d.actionMin != null) transitionEvent(event.id, { action: "ACTION", userName: d.responder!, comment: d.actionNote, at: at(d.actionMin) });
-  if (d.closeMin != null) transitionEvent(event.id, { action: "CLOSE", userName: d.responder!, comment: d.closeNote, at: at(d.closeMin) });
+  if (d.ackMin != null) await transitionEvent(event.id, { action: "ACKNOWLEDGE", userName: d.responder!, at: at(d.ackMin) });
+  if (d.actionMin != null) await transitionEvent(event.id, { action: "ACTION", userName: d.responder!, comment: d.actionNote, at: at(d.actionMin) });
+  if (d.closeMin != null) await transitionEvent(event.id, { action: "CLOSE", userName: d.responder!, comment: d.closeNote, at: at(d.closeMin) });
   n++;
 }
-console.log(`Seeded ${n} demo ANDON events into ${DATABASE_PATH}`);
+console.log(`Seeded ${n} demo ANDON events into ${(await db.info()).label}`);

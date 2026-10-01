@@ -1,12 +1,14 @@
-import { getDb, DATABASE_PATH } from "@/lib/server/db";
+import { db } from "@/lib/server/db";
 
-// For monitoring / quick recovery checks: returns 200 only if the DB answers.
+// For monitoring / quick recovery checks: returns 200 only if the database answers.
+// `db` is the local file path or "turso <host>" — never credentials.
 export async function GET() {
   try {
-    const r = getDb().prepare("SELECT COUNT(*) AS n FROM andon_event").get() as { n: number };
-    return Response.json({ ok: true, db: DATABASE_PATH, events: r.n, time: new Date().toISOString() });
+    const info = await db.info();
+    const r = (await db.get("SELECT COUNT(*) AS n FROM andon_event")) as { n: number };
+    return Response.json({ ok: true, db: info.label, backend: info.kind, events: r.n, time: new Date().toISOString() });
   } catch (err) {
     console.error("[health] DB check failed", err);
-    return Response.json({ ok: false, error: String(err) }, { status: 503 });
+    return Response.json({ ok: false, error: "database unavailable" }, { status: 503 });
   }
 }

@@ -1,7 +1,7 @@
 import * as oidc from 'openid-client';
 import crypto from 'node:crypto';
 import { authenticate, createSession, getSessionUser, readCookie, revokeSession, sessionCookie, SESSION_COOKIE } from './auth.ts';
-import { getDb, nowIso, transaction } from './db.ts';
+import { db, nowIso } from './db.ts';
 import { AndonError } from './errors.ts';
 import { requestAudit } from './http.ts';
 import { addGoogleIdentity, requireActiveUser, resolveGoogleIdentity, type EmployeeProfile, type GoogleIdentity } from './googleIdentity.ts';
@@ -65,7 +65,7 @@ export async function beginGoogle(req: Request, input: { next?: unknown; mode?: 
   assertGoogleOrigin(req);
   let linkUserId: number | null = null;
   if (input.mode === 'link') {
-    const user = getSessionUser(req);
+    const user = await getSessionUser(req);
     if (!user || !user.active || !user.email) throw new AndonError(401, '기존 로컬 계정으로 로그인하세요.', 'AUTH_REQUIRED');
     const verified = await authenticate(user.email, input.password, requestAudit(req));
     if (verified.id !== user.id) throw new AndonError(403, '연결 계정을 확인하세요.', 'LINK_MISMATCH');
@@ -76,29 +76,27 @@ export async function beginGoogle(req: Request, input: { next?: unknown; mode?: 
   const state = oidc.randomState(), nonce = oidc.randomNonce(), verifier = oidc.randomPKCECodeVerifier();
   const url = oidc.buildAuthorizationUrl(cfg, { redirect_uri: googleSettings().redirect, scope: 'openid email profile',
     state, nonce, code_challenge: await oidc.calculatePKCECodeChallenge(verifier), code_challenge_method: 'S256', prompt: 'select_account' });
-  const db = getDb();
-  transaction(db, () => {
-    db.prepare('DELETE FROM google_auth_flow WHERE expires_at <= ? OR token_hash = ?').run(nowIso(), hash(flowToken(req) ?? ''));
-    db.prepare(`INSERT INTO google_auth_flow(token_hash,phase,state,nonce,verifier,next_path,link_user_id,link_session_hash,expires_at)
-      VALUES (?,'AUTHORIZATION',?,?,?,?,?,?,?)`).run(hash(token),state,nonce,verifier,safeGoogleNext(input.next),linkUserId,linkUserId ? sessionHash(req) : null,new Date(Date.now()+TTL).toISOString());
+  await db.transaction(async () => {
+    (await db.run('DELETE FROM google_auth_flow WHERE expires_at <= ? OR token_hash = ?', nowIso(), hash(flowToken(req) ?? '')));
+    (await db.run(`INSERT INTO google_auth_flow(token_hash,phase,state,nonce,verifier,next_path,link_user_id,link_session_hash,expires_at)
+      VALUES (?,'AUTHORIZATION',?,?,?,?,?,?,?)`, hash(token),state,nonce,verifier,safeGoogleNext(input.next),linkUserId,linkUserId ? sessionHash(req) : null,new Date(Date.now()+TTL).toISOString()));
   });
   return Response.json({ url: url.href }, { headers: { 'Set-Cookie': flowCookie(token), 'Cache-Control': 'no-store' } });
 }
 
-function assertLinkSession(req: Request, flow: Flow) {
+async function assertLinkSession(req: Request, flow: Flow) {
   if (flow.link_user_id === null) return;
-  const user = getSessionUser(req);
+  const user = await getSessionUser(req);
   if (!user || user.id !== flow.link_user_id || !user.active || sessionHash(req) !== flow.link_session_hash)
     throw new AndonError(403, '연결을 시작한 계정으로 다시 로그인하세요.', 'LINK_SESSION_CHANGED');
 }
 
-export function takeAuthorizationFlow(req: Request) {
+export async function takeAuthorizationFlow(req: Request) {
   const token = flowToken(req), params = new URL(req.url).searchParams;
   if (!token || params.getAll('state').length !== 1) throw new AndonError(400, '인증 요청이 만료되었거나 일치하지 않습니다.', 'GOOGLE_INVALID_STATE');
-  const row = getDb().prepare(`DELETE FROM google_auth_flow WHERE token_hash=? AND phase='AUTHORIZATION' AND state=? AND expires_at>? RETURNING *`)
-    .get(hash(token),params.get('state')!,nowIso()) as unknown as Flow | undefined;
+  const row = (await db.get(`DELETE FROM google_auth_flow WHERE token_hash=? AND phase='AUTHORIZATION' AND state=? AND expires_at>? RETURNING *`, hash(token),params.get('state')!,nowIso())) as unknown as Flow | undefined;
   if (!row) throw new AndonError(400, '인증 요청이 만료되었거나 일치하지 않습니다.', 'GOOGLE_INVALID_STATE');
-  assertLinkSession(req,row);
+  await assertLinkSession(req,row);
   return row;
 }
 
@@ -111,10 +109,10 @@ export async function exchangeGoogleCode(cfg: oidc.Configuration, url: URL, flow
   return {subject:claims.sub,email:claims.email,name:typeof claims.name === 'string' ? claims.name.slice(0,40) : ''};
 }
 
-export function sessionResponse(req: Request, userId: number, next: string, redirect = false) {
-  requireActiveUser(userId);
-  revokeSession(req);
-  const session = createSession(userId,requestAudit(req));
+export async function sessionResponse(req: Request, userId: number, next: string, redirect = false) {
+  await requireActiveUser(userId);
+  await revokeSession(req);
+  const session = await createSession(userId,requestAudit(req));
   const headers = new Headers({'Cache-Control':'no-store','Referrer-Policy':'no-referrer'});
   const cookie = sessionCookie(req,session.token,session.expiresAt);
   headers.append('Set-Cookie',cookie + (googleSettings().secure && !/; Secure(?:;|$)/i.test(cookie) ? '; Secure' : ''));
@@ -128,40 +126,40 @@ export async function completeGoogleCallback(req: Request) {
   // Ignore attacker-controlled Host/X-Forwarded-Host for redirect and token exchange destinations.
   if (req.headers.get('host') !== new URL(settings.redirect).host || new URL(req.url).pathname !== CALLBACK)
     throw new AndonError(400,'콜백 주소가 일치하지 않습니다.','GOOGLE_BAD_CALLBACK');
-  const flow = takeAuthorizationFlow(req);
+  const flow = await takeAuthorizationFlow(req);
   const callback = new URL(settings.redirect); callback.search = new URL(req.url).search;
   const identity = await exchangeGoogleCode(await config(),callback,flow);
-  const user = resolveGoogleIdentity(identity);
+  const user = await resolveGoogleIdentity(identity);
   if (user && flow.link_user_id !== null && user.id !== flow.link_user_id) throw new AndonError(409,'이미 다른 직원에게 연결된 Google 계정입니다.','GOOGLE_IDENTITY_TAKEN');
   if (user) return sessionResponse(req,user.id,flow.next_path,true);
   const token = crypto.randomBytes(32).toString('base64url');
-  getDb().prepare(`INSERT INTO google_auth_flow(token_hash,phase,next_path,link_user_id,link_session_hash,subject,provider_email,display_name,expires_at)
-    VALUES (?,'ONBOARDING',?,?,?,?,?,?,?)`).run(hash(token),flow.next_path,flow.link_user_id,flow.link_session_hash,identity.subject,identity.email,identity.name,new Date(Date.now()+TTL).toISOString());
+  (await db.run(`INSERT INTO google_auth_flow(token_hash,phase,next_path,link_user_id,link_session_hash,subject,provider_email,display_name,expires_at)
+    VALUES (?,'ONBOARDING',?,?,?,?,?,?,?)`, hash(token),flow.next_path,flow.link_user_id,flow.link_session_hash,identity.subject,identity.email,identity.name,new Date(Date.now()+TTL).toISOString()));
   return new Response(null,{status:303,headers:{Location:new URL('/onboarding',settings.origin).href,'Set-Cookie':flowCookie(token),'Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});
 }
 
-function pendingFlow(req: Request) {
+async function pendingFlow(req: Request) {
   const token = flowToken(req);
-  const row = token ? getDb().prepare("SELECT * FROM google_auth_flow WHERE token_hash=? AND phase='ONBOARDING' AND expires_at>?").get(hash(token),nowIso()) as unknown as Flow | undefined : undefined;
+  const row = token ? (await db.get("SELECT * FROM google_auth_flow WHERE token_hash=? AND phase='ONBOARDING' AND expires_at>?", hash(token),nowIso())) as unknown as Flow | undefined : undefined;
   if (!row) throw new AndonError(401,'Google 인증 후 다시 시작하세요. 등록 유효시간이 만료되었습니다.','GOOGLE_ONBOARDING_REQUIRED');
-  assertLinkSession(req,row);
+  await assertLinkSession(req,row);
   return row;
 }
 
-export function onboardingInfo(req: Request) {
-  const flow = pendingFlow(req);
-  const employee = flow.link_user_id === null ? null : getDb().prepare('SELECT employee_id,name,phone,kakao_id,company_email,department_code,role FROM app_user WHERE id=?').get(flow.link_user_id);
+export async function onboardingInfo(req: Request) {
+  const flow = await pendingFlow(req);
+  const employee = flow.link_user_id === null ? null : (await db.get('SELECT employee_id,name,phone,kakao_id,company_email,department_code,role FROM app_user WHERE id=?', flow.link_user_id));
   return {email:flow.provider_email,name:flow.display_name,linking:flow.link_user_id!==null,employee};
 }
 
-export function finishGoogleOnboarding(req: Request, input: EmployeeProfile) {
+export async function finishGoogleOnboarding(req: Request, input: EmployeeProfile) {
   assertGoogleOrigin(req);
   let result: { user: { id: number }; next: string };
   try {
-    result = transaction(getDb(), () => {
-      const flow = pendingFlow(req);
-      const user = addGoogleIdentity({subject:flow.subject,email:flow.provider_email,name:flow.display_name},input,flow.link_user_id);
-      getDb().prepare('DELETE FROM google_auth_flow WHERE token_hash=?').run(flow.token_hash);
+    result = await db.transaction(async () => {
+      const flow = await pendingFlow(req);
+      const user = await addGoogleIdentity({subject:flow.subject,email:flow.provider_email,name:flow.display_name},input,flow.link_user_id);
+      (await db.run('DELETE FROM google_auth_flow WHERE token_hash=?', flow.token_hash));
       return {user,next:flow.next_path};
     });
   } catch (err) {

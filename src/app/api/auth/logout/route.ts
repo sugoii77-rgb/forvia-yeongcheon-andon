@@ -2,9 +2,9 @@ import { assertSameOrigin, clearSessionCookie, revokeSession } from "@/lib/serve
 import { handle } from "@/lib/server/http";
 
 export async function POST(req: Request) {
-  return handle("POST /api/auth/logout", () => {
+  return handle("POST /api/auth/logout", async () => {
     assertSameOrigin(req);
-    revokeSession(req);
+    await revokeSession(req);
     return Response.json({ ok: true }, { headers: { "Set-Cookie": clearSessionCookie(req) } });
   });
 }

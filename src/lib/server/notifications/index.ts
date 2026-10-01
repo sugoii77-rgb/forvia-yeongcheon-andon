@@ -2,7 +2,7 @@
 // To add KakaoTalk: implement NotificationProvider in kakaoProvider.ts and
 // register it in createProvider() below. No other code needs to change.
 import type { AndonEvent } from "../../domain";
-import { getDb, nowIso } from "../db";
+import { db, nowIso } from "../db";
 import { primaryRecipients } from "../routingService";
 
 export interface NotificationRecipient {
@@ -61,51 +61,71 @@ export function buildAndonMessage(event: AndonEvent): NotificationMessage {
  * Initial recipients = active RESPONDER users of the event's responsible department
  * (decided by routingService; escalation roles are notified later, when escalation exists).
  */
-function resolveRecipients(event: AndonEvent): NotificationRecipient[] {
-  return primaryRecipients(event.departmentCode).map((u) => ({
+async function resolveRecipients(event: AndonEvent): Promise<NotificationRecipient[]> {
+  return (await primaryRecipients(event.departmentCode)).map((u) => ({
     name: u.name,
     departmentCode: u.departmentCode,
     address: u.kakaoRecipientId,
   }));
 }
 
+async function logAttempt(
+  eventId: string,
+  provider: string,
+  recipient: string,
+  status: "SENT" | "FAILED",
+  text: string,
+  error: string | null,
+) {
+  try {
+    await db.run(
+      `INSERT INTO notification_log (event_id, provider, recipient, status, message, error, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      eventId,
+      provider,
+      recipient,
+      status,
+      text,
+      error,
+      nowIso(),
+    );
+  } catch (err) {
+    console.error("[notify] could not write notification_log", err);
+  }
+}
+
 /**
  * Sends notifications for a new ANDON and logs every attempt.
- * Never throws: a notification failure must not fail ANDON creation.
+ * Never throws: a notification failure must not fail ANDON creation. The route calls it via after()
+ * so that it completes after the response, also on serverless platforms (Vercel).
  */
 export async function notifyAndonCreated(event: AndonEvent): Promise<void> {
-  const db = getDb();
-  const log = db.prepare(
-    `INSERT INTO notification_log (event_id, provider, recipient, status, message, error, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  );
-  const p = getProvider();
-  const message = buildAndonMessage(event);
-  const text = `${message.title}\n${message.body}\n${message.link}`;
-
-  let recipients: NotificationRecipient[] = [];
   try {
-    recipients = resolveRecipients(event);
-  } catch (err) {
-    console.error("[notify] recipient lookup failed", err);
-  }
-  if (recipients.length === 0) {
-    log.run(event.id, p.name, `(dept:${event.departmentCode})`, "FAILED", text, "수신자 없음 (no recipients configured)", nowIso());
-    return;
-  }
+    const p = getProvider();
+    const message = buildAndonMessage(event);
+    const text = `${message.title}\n${message.body}\n${message.link}`;
 
-  for (const r of recipients) {
+    let recipients: NotificationRecipient[] = [];
     try {
-      await p.send(r, message);
-      log.run(event.id, p.name, r.name, "SENT", text, null, nowIso());
+      recipients = await resolveRecipients(event);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[notify] ${p.name} → ${r.name} failed: ${msg}`);
+      console.error("[notify] recipient lookup failed", err);
+    }
+    if (recipients.length === 0) {
+      await logAttempt(event.id, p.name, `(dept:${event.departmentCode})`, "FAILED", text, "수신자 없음 (no recipients configured)");
+      return;
+    }
+    for (const r of recipients) {
       try {
-        log.run(event.id, p.name, r.name, "FAILED", text, msg, nowIso());
-      } catch (logErr) {
-        console.error("[notify] could not write notification_log", logErr);
+        await p.send(r, message);
+        await logAttempt(event.id, p.name, r.name, "SENT", text, null);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[notify] ${p.name} → ${r.name} failed: ${msg}`);
+        await logAttempt(event.id, p.name, r.name, "FAILED", text, msg);
       }
     }
+  } catch (err) {
+    console.error("[notify] notification step failed", err);
   }
 }

@@ -6,26 +6,27 @@
 // (QUALITY → QC), so those events stay actionable without rewriting history.
 import type { ResponderSummary, Responsibility, RoleCode } from "../domain.ts";
 import { resolveDepartment, responderProblem, type ResponderCandidate, type RoutingRule } from "../routing.ts";
-import { getDb } from "./db.ts";
+import { db } from "./db.ts";
 import { AndonError } from "./errors.ts";
 
 type Row = Record<string, unknown>;
 
-function loadRules(categoryCode: string, lineCode: string): RoutingRule[] {
-  return getDb()
-    .prepare(
+async function loadRules(categoryCode: string, lineCode: string): Promise<RoutingRule[]> {
+  return (
+    await db.all(
       `SELECT id, category_code, line_code, process_id, department_code, active
        FROM routing_rule WHERE category_code = ? AND line_code = ?`,
+      categoryCode,
+      lineCode,
     )
-    .all(categoryCode, lineCode)
-    .map((r) => ({
-      id: r.id as number,
-      categoryCode: r.category_code as string,
-      lineCode: r.line_code as string,
-      processId: (r.process_id as number | null) ?? null,
-      departmentCode: r.department_code as string,
-      active: r.active === 1,
-    }));
+  ).map((r) => ({
+    id: r.id as number,
+    categoryCode: r.category_code as string,
+    lineCode: r.line_code as string,
+    processId: (r.process_id as number | null) ?? null,
+    departmentCode: r.department_code as string,
+    active: r.active === 1,
+  }));
 }
 
 interface DepartmentRow {
@@ -35,53 +36,72 @@ interface DepartmentRow {
   successor_code: string | null;
 }
 
-function department(code: string): DepartmentRow | undefined {
-  return getDb().prepare("SELECT code, name_ko, display_code, successor_code FROM department WHERE code = ?").get(code) as
-    | DepartmentRow
-    | undefined;
+/** All departments (≈10 rows) in one query; label / successor / alias lookups then run in memory. */
+async function departments(): Promise<Map<string, DepartmentRow>> {
+  const rows = (await db.all("SELECT code, name_ko, display_code, successor_code FROM department")) as unknown as DepartmentRow[];
+  return new Map(rows.map((d) => [d.code, d]));
 }
 
-/** "PC&L · 물류" — display label of a department code. */
-export function departmentLabel(code: string): string {
-  const d = department(code);
+function labelOf(deps: Map<string, DepartmentRow>, code: string): string {
+  const d = deps.get(code);
   return d ? `${d.display_code ?? d.code} · ${d.name_ko}` : code;
 }
 
-/** Current operational department for a (possibly pre-v3) department code. */
-export function effectiveDepartment(code: string): string {
+function effectiveOf(deps: Map<string, DepartmentRow>, code: string): string {
   let current = code;
   for (let i = 0; i < 5; i++) {
-    const next = department(current)?.successor_code;
+    const next = deps.get(current)?.successor_code;
     if (!next) return current;
     current = next;
   }
   return current;
 }
 
-/** All department codes whose events belong to `code` today (itself + legacy codes mapped to it). */
-export function departmentAliases(code: string): string[] {
-  const all = getDb().prepare("SELECT code FROM department").all() as { code: string }[];
-  return all.map((d) => d.code).filter((c) => effectiveDepartment(c) === code);
+/** "PC&L · 물류" — display label of a department code. */
+export async function departmentLabel(code: string): Promise<string> {
+  return labelOf(await departments(), code);
 }
 
-function responsibility(departmentCode: string, matchedBy: Responsibility["matchedBy"], routingRuleId: number | null): Responsibility {
+/** Department code → display label, for mapping many rows with a single query. */
+export async function departmentLabelMap(): Promise<Map<string, string>> {
+  const deps = await departments();
+  return new Map([...deps.keys()].map((c) => [c, labelOf(deps, c)]));
+}
+
+/** Current operational department for a (possibly pre-v3) department code. */
+export async function effectiveDepartment(code: string): Promise<string> {
+  return effectiveOf(await departments(), code);
+}
+
+/** All department codes whose events belong to `code` today (itself + legacy codes mapped to it). */
+export async function departmentAliases(code: string): Promise<string[]> {
+  const deps = await departments();
+  return [...deps.keys()].filter((c) => effectiveOf(deps, c) === code);
+}
+
+async function responsibility(
+  departmentCode: string,
+  matchedBy: Responsibility["matchedBy"],
+  routingRuleId: number | null,
+): Promise<Responsibility> {
+  const deps = await departments();
   return {
     departmentCode,
-    effectiveDepartmentCode: effectiveDepartment(departmentCode),
-    departmentName: department(departmentCode)?.name_ko ?? departmentCode,
-    departmentLabel: departmentLabel(departmentCode),
+    effectiveDepartmentCode: effectiveOf(deps, departmentCode),
+    departmentName: deps.get(departmentCode)?.name_ko ?? departmentCode,
+    departmentLabel: labelOf(deps, departmentCode),
     matchedBy,
     routingRuleId,
   };
 }
 
 /** Line + Process + Category → responsible department (deterministic, see src/lib/routing.ts). */
-export function resolveResponsibility(lineCode: string, processId: number, categoryCode: string): Responsibility {
-  const cat = getDb().prepare("SELECT default_department FROM category WHERE code = ?").get(categoryCode) as
+export async function resolveResponsibility(lineCode: string, processId: number, categoryCode: string): Promise<Responsibility> {
+  const cat = (await db.get("SELECT default_department FROM category WHERE code = ?", categoryCode)) as
     | { default_department: string }
     | undefined;
   if (!cat) throw new AndonError(400, "이상 유형 선택이 올바르지 않습니다.", "INVALID_CATEGORY");
-  const r = resolveDepartment(loadRules(categoryCode, lineCode), {
+  const r = resolveDepartment(await loadRules(categoryCode, lineCode), {
     lineCode,
     processId,
     categoryCode,
@@ -91,14 +111,14 @@ export function resolveResponsibility(lineCode: string, processId: number, categ
 }
 
 /** Responsibility of a stored event: the department recorded at creation (never re-routed later). */
-export function eventResponsibility(eventId: string): Responsibility | null {
-  const r = getDb()
-    .prepare("SELECT department_code, routing_rule_id FROM andon_event WHERE id = ?")
-    .get(eventId) as { department_code: string; routing_rule_id: number | null } | undefined;
+export async function eventResponsibility(eventId: string): Promise<Responsibility | null> {
+  const r = (await db.get("SELECT department_code, routing_rule_id FROM andon_event WHERE id = ?", eventId)) as
+    | { department_code: string; routing_rule_id: number | null }
+    | undefined;
   if (!r) return null;
   let matchedBy: Responsibility["matchedBy"] = "CATEGORY_DEFAULT";
   if (r.routing_rule_id != null) {
-    const rule = getDb().prepare("SELECT process_id FROM routing_rule WHERE id = ?").get(r.routing_rule_id) as
+    const rule = (await db.get("SELECT process_id FROM routing_rule WHERE id = ?", r.routing_rule_id)) as
       | { process_id: number | null }
       | undefined;
     matchedBy = rule?.process_id != null ? "LINE_PROCESS_CATEGORY" : "LINE_CATEGORY";
@@ -132,11 +152,13 @@ const summary = (u: ResponderCandidate): ResponderSummary => ({
  * Everyone who may ACK / ACTION / CLOSE events of this department: active users of the (current)
  * department whose role can respond. A newly registered RESPONDER appears here immediately.
  */
-export function eligibleResponders(eventDepartmentCode: string): ResponderSummary[] {
-  return getDb()
-    .prepare(`${USER_SELECT} WHERE u.active = 1 AND r.can_respond = 1 AND u.department_code = ? ORDER BY r.sort_order, u.id`)
-    .all(effectiveDepartment(eventDepartmentCode))
-    .map((r) => summary(toCandidate(r)));
+export async function eligibleResponders(eventDepartmentCode: string): Promise<ResponderSummary[]> {
+  return (
+    await db.all(
+      `${USER_SELECT} WHERE u.active = 1 AND r.can_respond = 1 AND u.department_code = ? ORDER BY r.sort_order, u.id`,
+      await effectiveDepartment(eventDepartmentCode),
+    )
+  ).map((r) => summary(toCandidate(r)));
 }
 
 /**
@@ -144,24 +166,26 @@ export function eligibleResponders(eventDepartmentCode: string): ResponderSummar
  * The KakaoTalk address comes ONLY from a verified, active user_notification_channel row — never from
  * app_user.kakao_id, which is a manually typed contact reference and not a verified recipient.
  */
-export function primaryRecipients(eventDepartmentCode: string): (ResponderSummary & { kakaoRecipientId: string | null })[] {
-  return getDb()
-    .prepare(
+export async function primaryRecipients(
+  eventDepartmentCode: string,
+): Promise<(ResponderSummary & { kakaoRecipientId: string | null })[]> {
+  return (
+    await db.all(
       `SELECT u.id, u.name, u.department_code, u.role,
               (SELECT c.recipient_id FROM user_notification_channel c
                WHERE c.user_id = u.id AND c.provider = 'KAKAO' AND c.verified = 1 AND c.active = 1
                ORDER BY c.id LIMIT 1) AS kakao_recipient_id
        FROM app_user u
        WHERE u.active = 1 AND u.role = 'RESPONDER' AND u.department_code = ? ORDER BY u.id`,
+      await effectiveDepartment(eventDepartmentCode),
     )
-    .all(effectiveDepartment(eventDepartmentCode))
-    .map((r) => ({
-      id: r.id as number,
-      name: r.name as string,
-      role: r.role as RoleCode,
-      departmentCode: r.department_code as string,
-      kakaoRecipientId: (r.kakao_recipient_id as string | null) ?? null,
-    }));
+  ).map((r) => ({
+    id: r.id as number,
+    name: r.name as string,
+    role: r.role as RoleCode,
+    departmentCode: r.department_code as string,
+    kakaoRecipientId: (r.kakao_recipient_id as string | null) ?? null,
+  }));
 }
 
 export interface ResponderIdentity {
@@ -174,16 +198,15 @@ export interface ResponderIdentity {
  * Server-side responder validation. The responder must exist, be active, have a role that may
  * respond, and belong to the event's (current) responsible department. Throws AndonError otherwise.
  */
-export function validateResponder(identity: ResponderIdentity, eventDepartmentCode: string): ResponderSummary {
-  const db = getDb();
+export async function validateResponder(identity: ResponderIdentity, eventDepartmentCode: string): Promise<ResponderSummary> {
   let row: Row | undefined;
   if (identity.userId != null) {
     if (!Number.isInteger(identity.userId) || identity.userId <= 0) {
       throw new AndonError(400, "등록되지 않은 담당자입니다.", "UNKNOWN_RESPONDER");
     }
-    row = db.prepare(`${USER_SELECT} WHERE u.id = ?`).get(identity.userId);
+    row = await db.get(`${USER_SELECT} WHERE u.id = ?`, identity.userId);
   } else if (identity.userName && identity.userName.trim()) {
-    const rows = db.prepare(`${USER_SELECT} WHERE u.name = ?`).all(identity.userName.trim());
+    const rows = await db.all(`${USER_SELECT} WHERE u.name = ?`, identity.userName.trim());
     if (rows.length > 1) throw new AndonError(400, "같은 이름의 사용자가 여러 명입니다.", "AMBIGUOUS_RESPONDER");
     row = rows[0];
   } else {
@@ -192,16 +215,13 @@ export function validateResponder(identity: ResponderIdentity, eventDepartmentCo
   if (!row) throw new AndonError(400, "등록되지 않은 담당자입니다.", "UNKNOWN_RESPONDER");
 
   const user = toCandidate(row);
-  const responsible = effectiveDepartment(eventDepartmentCode);
+  const deps = await departments();
+  const responsible = effectiveOf(deps, eventDepartmentCode);
   const problem = responderProblem(user, responsible);
   if (problem === "INACTIVE") throw new AndonError(403, `${user.name}: 비활성(사용 중지)된 계정입니다.`, "INACTIVE_RESPONDER");
   if (problem === "ROLE_NOT_ALLOWED")
     throw new AndonError(403, `${user.name}: 조치 권한이 없는 역할입니다 (${user.role}).`, "ROLE_NOT_ALLOWED");
   if (problem === "WRONG_DEPARTMENT")
-    throw new AndonError(
-      403,
-      `${user.name}: 이 ANDON의 담당 부서(${departmentLabel(responsible)}) 소속이 아닙니다.`,
-      "WRONG_DEPARTMENT",
-    );
+    throw new AndonError(403, `${user.name}: 이 ANDON의 담당 부서(${labelOf(deps, responsible)}) 소속이 아닙니다.`, "WRONG_DEPARTMENT");
   return summary(user);
 }
