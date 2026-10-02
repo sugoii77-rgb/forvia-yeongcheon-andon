@@ -393,6 +393,9 @@ condition right now?" from several meters away. No schema change.
   Seven lines whose drawing name differs were placed on their candidate station by plant decision (drawing name
   shown under the line name): NX4 CTR #2 → NX4 #2, JX ASSY → JX ASSY #1, JX LAMBDA FRT → LAMBDA FRT, PIPE CUTTING →
   FORMING & CUTTING, LOCKSEAM → NX4/JX LOCK SEAM, QX RESO → QX MAIN RESO, SX2 RESO → SX2 MAIN RESO.
+  **Alias (plant decision 2026-10-02):** the prototype line **T-GDI 1** is GAMMA T-GDI 1차 — its ANDONs light the
+  KAPPA EU7 station (`aliasLineCodes`; the event shows "· T-GDI 1"); its history is unchanged. In narrow cells an
+  abnormal tile grows into a readable card above its dimmed neighbours.
   Placed lines: **33 / 36** — still in the tray: **JX/NX4 RESO** (candidate NX4/JX MAIN RESO), **R-ENG**, **STUFFING**.
 - **Highlight:** an abnormal line gets a bright ring + glow (OPEN red, pulsing; ACK / IN_PROGRESS amber, steady)
   and, while any ANDON is active, normal tiles, zone titles and landmarks dim to 45 % so the eye goes

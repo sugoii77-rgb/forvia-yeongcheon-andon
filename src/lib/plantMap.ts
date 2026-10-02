@@ -49,6 +49,17 @@ export function lineStates(events: AndonEvent[]): Map<string, LineState> {
   return out;
 }
 
+/**
+ * State of a station: its line plus alias lines (see StationCell.aliasLineCodes) merged — most urgent
+ * state, summed count, lead = most urgent then oldest event of all of them.
+ */
+export function stationState(codes: string[], states: Map<string, LineState>): LineState | undefined {
+  const parts = codes.map((c) => states.get(c)).filter((x): x is LineState => !!x);
+  if (parts.length === 0) return undefined;
+  const lead = sortActive(parts.map((p) => p.lead!))[0];
+  return { state: parts.some((p) => p.state === "OPEN") ? "OPEN" : "ACTION", count: parts.reduce((n, p) => n + p.count, 0), lead };
+}
+
 export interface MapLine {
   code: string;
   name: string;
@@ -75,7 +86,7 @@ export interface Placement {
 export function placeLines(lines: MapLine[], events: AndonEvent[] = [], cells: StationCell[] = STATION_CELLS): { stations: Placement[]; unplaced: MapLine[] } {
   const byCode = new Map(lines.map((l) => [l.code, l]));
   const stations = cells.map((cell) => ({ cell, box: stationBox(cell), line: cell.lineCode ? (byCode.get(cell.lineCode) ?? null) : null }));
-  const placed = new Set(stations.filter((s) => s.line).map((s) => s.line!.code));
+  const placed = new Set(stations.filter((s) => s.line).flatMap((s) => [s.line!.code, ...(s.cell.aliasLineCodes ?? [])]));
   const unplaced = lines.filter((l) => !placed.has(l.code));
   const extra = new Map<string, MapLine>();
   for (const e of events) {

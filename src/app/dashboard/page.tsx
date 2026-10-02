@@ -7,7 +7,7 @@ import Link from "next/link";
 import { fmtTime, usePolling, useServerNow } from "@/lib/client";
 import { MAP_LANDMARKS, MAP_ZONES } from "@/config/plantLayout";
 import { STATUS_LABEL, type AndonEvent, type MasterData } from "@/lib/domain";
-import { displayLines, elapsedSeconds, formatElapsed, lineStates, placeLines, shiftLabel, sortActive, type LineState, type MapLine } from "@/lib/plantMap";
+import { displayLines, stationState, elapsedSeconds, formatElapsed, lineStates, placeLines, shiftLabel, sortActive, type LineState, type MapLine } from "@/lib/plantMap";
 
 type PublicShift = { status: "RESOLVED"; team: "A" | "B"; type: "DAY" | "NIGHT"; operationalDate: string; shiftEnd: string } | { status: "UNRESOLVED"; reason: string };
 interface BoardResponse {
@@ -57,7 +57,7 @@ function LineTile({ line, st, now, compact, sub }: { line: MapLine; st: LineStat
         <span className="pm-name">{line.name}</span>
         {st.count > 1 && <span className="pm-badge" aria-label={`${st.count} active ANDON`}>{st.count}</span>}
       </span>
-      {!compact && <span className="pm-cat">{e.categoryName}</span>}
+      {!compact && <span className="pm-cat">{e.categoryName}{e.lineCode !== line.code ? ` · ${e.lineName}` : ""}</span>}
       {!compact && <span className="pm-desc">{e.description}</span>}
       <span className="pm-time">{formatElapsed(elapsedSeconds(e, now))}</span>
       {!compact && <span className="pm-state">{stateText(st)}</span>}
@@ -79,10 +79,14 @@ export default function PlantMapPage() {
   // tray: abnormal lines first so they are never pushed out of view
   const rank = (code: string) => { const st = states.get(code)?.state; return st === "OPEN" ? 0 : st === "ACTION" ? 1 : 2; };
   const unplacedSorted = [...unplaced].sort((a, b) => rank(a.code) - rank(b.code));
-  const linesShown = [...stations.filter((s) => s.line).map((s) => s.line!), ...unplaced];
-  const openLines = linesShown.filter((l) => states.get(l.code)?.state === "OPEN").length;
-  const actionLines = linesShown.filter((l) => states.get(l.code)?.state === "ACTION").length;
-  const normalLines = linesShown.filter((l) => !states.has(l.code)).length;
+  // one entry per shown line: a station (its line + alias lines) or a tray line
+  const shownStates = [
+    ...stations.filter((s) => s.line).map((s) => stationState([s.line!.code, ...(s.cell.aliasLineCodes ?? [])], states)),
+    ...unplaced.map((l) => states.get(l.code)),
+  ];
+  const openLines = shownStates.filter((x) => x?.state === "OPEN").length;
+  const actionLines = shownStates.filter((x) => x?.state === "ACTION").length;
+  const normalLines = shownStates.filter((x) => !x).length;
 
   return (
     <main className="floor">
@@ -126,7 +130,7 @@ export default function PlantMapPage() {
             {stations.map((s) => (
               <div key={s.cell.id} className="pm-cell" style={pct(s.box)} data-station={s.cell.id}>
                 {s.line ? (
-                  <LineTile line={s.line} st={states.get(s.line.code)} now={now} sub={s.cell.subLabel} />
+                  <LineTile line={s.line} st={stationState([s.line.code, ...(s.cell.aliasLineCodes ?? [])], states)} now={now} sub={s.cell.subLabel} />
                 ) : (
                   <div className="pm-unlinked" title="배치도에는 있으나 라인 기준정보와 연결이 확인되지 않음">
                     {s.cell.layoutLabel}

@@ -8,7 +8,7 @@
 //    contact fields in public responses, demo-line history still served, /dashboard renders
 import { LINES } from "../src/lib/server/masterData.ts";
 import { MAP_LANDMARKS, MAP_ZONES, STATION_CELLS, UNMAPPED_LINES, stationBox } from "../src/config/plantLayout.ts";
-import { displayLines, elapsedSeconds, formatElapsed, lineStates, placeLines, shiftLabel, sortActive } from "../src/lib/plantMap.ts";
+import { displayLines, stationState, elapsedSeconds, formatElapsed, lineStates, placeLines, shiftLabel, sortActive } from "../src/lib/plantMap.ts";
 import type { AndonEvent, AndonStatus } from "../src/lib/domain.ts";
 
 let failures = 0;
@@ -30,7 +30,10 @@ function partA() {
   check(REAL.every((l) => linked.filter((x) => x === l.code).length + unmapped.filter((x) => x === l.code).length === 1), `every real line (${REAL.length}) is on exactly one station or explicitly unmapped: ${linked.length} mapped + ${unmapped.length} unmapped`);
   check(linked.length + unmapped.length === REAL.length, "mapped + unmapped = all real lines");
   check([...linked, ...unmapped].every((c) => REAL.some((l) => l.code === c)), "every referenced code exists in the real line master");
-  check(!DEMO.some((d) => linked.includes(d.code) || unmapped.includes(d.code)), "demo lines (T-GDI 1, T-GDI 2, Muffler 1) are not placed on the map");
+  check(!DEMO.some((d) => linked.includes(d.code) || unmapped.includes(d.code)), "demo lines (T-GDI 1, T-GDI 2, Muffler 1) are not placed on the map as their own station");
+  const aliases = STATION_CELLS.flatMap((c) => c.aliasLineCodes ?? []);
+  check(aliases.every((a) => LINES.some((l) => l.code === a) && !linked.includes(a)) && new Set(aliases).size === aliases.length, "alias lines exist, are not linked elsewhere, at most one station each");
+  check(STATION_CELLS.find((c) => c.id === "KAPPA-EU7")?.aliasLineCodes?.includes("TGDI1"), "plant decision: T-GDI 1 (prototype) = GAMMA T-GDI 1차 → lights the KAPPA EU7 station");
   check(new Set(STATION_CELLS.map((c) => c.id)).size === STATION_CELLS.length, "no duplicate station ids");
   check(new Set(linked).size === linked.length, "no line linked to two stations");
   check(STATION_CELLS.every((c) => !c.lineCode || c.match), "every confirmed link states how it was matched");
@@ -106,8 +109,13 @@ function partB() {
   const demoEvent = ev("TGDI1", "OPEN", t(60));
   demoEvent.lineName = "T-GDI 1";
   const withDemo = placeLines(shown, [...events, demoEvent]);
-  check(withDemo.unplaced.some((l) => l.code === "TGDI1") && !placeLines(shown, [ev("TGDI1", "CLOSED", t(60), t(1))]).unplaced.some((l) => l.code === "TGDI1"), "a demo line appears (tray) ONLY while it has an active event — an alarm is never hidden");
+  const mufEvent = ev("MUF1", "IN_PROGRESS", t(50));
+  check(placeLines(shown, [mufEvent]).unplaced.some((l) => l.code === "MUF1") && !placeLines(shown, [ev("MUF1", "CLOSED", t(60), t(1))]).unplaced.some((l) => l.code === "MUF1"), "a demo line without a station appears (tray) ONLY while it has an active event — an alarm is never hidden");
   check(lineStates([demoEvent]).get("TGDI1")?.state === "OPEN", "old event on a hidden demo line keeps its state (history intact)");
+  const kappa = withDemo.stations.find((s) => s.cell.id === "KAPPA-EU7")!;
+  const merged = stationState([kappa.line!.code, ...(kappa.cell.aliasLineCodes ?? [])], lineStates([...events, demoEvent, ev("AQ2-TURBO2-EU7", "ACKNOWLEDGED", t(2))]));
+  check(merged?.state === "OPEN" && merged.count === 2 && merged.lead?.lineCode === "TGDI1", "alias: an ANDON on T-GDI 1 highlights the KAPPA EU7 station (OPEN beats ACK, count 2)");
+  check(!withDemo.unplaced.some((l) => l.code === "TGDI1") && withDemo.unplaced.some((l) => l.code === "MUF1") === false, "alias line is not duplicated in the tray");
 }
 
 // ---------------------------------------------------------------- C) HTTP

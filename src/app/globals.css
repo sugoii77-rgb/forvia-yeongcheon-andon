@@ -395,6 +395,14 @@ table.table { width: 100%; border-collapse: collapse; background: #fff; font-siz
 /* short or narrow tiles: drop the secondary lines rather than clipping the essentials */
 @container (max-height: 110px) { .pm-desc, .pm-state { display: none; } }
 @container (max-height: 70px) { .pm-cat { display: none; } }
+/* an abnormal station is raised above its neighbours (cells are containment / stacking contexts) */
+.pm-cell:has(.pm-open), .pm-cell:has(.pm-action) { z-index: 5; }
+.pm-cell:has(.pm-open) { z-index: 6; }
+/* narrow stations: an abnormal tile grows into a readable card over its (dimmed) neighbours */
+@container (max-width: 100px) {
+  .pm-open, .pm-action { width: max(100%, calc(var(--pmu) * 9.5)); min-height: max(100%, calc(var(--pmu) * 6.6)); height: auto; }
+  .pm-open .pm-name, .pm-action .pm-name { font-size: clamp(11px, calc(var(--pmu) * 0.95), 18px); }
+}
 /* narrow stations (≈ 80 px on a 1920 monitor): tighter padding and type so names wrap at spaces only */
 @container (max-width: 100px) {
   .pm-line { padding: 4px 4px 4px 5px; }

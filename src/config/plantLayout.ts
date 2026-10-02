@@ -44,6 +44,11 @@ export interface StationCell {
   note?: string;
   /** Plant-confirmed description of what the station produces (shown small under the line name). */
   subLabel?: string;
+  /**
+   * Other DB lines whose ANDONs also light THIS station (e.g. a prototype line that is the same physical
+   * line). Their events and history are unchanged; only the display location is shared.
+   */
+  aliasLineCodes?: string[];
 }
 
 // prettier-ignore
@@ -71,7 +76,7 @@ export const STATION_CELLS: StationCell[] = [
   { id: "EXMANI2", layoutLabel: "EXMANI #2", row: 2, slot: "bottom", x: 28.6, w: 5.9, tone: "AQ", lineCode: "AQ2-EXMANI2", match: "EXACT_NAME" },
   { id: "LAMBDA-FRT", layoutLabel: "LAMBDA FRT", row: 2, slot: "full", x: 35.2, w: 6.4, tone: "AP", lineCode: "AP2-JX-LAMBDA-FRT", match: "PLANT_DECISION", subLabel: "LAMBDA FRT", note: "DB 'JX LAMBDA FRT' vs layout 'LAMBDA FRT' (AP-coloured cell inside the AQ area); placed by plant decision 2026-10-02" }, // 41.6–47.6
   { id: "GAMMA2-TGDI", layoutLabel: "GAMMA2 T-GDI", row: 2, slot: "full", x: 42.3, w: 5.1, tone: "AQ", lineCode: "AQ2-TURBO1", match: "PLANT_DECISION", subLabel: "GAMMA T‑GDI 2차", note: "plant decision 2026-10-02: the GAMMA2 T-GDI station is the AQ-2 line 'TURBO#1' (dedicated GAMMA T-GDI 2차 line)" }, // 47.6–52.6
-  { id: "KAPPA-EU7", layoutLabel: "KAPPA EU7", row: 2, slot: "top", x: 48.6, w: 5.0, tone: "AQ", lineCode: "AQ2-TURBO2-EU7", match: "PLANT_DECISION", subLabel: "KAPPA EURO7 · GAMMA T‑GDI 1차", note: "plant decision 2026-10-02: the KAPPA EU7 station is the AQ-2 line 'TURBO #2 EU7' (KAPPA EURO7 mixed with GAMMA T-GDI 1차)" }, // 53.0–57.9
+  { id: "KAPPA-EU7", layoutLabel: "KAPPA EU7", row: 2, slot: "top", x: 48.6, w: 5.0, tone: "AQ", lineCode: "AQ2-TURBO2-EU7", match: "PLANT_DECISION", subLabel: "KAPPA EURO7 · GAMMA T‑GDI 1차", aliasLineCodes: ["TGDI1"], note: "plant decision 2026-10-02: the KAPPA EU7 station is the AQ-2 line 'TURBO #2 EU7' (KAPPA EURO7 mixed with GAMMA T-GDI 1차)" }, // 53.0–57.9
   { id: "KAPPA16", layoutLabel: "KAPPA 1.6", row: 2, slot: "bottom", x: 48.6, w: 5.0, tone: "AQ", lineCode: "AQ2-KAPPA16", match: "EXACT_NAME" },
   // ---- row 2 — AP ASSEMBLY
   { id: "NX4JX-MAIN-RESO", layoutLabel: "NX4/JX MAIN RESO", row: 2, slot: "full", x: 58.1, w: 7.1, tone: "SUB", candidateLineCode: "RESO-JX-NX4", note: "DB 'JX/NX4 RESO' vs layout 'NX4/JX MAIN RESO'" }, // 61.1–67.7
