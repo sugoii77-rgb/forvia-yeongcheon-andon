@@ -385,6 +385,8 @@ condition right now?" from several meters away. No schema change.
   (`match`), remove it from `UNMAPPED_LINES`, run `npm run test:display`.
   Stations without a DB line (R-DPF, GAMMA2 T-GDI, KAPPA EU7, AUTO STUFFING #1 / #2, candidate cells)
   are drawn as faint dashed outlines for orientation only.
+- **GAMMA T-GDI uses three lines (plant-confirmed 2026-10-02):** 1차 on the KAPPA EU7 line (mixed with Kappa EU7),
+  2차 on its own dedicated line (station not yet identified), 3차 on the GPF line (mixed with Gamma EU7 GPF).
 - **Plant-confirmed station descriptions (2026-10-02):** GPF = one line for **EURO7 GPF and GAMMA T-GDI 3차**
   (shown under the line name); the KAPPA EU7 station = one line for **KAPPA EU7 and GAMMA TURBO 1차**. Which
   DB line belongs to the KAPPA EU7 station (TURBO #2 EU7 or TURBO#1) is **not confirmed yet** — still in the tray.
@@ -789,7 +791,8 @@ answered by UAP and the real line / process master data has been delivered.
 - [ ] Confirm the station of the 12 unmapped lines (table in §6 "Shop-floor display v2"; candidates in
       `UNMAPPED_LINES`), and that HE / CE BENDING = the AQ / AP BENDING cells of page 2
 - [ ] Meaning of the "CAPACITY LINE" label on page 2 (not drawn)
-- [ ] KAPPA EU7 station (KAPPA EU7 + GAMMA TURBO 1차): is the DB line TURBO #2 EU7, TURBO#1, or both?
+- [ ] KAPPA EU7 station (KAPPA EU7 + GAMMA T-GDI 1차): is its DB line "TURBO #2 EU7"?
+- [ ] GAMMA T-GDI 2차 dedicated line: is it the "GAMMA2 T-GDI" station, and is its DB line "TURBO#1"?
 
 **Pending plant inputs (line ownership, 2026-10-02)** — nothing of this was invented:
 - [ ] Process master per real line (Line → Process)
