@@ -34,6 +34,7 @@ function partA() {
   const aliases = STATION_CELLS.flatMap((c) => c.aliasLineCodes ?? []);
   check(aliases.every((a) => LINES.some((l) => l.code === a) && !linked.includes(a)) && new Set(aliases).size === aliases.length, "alias lines exist, are not linked elsewhere, at most one station each");
   check(STATION_CELLS.find((c) => c.id === "KAPPA-EU7")?.aliasLineCodes?.includes("TGDI1"), "plant decision: T-GDI 1 (prototype) = GAMMA T-GDI 1차 → lights the KAPPA EU7 station");
+  check(STATION_CELLS.find((c) => c.id === "GAMMA2-TGDI")?.aliasLineCodes?.includes("TGDI2"), "plant decision: T-GDI 2 (prototype) = GAMMA T-GDI 2차 → lights the TURBO#1 station");
   check(new Set(STATION_CELLS.map((c) => c.id)).size === STATION_CELLS.length, "no duplicate station ids");
   check(new Set(linked).size === linked.length, "no line linked to two stations");
   check(STATION_CELLS.every((c) => !c.lineCode || c.match), "every confirmed link states how it was matched");
