@@ -28,7 +28,8 @@
     "import:uap": "node scripts/import-uap.ts",
     "test:lines": "node scripts/test-lines.ts",
     "db:verify-remote-migration": "node scripts/verify-remote-migration.ts",
-    "verify:lines": "node scripts/verify-line-import.ts"
+    "verify:lines": "node scripts/verify-line-import.ts",
+    "test:shifts": "node scripts/test-shifts.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",
