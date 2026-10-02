@@ -386,7 +386,10 @@ async function partC() {
   const keys = new Set<string>();
   const walk = (v: unknown) => {
     if (Array.isArray(v)) v.forEach(walk);
-    else if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) (keys.add(k), walk(x));
+    else if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) {
+      keys.add(k);
+      walk(x);
+    }
   };
   walk(JSON.parse(metaText));
   const forbidden = [...keys].filter((k) => /phone|kakao|email|employee|google|user|supervisor|gapLeader|assign|owner/i.test(k));
