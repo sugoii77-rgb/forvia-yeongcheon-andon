@@ -58,8 +58,8 @@ export const STATION_CELLS: StationCell[] = [
   { id: "UCC", layoutLabel: "UCC", row: 1, slot: "full", x: 44.0, w: 4.7, tone: "AQ", lineCode: "AQ3-UCC", match: "EXACT_NAME" }, // 49.1–53.7
   { id: "R-DPF", layoutLabel: "R-DPF", row: 1, slot: "full", x: 49.9, w: 4.3, tone: "AQ", note: "no DB line named R-DPF; DB AQ-3 has R-ENG (different name) — not linked" }, // 54.1–58.4
   // ---- row 1 — AP ASSEMBLY
-  { id: "JX-ASSY1", layoutLabel: "JX ASSY #1", row: 1, slot: "full", x: 57.5, w: 6.3, tone: "AP", candidateLineCode: "AP2-JX-ASSY", note: "DB 'JX ASSY' vs layout 'JX ASSY #1'" }, // 60.6–66.5
-  { id: "NX4-2", layoutLabel: "NX4 #2", row: 1, slot: "full", x: 64.7, w: 7.2, tone: "AP", candidateLineCode: "AP1-NX4-CTR2", note: "DB 'NX4 CTR #2' vs layout 'NX4 #2'" }, // 66.7–73.4
+  { id: "JX-ASSY1", layoutLabel: "JX ASSY #1", row: 1, slot: "full", x: 57.5, w: 6.3, tone: "AP", lineCode: "AP2-JX-ASSY", match: "PLANT_DECISION", subLabel: "JX ASSY #1", note: "DB 'JX ASSY' vs layout 'JX ASSY #1'; placed by plant decision 2026-10-02" }, // 60.6–66.5
+  { id: "NX4-2", layoutLabel: "NX4 #2", row: 1, slot: "full", x: 64.7, w: 7.2, tone: "AP", lineCode: "AP1-NX4-CTR2", match: "PLANT_DECISION", subLabel: "NX4 #2", note: "DB 'NX4 CTR #2' vs layout 'NX4 #2'; placed by plant decision 2026-10-02" }, // 66.7–73.4
   { id: "MAIN2", layoutLabel: "MAIN #2", row: 1, slot: "top", x: 72.5, w: 7.0, tone: "AP", lineCode: "AP1-MAIN2", match: "EXACT_NAME" }, // 73.4–79.9
   { id: "MAIN1", layoutLabel: "MAIN #1", row: 1, slot: "bottom", x: 72.5, w: 7.0, tone: "AP", lineCode: "AP1-MAIN1", match: "EXACT_NAME" },
   { id: "NX4-CTR", layoutLabel: "NX4 CTR", row: 1, slot: "full", x: 80.2, w: 8.0, tone: "AP", lineCode: "AP1-NX4-CTR", match: "EXACT_NAME" }, // 79.9–87.3
@@ -69,7 +69,7 @@ export const STATION_CELLS: StationCell[] = [
   { id: "GPF", layoutLabel: "GPF", row: 2, slot: "full", x: 21.8, w: 6.1, tone: "AQ", lineCode: "AQ1-GPF", match: "EXACT_NAME", subLabel: "EURO7 GPF · GAMMA T‑GDI 3차", note: "plant 2026-10-02: one line for EURO7 GPF and GAMMA T-GDI 3차 (mixed production)" }, // 30.3–36.1
   { id: "EXMANI1", layoutLabel: "EXMANI #1", row: 2, slot: "top", x: 28.6, w: 5.9, tone: "AQ", lineCode: "AQ2-EXMANI1", match: "EXACT_NAME" }, // 36.1–41.6
   { id: "EXMANI2", layoutLabel: "EXMANI #2", row: 2, slot: "bottom", x: 28.6, w: 5.9, tone: "AQ", lineCode: "AQ2-EXMANI2", match: "EXACT_NAME" },
-  { id: "LAMBDA-FRT", layoutLabel: "LAMBDA FRT", row: 2, slot: "full", x: 35.2, w: 6.4, tone: "AP", candidateLineCode: "AP2-JX-LAMBDA-FRT", note: "DB 'JX LAMBDA FRT' vs layout 'LAMBDA FRT' (AP-coloured cell inside the AQ area)" }, // 41.6–47.6
+  { id: "LAMBDA-FRT", layoutLabel: "LAMBDA FRT", row: 2, slot: "full", x: 35.2, w: 6.4, tone: "AP", lineCode: "AP2-JX-LAMBDA-FRT", match: "PLANT_DECISION", subLabel: "LAMBDA FRT", note: "DB 'JX LAMBDA FRT' vs layout 'LAMBDA FRT' (AP-coloured cell inside the AQ area); placed by plant decision 2026-10-02" }, // 41.6–47.6
   { id: "GAMMA2-TGDI", layoutLabel: "GAMMA2 T-GDI", row: 2, slot: "full", x: 42.3, w: 5.1, tone: "AQ", lineCode: "AQ2-TURBO1", match: "PLANT_DECISION", subLabel: "GAMMA T‑GDI 2차", note: "plant decision 2026-10-02: the GAMMA2 T-GDI station is the AQ-2 line 'TURBO#1' (dedicated GAMMA T-GDI 2차 line)" }, // 47.6–52.6
   { id: "KAPPA-EU7", layoutLabel: "KAPPA EU7", row: 2, slot: "top", x: 48.6, w: 5.0, tone: "AQ", lineCode: "AQ2-TURBO2-EU7", match: "PLANT_DECISION", subLabel: "KAPPA EURO7 · GAMMA T‑GDI 1차", note: "plant decision 2026-10-02: the KAPPA EU7 station is the AQ-2 line 'TURBO #2 EU7' (KAPPA EURO7 mixed with GAMMA T-GDI 1차)" }, // 53.0–57.9
   { id: "KAPPA16", layoutLabel: "KAPPA 1.6", row: 2, slot: "bottom", x: 48.6, w: 5.0, tone: "AQ", lineCode: "AQ2-KAPPA16", match: "EXACT_NAME" },
@@ -83,15 +83,15 @@ export const STATION_CELLS: StationCell[] = [
   { id: "FRT", layoutLabel: "FRT", row: 2, slot: "bottom", x: 83.5, w: 9.1, tone: "AP", lineCode: "AP1-FRT", match: "EXACT_NAME" },
 
   // ---- row 3 (south) — forming / bending / stuffing ------------------------------------- y 60.5–77.4
-  { id: "FORMING-CUTTING", layoutLabel: "FORMING & CUTTING", row: 3, slot: "top", x: 8.7, w: 29.6, tone: "SUB", candidateLineCode: "BND-PIPE-CUTTING", note: "DB 'PIPE CUTTING' vs layout 'FORMING & CUTTING'" }, // 19.2–44.9
+  { id: "FORMING-CUTTING", layoutLabel: "FORMING & CUTTING", row: 3, slot: "top", x: 8.7, w: 29.6, tone: "SUB", lineCode: "BND-PIPE-CUTTING", match: "PLANT_DECISION", subLabel: "FORMING & CUTTING", note: "DB 'PIPE CUTTING' vs layout 'FORMING & CUTTING'; placed by plant decision 2026-10-02" }, // 19.2–44.9
   { id: "AQ-BENDING", layoutLabel: "AQ BENDING", row: 3, slot: "bottom", x: 8.7, w: 13.2, tone: "SUB", lineCode: "BND-HE-BENDING", match: "PAGE1_NAME", note: "page 1 names this exact cell 'HE BENDING'" }, // 18.1–31.0
   { id: "AP-BENDING", layoutLabel: "AP BENDING", row: 3, slot: "bottom", x: 22.7, w: 15.6, tone: "SUB", lineCode: "BND-CE-BENDING", match: "PAGE1_NAME", note: "page 1 names this exact cell 'CE BENDING'" }, // 31.0–43.9
   { id: "AUTO-STUFFING2", layoutLabel: "AUTO STUFFING #2", row: 3, slot: "top", x: 39.1, w: 13.9, tone: "SUB", note: "DB has one line 'STUFFING' (AQ-3); layout shows #1 and #2 — not linked" }, // 45.0–57.4
   { id: "AUTO-STUFFING1", layoutLabel: "AUTO STUFFING #1", row: 3, slot: "bottom", x: 39.1, w: 13.9, tone: "SUB", note: "see AUTO STUFFING #2" },
   // ---- row 3 — RESO
-  { id: "NX4JX-LOCKSEAM", layoutLabel: "NX4/JX LOCK SEAM", row: 3, slot: "full", x: 58.5, w: 8.6, tone: "SUB", candidateLineCode: "RESO-LOCKSEAM", note: "DB 'LOCKSEAM' vs layout 'NX4/JX LOCK SEAM'" }, // 61.5–69.3
-  { id: "QX-MAIN-RESO", layoutLabel: "QX MAIN RESO", row: 3, slot: "full", x: 68.1, w: 9.2, tone: "SUB", candidateLineCode: "RESO-QX", note: "DB 'QX RESO' vs layout 'QX MAIN RESO'" }, // 69.6–78.0
-  { id: "SX2-MAIN-RESO", layoutLabel: "SX2 MAIN RESO", row: 3, slot: "full", x: 78.0, w: 8.8, tone: "SUB", candidateLineCode: "RESO-SX2", note: "DB 'SX2 RESO' vs layout 'SX2 MAIN RESO'" }, // 78.0–86.1
+  { id: "NX4JX-LOCKSEAM", layoutLabel: "NX4/JX LOCK SEAM", row: 3, slot: "full", x: 58.5, w: 8.6, tone: "SUB", lineCode: "RESO-LOCKSEAM", match: "PLANT_DECISION", subLabel: "NX4/JX LOCK SEAM", note: "DB 'LOCKSEAM' vs layout 'NX4/JX LOCK SEAM'; placed by plant decision 2026-10-02" }, // 61.5–69.3
+  { id: "QX-MAIN-RESO", layoutLabel: "QX MAIN RESO", row: 3, slot: "full", x: 68.1, w: 9.2, tone: "SUB", lineCode: "RESO-QX", match: "PLANT_DECISION", subLabel: "QX MAIN RESO", note: "DB 'QX RESO' vs layout 'QX MAIN RESO'; placed by plant decision 2026-10-02" }, // 69.6–78.0
+  { id: "SX2-MAIN-RESO", layoutLabel: "SX2 MAIN RESO", row: 3, slot: "full", x: 78.0, w: 8.8, tone: "SUB", lineCode: "RESO-SX2", match: "PLANT_DECISION", subLabel: "SX2 MAIN RESO", note: "DB 'SX2 RESO' vs layout 'SX2 MAIN RESO'; placed by plant decision 2026-10-02" }, // 78.0–86.1
   { id: "CTR-RESO", layoutLabel: "CTR RESO", row: 3, slot: "full", x: 87.5, w: 10.6, tone: "SUB", lineCode: "RESO-CTR", match: "EXACT_NAME" }, // 86.1–95.7
 ];
 
@@ -125,14 +125,7 @@ export function stationBox(c: StationCell, gap = 0.6): { x: number; y: number; w
  * is either on a station or here). They are shown in the "position to confirm" tray, never hidden.
  */
 export const UNMAPPED_LINES: Record<string, { candidateStation: string | null; reason: string }> = {
-  "AP1-NX4-CTR2": { candidateStation: "NX4-2", reason: "layout says 'NX4 #2'" },
-  "AP2-JX-ASSY": { candidateStation: "JX-ASSY1", reason: "layout says 'JX ASSY #1'" },
-  "AP2-JX-LAMBDA-FRT": { candidateStation: "LAMBDA-FRT", reason: "layout says 'LAMBDA FRT'" },
   "AQ3-R-ENG": { candidateStation: null, reason: "layout has 'R-DPF', not 'R-ENG'" },
   "AQ3-STUFFING": { candidateStation: null, reason: "layout has AUTO STUFFING #1 and #2; DB has one 'STUFFING'" },
-  "BND-PIPE-CUTTING": { candidateStation: "FORMING-CUTTING", reason: "layout says 'FORMING & CUTTING'" },
-  "RESO-LOCKSEAM": { candidateStation: "NX4JX-LOCKSEAM", reason: "layout says 'NX4/JX LOCK SEAM'" },
-  "RESO-QX": { candidateStation: "QX-MAIN-RESO", reason: "layout says 'QX MAIN RESO'" },
-  "RESO-SX2": { candidateStation: "SX2-MAIN-RESO", reason: "layout says 'SX2 MAIN RESO'" },
   "RESO-JX-NX4": { candidateStation: "NX4JX-MAIN-RESO", reason: "layout says 'NX4/JX MAIN RESO'" },
 };

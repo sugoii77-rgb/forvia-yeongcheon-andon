@@ -3,7 +3,7 @@
 > **Source of truth for AI-to-AI and human handover.** Update this file at the end of every
 > meaningful milestone (sections 11–16 at minimum).
 >
-> Last updated: **2026-10-02** · **Shop-floor display v2 (plant map on `/dashboard`) — deployed 2026-10-02; 26 / 36 lines placed, 10 awaiting UAP position confirmation** · **A/B shift schedule (schema v7) — deployed 2026-10-02 (Turso + Vercel and local plant DB on v7); anchor NOT configured (awaiting plant confirmation)** · Milestone 1 — **done** · Milestone 2 — H1 + H2 done · 2A routing foundation — done · 2B registration & authentication — done · **Google authentication provider — done (offline-tested; real Google not yet configured)** · Vercel / Turso cloud demo · **Line master + UAP line ownership (schema v6) — done** · NEXT: Reaction Rules (Appendix A, not started — waits for Process / Trigger master and OBD answers)
+> Last updated: **2026-10-02** · **Shop-floor display v2 (plant map on `/dashboard`) — deployed 2026-10-02; 33 / 36 lines placed, 3 awaiting position decision (JX/NX4 RESO, R-ENG, STUFFING)** · **A/B shift schedule (schema v7) — deployed 2026-10-02 (Turso + Vercel and local plant DB on v7); anchor NOT configured (awaiting plant confirmation)** · Milestone 1 — **done** · Milestone 2 — H1 + H2 done · 2A routing foundation — done · 2B registration & authentication — done · **Google authentication provider — done (offline-tested; real Google not yet configured)** · Vercel / Turso cloud demo · **Line master + UAP line ownership (schema v6) — done** · NEXT: Reaction Rules (Appendix A, not started — waits for Process / Trigger master and OBD answers)
 
 ---
 
@@ -390,7 +390,10 @@ condition right now?" from several meters away. No schema change.
 - **Plant-confirmed station descriptions (2026-10-02):** GPF = one line for **EURO7 GPF and GAMMA T-GDI 3차**
   (shown under the line name); the KAPPA EU7 station = DB line **TURBO #2 EU7** (plant decision 2026-10-02, `match: PLANT_DECISION`), shown as
   "KAPPA EURO7 · GAMMA T-GDI 1차". The GAMMA2 T-GDI station = DB line **TURBO#1** (plant decision), shown as "GAMMA T-GDI 2차".
-  Placed lines: **26 / 36** (10 in the tray).
+  Seven lines whose drawing name differs were placed on their candidate station by plant decision (drawing name
+  shown under the line name): NX4 CTR #2 → NX4 #2, JX ASSY → JX ASSY #1, JX LAMBDA FRT → LAMBDA FRT, PIPE CUTTING →
+  FORMING & CUTTING, LOCKSEAM → NX4/JX LOCK SEAM, QX RESO → QX MAIN RESO, SX2 RESO → SX2 MAIN RESO.
+  Placed lines: **33 / 36** — still in the tray: **JX/NX4 RESO** (candidate NX4/JX MAIN RESO), **R-ENG**, **STUFFING**.
 - **Highlight:** an abnormal line gets a bright ring + glow (OPEN red, pulsing; ACK / IN_PROGRESS amber, steady)
   and, while any ANDON is active, normal tiles, zone titles and landmarks dim to 45 % so the eye goes
   straight to the abnormal location.
@@ -789,8 +792,9 @@ answered by UAP and the real line / process master data has been delivered.
   milestone waiting for complete equipment data
 
 **Pending plant inputs (plant map, 2026-10-02)**
-- [ ] Confirm the station of the 12 unmapped lines (table in §6 "Shop-floor display v2"; candidates in
-      `UNMAPPED_LINES`), and that HE / CE BENDING = the AQ / AP BENDING cells of page 2
+- [x] Stations of 9 of the 12 unmapped lines decided by the plant (2026-10-02)
+- [ ] Remaining: JX/NX4 RESO (NX4/JX MAIN RESO?), R-ENG (no station; R-DPF?), STUFFING (AUTO STUFFING #1 or #2?);
+      and confirm HE / CE BENDING = the AQ / AP BENDING cells of page 2
 - [ ] Meaning of the "CAPACITY LINE" label on page 2 (not drawn)
 - [x] KAPPA EU7 station = DB line "TURBO #2 EU7" (plant decision 2026-10-02; shown "KAPPA EURO7 · GAMMA T-GDI 1차")
 - [x] GAMMA T-GDI 2차 dedicated line = "GAMMA2 T-GDI" station = DB line "TURBO#1" (plant decision 2026-10-02)
