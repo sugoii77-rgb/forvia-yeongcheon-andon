@@ -99,21 +99,38 @@ try {
   check(Number((await db.get(`SELECT COUNT(*) AS n FROM user_identity WHERE user_id IN (${idph})`, ...ids))?.n) === 0, "imported employees: no login identity (no Google ID)");
   const secrets = await contactValues();
   const tables = (await db.all("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")).map((r) => r.name as string);
-  let cells = 0, hits = 0;
+  // A person who registered THEMSELVES (/register or Google onboarding) typed their own login e-mail;
+  // that is account data, not workbook-derived. It is reported separately and does not fail the check.
+  const selfRegistered = new Set(
+    (await db.all("SELECT id FROM app_user WHERE source = 'REGISTRATION' AND import_key IS NULL")).map((r) => Number(r.id)),
+  );
+  const isSelfLogin = (t: string, col: string, row: Record<string, unknown>) =>
+    (t === "app_user" && col === "email" && selfRegistered.has(Number(row.id))) ||
+    (t === "user_identity" && (col === "subject" || col === "provider_email") && selfRegistered.has(Number(row.user_id)));
+  let cells = 0, hits = 0, selfHits = 0;
+  const where = new Map<string, number>();
   for (const t of tables) {
     for (const row of await db.all(`SELECT * FROM "${t}"`)) {
-      for (const v of Object.values(row)) {
+      for (const [col, v] of Object.entries(row)) {
         if (typeof v !== "string") continue;
         cells++;
         const low = v.toLowerCase();
-        const digits = v.replace(/\D/g, "");
+        const digits = v.replace(/D/g, "");
         // short numeric values (e.g. employee numbers) only as an exact cell value, to avoid timestamp noise
-        const hit = secrets.some((x) => (/^\d+$/.test(x) ? (x.length >= 7 ? digits.includes(x) : v.trim() === x) : low.includes(x)));
-        if (hit) hits++;
+        const hit = secrets.some((x) => (/^d+$/.test(x) ? (x.length >= 7 ? digits.includes(x) : v.trim() === x) : low.includes(x)));
+        if (!hit) continue;
+        const self = isSelfLogin(t, col, row);
+        if (self) selfHits++;
+        else hits++;
+        const owner = t === "app_user" ? ` user #${row.id}` : t === "user_identity" ? ` user #${row.user_id}` : "";
+        const k = `${t}.${col}${owner}${self ? " — own login e-mail of a self-registered account" : ""}`;
+        where.set(k, (where.get(k) ?? 0) + 1);
       }
     }
   }
-  check(hits === 0, `no workbook contact value anywhere in the database (${secrets.length} values × ${cells} text cells in ${tables.length} tables; matches: ${hits})`);
+  for (const [k, n] of where) console.log(`    found in ${k}: ${n} (value not shown)`);
+  check(hits === 0, `no workbook-derived contact value in the database (${secrets.length} values × ${cells} text cells in ${tables.length} tables; matches: ${hits})`);
+  if (selfHits) console.log(`    note: ${selfHits} value(s) are the person's own login e-mail entered at self-registration (not imported)`);
 } catch (err) {
   failures++;
   console.error(`  ✖ ${(err as Error).message}`);
