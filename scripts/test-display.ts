@@ -34,6 +34,7 @@ function partA() {
   check(new Set(STATION_CELLS.map((c) => c.id)).size === STATION_CELLS.length, "no duplicate station ids");
   check(new Set(linked).size === linked.length, "no line linked to two stations");
   check(STATION_CELLS.every((c) => !c.lineCode || c.match), "every confirmed link states how it was matched");
+  check(STATION_CELLS.find((c) => c.id === "KAPPA-EU7")?.lineCode === "AQ2-TURBO2-EU7" && STATION_CELLS.find((c) => c.id === "GPF")?.lineCode === "AQ1-GPF", "plant decisions: KAPPA EU7 station = TURBO #2 EU7, GPF station = GPF");
   check(STATION_CELLS.filter((c) => c.candidateLineCode).every((c) => !c.lineCode && unmapped.includes(c.candidateLineCode!)), "candidate (unconfirmed) stations are not linked and their lines are in the unmapped list");
   check(Object.values(UNMAPPED_LINES).every((u) => u.candidateStation === null || STATION_CELLS.some((c) => c.id === u.candidateStation)), "unmapped candidates point to existing stations");
   const boxes = STATION_CELLS.map((c) => ({ id: c.id, ...stationBox(c) }));
@@ -98,7 +99,8 @@ function partB() {
   const shown = displayLines(meta);
   check(shown.length === REAL.length && !shown.some((l) => DEMO.some((d) => d.code === l.code)), "display lines = 36 real lines; demo lines hidden");
   const { stations, unplaced } = placeLines(shown, events);
-  check(stations.filter((s) => s.line).length === 24 && unplaced.length === 12, "24 lines on stations, 12 in the 'position to confirm' tray");
+  const placedN = STATION_CELLS.filter((c) => c.lineCode).length;
+  check(stations.filter((s) => s.line).length === placedN && unplaced.length === REAL.length - placedN, `${placedN} lines on stations, ${REAL.length - placedN} in the 'position to confirm' tray`);
   const demoEvent = ev("TGDI1", "OPEN", t(60));
   demoEvent.lineName = "T-GDI 1";
   const withDemo = placeLines(shown, [...events, demoEvent]);

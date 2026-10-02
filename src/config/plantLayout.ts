@@ -38,7 +38,7 @@ export interface StationCell {
   /** Confirmed DB line (line.code). */
   lineCode?: string;
   /** How the confirmed link was established. */
-  match?: "EXACT_NAME" | "PAGE1_NAME";
+  match?: "EXACT_NAME" | "PAGE1_NAME" | "PLANT_DECISION";
   /** Possible DB line — NOT used for display until confirmed. */
   candidateLineCode?: string;
   note?: string;
@@ -66,12 +66,12 @@ export const STATION_CELLS: StationCell[] = [
 
   // ---- row 2 (middle) — AQ ASSEMBLY ---------------------------------------------------- y 43.8–56.9
   { id: "NUI1-EXMANI", layoutLabel: "NU-I #1 EXMANI", row: 2, slot: "full", x: 14.1, w: 7.1, tone: "AQ", lineCode: "AQ1-NUI1-EXMANI", match: "EXACT_NAME" }, // 23.7–30.3
-  { id: "GPF", layoutLabel: "GPF", row: 2, slot: "full", x: 21.8, w: 6.1, tone: "AQ", lineCode: "AQ1-GPF", match: "EXACT_NAME", subLabel: "EURO7 GPF · GAMMA T‑GDI 3차", note: "plant 2026-10-02: one line for EURO7 GPF and GAMMA T-GDI 3차" }, // 30.3–36.1
+  { id: "GPF", layoutLabel: "GPF", row: 2, slot: "full", x: 21.8, w: 6.1, tone: "AQ", lineCode: "AQ1-GPF", match: "EXACT_NAME", subLabel: "EURO7 GPF · GAMMA T‑GDI 3차", note: "plant 2026-10-02: one line for EURO7 GPF and GAMMA T-GDI 3차 (mixed production)" }, // 30.3–36.1
   { id: "EXMANI1", layoutLabel: "EXMANI #1", row: 2, slot: "top", x: 28.6, w: 5.9, tone: "AQ", lineCode: "AQ2-EXMANI1", match: "EXACT_NAME" }, // 36.1–41.6
   { id: "EXMANI2", layoutLabel: "EXMANI #2", row: 2, slot: "bottom", x: 28.6, w: 5.9, tone: "AQ", lineCode: "AQ2-EXMANI2", match: "EXACT_NAME" },
   { id: "LAMBDA-FRT", layoutLabel: "LAMBDA FRT", row: 2, slot: "full", x: 35.2, w: 6.4, tone: "AP", candidateLineCode: "AP2-JX-LAMBDA-FRT", note: "DB 'JX LAMBDA FRT' vs layout 'LAMBDA FRT' (AP-coloured cell inside the AQ area)" }, // 41.6–47.6
   { id: "GAMMA2-TGDI", layoutLabel: "GAMMA2 T-GDI", row: 2, slot: "full", x: 42.3, w: 5.1, tone: "AQ", note: "no DB line with this name (DB AQ-2 has TURBO#1 — not confirmed to be this station)" }, // 47.6–52.6
-  { id: "KAPPA-EU7", layoutLabel: "KAPPA EU7 · GAMMA TURBO 1차", row: 2, slot: "top", x: 48.6, w: 5.0, tone: "AQ", note: "plant 2026-10-02: one line for KAPPA EU7 and GAMMA TURBO 1차. Which DB line (TURBO #2 EU7 / TURBO#1) is not confirmed yet" }, // 53.0–57.9
+  { id: "KAPPA-EU7", layoutLabel: "KAPPA EU7", row: 2, slot: "top", x: 48.6, w: 5.0, tone: "AQ", lineCode: "AQ2-TURBO2-EU7", match: "PLANT_DECISION", subLabel: "KAPPA EURO7 · GAMMA T‑GDI 1차", note: "plant decision 2026-10-02: the KAPPA EU7 station is the AQ-2 line 'TURBO #2 EU7' (KAPPA EURO7 mixed with GAMMA T-GDI 1차)" }, // 53.0–57.9
   { id: "KAPPA16", layoutLabel: "KAPPA 1.6", row: 2, slot: "bottom", x: 48.6, w: 5.0, tone: "AQ", lineCode: "AQ2-KAPPA16", match: "EXACT_NAME" },
   // ---- row 2 — AP ASSEMBLY
   { id: "NX4JX-MAIN-RESO", layoutLabel: "NX4/JX MAIN RESO", row: 2, slot: "full", x: 58.1, w: 7.1, tone: "SUB", candidateLineCode: "RESO-JX-NX4", note: "DB 'JX/NX4 RESO' vs layout 'NX4/JX MAIN RESO'" }, // 61.1–67.7
@@ -128,7 +128,6 @@ export const UNMAPPED_LINES: Record<string, { candidateStation: string | null; r
   "AP1-NX4-CTR2": { candidateStation: "NX4-2", reason: "layout says 'NX4 #2'" },
   "AP2-JX-ASSY": { candidateStation: "JX-ASSY1", reason: "layout says 'JX ASSY #1'" },
   "AP2-JX-LAMBDA-FRT": { candidateStation: "LAMBDA-FRT", reason: "layout says 'LAMBDA FRT'" },
-  "AQ2-TURBO2-EU7": { candidateStation: "KAPPA-EU7", reason: "layout has 'KAPPA EU7', no 'TURBO' label" },
   "AQ2-TURBO1": { candidateStation: null, reason: "no 'TURBO' label on page 2 ('GAMMA2 T-GDI' unconfirmed)" },
   "AQ3-R-ENG": { candidateStation: null, reason: "layout has 'R-DPF', not 'R-ENG'" },
   "AQ3-STUFFING": { candidateStation: null, reason: "layout has AUTO STUFFING #1 and #2; DB has one 'STUFFING'" },
