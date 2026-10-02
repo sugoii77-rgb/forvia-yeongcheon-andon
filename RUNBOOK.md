@@ -209,3 +209,13 @@ npm run masterdata -- shift anchor <월요일 YYYY-MM-DD> <A|B>   # UAP가 확�
 - 모든 변경은 이력(누가, 언제, 이전 값, 새 값)에 남고 지울 수 없습니다. 기존 ANDON 기록은 바뀌지 않습니다.
 - 로컬 공장 서버와 클라우드(Vercel/Turso)는 DB가 따로이므로 **양쪽에 각각** 입력합니다.
 - 근무조(담당자: GAP 리더 · 감독자)는 **책임 부서와 별개**입니다. 알림 발송은 아직 없습니다.
+
+## 12. 현황판 플랜트 맵 · Plant map display (`/dashboard`)
+
+- 대형 모니터(1920 × 1080)에서 `/dashboard` 를 전체화면(F11)으로 엽니다. 라인은 공장 배치도 위치에 고정되어 있고,
+  이상이 생긴 라인만 제자리에서 빨강(발생) / 노랑(접수·조치중)으로 바뀝니다. 기존 카드형 화면: `/dashboard/list`.
+- 오른쪽 "배치 위치 확인 필요" 목록의 라인은 아직 배치도 위치가 확정되지 않은 라인입니다 (이상 발생 시 그 목록에서 빨강/노랑).
+- **위치 확정 방법 (UAP 확인 후):** `src/config/plantLayout.ts` 에서 해당 칸의 `candidateLineCode` 를 `lineCode` 로
+  바꾸고 `match` 를 적은 뒤 `UNMAPPED_LINES` 에서 그 라인을 지웁니다 → `npm run test:display` → 빌드 / 배포.
+  배치도가 바뀌면 같은 파일의 좌표(x, w, row, slot)만 수정합니다. DB 변경은 필요 없습니다.
+- 근무조 표시는 A/B 기준이 설정될 때까지 `SHIFT: UNRESOLVED` 입니다 (11절).

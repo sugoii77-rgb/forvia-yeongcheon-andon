@@ -19,7 +19,8 @@ npm run serve                 # http://localhost:<PORT from .env>  (builds if ne
 | Screen | URL |
 |---|---|
 | Operator ANDON call (tablet/phone) | `/operator` |
-| Live dashboard (large monitor) | `/dashboard` |
+| Live plant map — where is the abnormality (large monitor, 1920 × 1080) | `/dashboard` |
+| Previous card dashboard | `/dashboard/list` |
 | Responder inbox / event (phone, notification link) — **login required to act** | `/respond`, `/respond/<ANDON-ID>` |
 | Register / login / my info | `/register`, `/login`, `/me` |
 | History & analytics | `/history` |
@@ -44,6 +45,7 @@ Limits and operation: PROJECT.md §9 "Vercel deployment" and §12.
 | `npm run test:google` | Google OIDC tests with a fake Google (isolated DB under `work/`, see PROJECT.md §10) |
 | `vercel env run -e production -- npm run db:migrate` | migrate the Vercel (Turso) database — before pushing a schema change |
 | `npm run import:uap -- <workbook.xlsx> [--dry-run]` | ADMIN: import line ownership (Supervisor / GAP leader A / B) from the plant workbook (kept outside the repo) |
+| `npm run test:display` | plant-map display tests (`-- --http` optional) |
 | `npm run test:shifts` | A/B shift schedule tests (fixed timestamps; `-- --http` optional) |
 | `npm run test:lines` | line master / ownership tests (`-- --http`, `-- --workbook <file>` optional) |
 | `npm run masterdata -- list` | ADMIN: show / change users (role, department, active, password reset), routing rules (RUNBOOK.md §7) |

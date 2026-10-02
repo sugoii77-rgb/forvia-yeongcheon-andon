@@ -3,7 +3,7 @@
 > **Source of truth for AI-to-AI and human handover.** Update this file at the end of every
 > meaningful milestone (sections 11–16 at minimum).
 >
-> Last updated: **2026-10-02** · **A/B shift schedule (schema v7) — deployed 2026-10-02 (Turso + Vercel and local plant DB on v7); anchor NOT configured (awaiting plant confirmation)** · Milestone 1 — **done** · Milestone 2 — H1 + H2 done · 2A routing foundation — done · 2B registration & authentication — done · **Google authentication provider — done (offline-tested; real Google not yet configured)** · Vercel / Turso cloud demo · **Line master + UAP line ownership (schema v6) — done** · NEXT: Reaction Rules (Appendix A, not started — waits for Process / Trigger master and OBD answers)
+> Last updated: **2026-10-02** · **Shop-floor display v2 (plant map on `/dashboard`) — deployed 2026-10-02; 24 / 36 lines placed, 12 awaiting UAP position confirmation** · **A/B shift schedule (schema v7) — deployed 2026-10-02 (Turso + Vercel and local plant DB on v7); anchor NOT configured (awaiting plant confirmation)** · Milestone 1 — **done** · Milestone 2 — H1 + H2 done · 2A routing foundation — done · 2B registration & authentication — done · **Google authentication provider — done (offline-tested; real Google not yet configured)** · Vercel / Turso cloud demo · **Line master + UAP line ownership (schema v6) — done** · NEXT: Reaction Rules (Appendix A, not started — waits for Process / Trigger master and OBD answers)
 
 ---
 
@@ -368,6 +368,37 @@ Plant YC ─► UAP area (7) ─► Line (36 real) ─► line_assignment
   (`npm run masterdata -- line deactivate <LINE>`), never deleted. `/api/meta` lists only active lines; events,
   history, dashboard and statistics of these lines are unchanged. Done in the cloud; local DB still active.
 
+**Shop-floor display v2 — plant map ANDON (`/dashboard`, 2026-10-02)** — answers "WHERE is the abnormal
+condition right now?" from several meters away. No schema change.
+
+- **Source:** `layout.pptx` page 2 "PLANT LAYOUT" (Jan 2026). Shape coordinates were read from the slide XML
+  (no background image) and turned into `src/config/plantLayout.ts`: station cells in a 100 × 100 map
+  frame (production rows get more height than warehouses), zone backgrounds (AQ ASSEMBLY, AP ASSEMBLY,
+  forming / bending / stuffing, RESO) and orientation landmarks (finished goods / BOP / catalyst
+  warehouses, QC lab, maintenance). Page 1 evacuation content is not used.
+- **Mapping (DB line → station):** 24 / 36 real lines placed — 22 by exact name, HE / CE BENDING by the
+  page-1 name of the same cell (page 2 calls them AQ / AP BENDING). **12 lines are explicitly unmapped**
+  (`UNMAPPED_LINES`, with candidate station and reason): NX4 CTR #2, JX ASSY, JX LAMBDA FRT, PIPE CUTTING,
+  LOCKSEAM, QX RESO, SX2 RESO, JX/NX4 RESO (names differ from the drawing), TURBO #2 EU7, TURBO#1, R-ENG,
+  STUFFING (no unambiguous station). They are shown in the "배치 위치 확인 필요 · Position to confirm" tray
+  next to the map — never hidden. To confirm one: move its code to the station's `lineCode`
+  (`match`), remove it from `UNMAPPED_LINES`, run `npm run test:display`.
+  Stations without a DB line (R-DPF, GAMMA2 T-GDI, KAPPA EU7, AUTO STUFFING #1 / #2, candidate cells)
+  are drawn as faint dashed outlines for orientation only.
+- **Behaviour:** lines keep their physical position. Normal = dark tile with a muted green bar (recedes);
+  OPEN = red (one subtle pulse, off with reduced motion); ACKNOWLEDGED / IN_PROGRESS = amber; CLOSED =
+  normal again. Several active events on one line → most urgent state + count badge. Abnormal tile:
+  line, category, description, elapsed time, state; it links to `/respond/<id>`. Top bar: OPEN /
+  IN ACTION / NORMAL line counts, shift (`SHIFT: UNRESOLVED` until the anchor exists — never A/B guessed),
+  clock, LIVE / "서버 연결 끊김". Active ANDON panel: OPEN first, then longest elapsed. A line with an
+  active event that is not on the map (e.g. a hidden prototype line with an old event) appears in the tray.
+- **Data / privacy:** same 2-s polling of `/api/andons?scope=board`, which now also returns
+  `shift` = team + DAY/NIGHT or UNRESOLVED (never the anchor). The map shows no people. (The existing
+  event objects still contain acknowledgedBy / closedBy names; the display does not render them.)
+- **Screens:** 1920 × 1080 fits without scrolling (verified); ≤ 1500 px compact header and side panel;
+  ≤ 1100 px the active list comes first and the map scrolls horizontally. Pure logic: `src/lib/plantMap.ts`.
+  The previous card dashboard is at `/dashboard/list`.
+
 **A/B shift schedule (v7)** — confirmed plant rule for Yeongcheon UAP (2026-10-02):
 
 - 12-hour shifts; shift changes at **08:00** (DAY starts, inclusive) and **20:00** (NIGHT starts, inclusive);
@@ -495,6 +526,7 @@ npm run dev       # development mode with hot reload
 | `npm run test:routing` | 10 unit checks of the routing resolver / eligibility (no server) + 29 API checks: routing of every category, process-level override (→ PCL, shown "PC&L · 물류"), eligible-responder list, no session → 401, body naming another user (id or name) → rejected, wrong department → 403 without side effects, session responder ACK with user id / name / department / role / device / IP / user agent in history, GAP_LEADER (set by admin) may act, invalid device id dropped, server-side inbox (`mine=1`, incl. pre-v3 QUALITY events), pre-v3 event handled by successor department, full ordered history. |
 | `npm run test:auth` | 42 checks — registration (valid, role in body ignored, no secrets in responses, cookie flags, duplicate e-mail incl. case variant, 5 simultaneous registrations → 1 account, invalid e-mail / department / inactive pre-v3 department / short password / no digit / mismatch / empty name), login (valid, wrong password, unknown user with identical message, session fixation, logout + cookie replay, forged token, foreign Origin → 403, inactive → 403, 6th failure → 429), authorization & routing (new QC / MT / PC&L responders automatically eligible, QC cannot ACK MT, body spoofing rejected, no session → 401, audit fields, deactivated after login → 403, OPERATOR role → 403, admin department change moves eligibility). |
 
+| `npm run test:display` | Plant-map display (33 checks with `--http`): every real line on exactly one station or explicitly unmapped (24 + 12), codes exist, demo lines not placed, no duplicate / overlapping / out-of-frame boxes; OPEN → red, ACK / IN_PROGRESS → amber, CLOSED → normal, several events on one line (count, lead), active-list order, elapsed timer with fixed timestamps, unresolved shift never shows A/B, demo line only while it has an active event; `--http`: board shift UNRESOLVED without team, no personnel / contact / auth / anchor fields in board + meta, demo-line history served, `/dashboard` and `/dashboard/list` render. |
 | `npm run test:shifts` | A/B shift schedule (54 checks with `--http`), fixed timestamps only (the anchor in the tests is a TEST value). **A** pure resolver: Mon 07:59:59 (previous week's Sunday NIGHT), Mon 08:00:00, 19:59:59, 20:00:00, Tuesday, Sunday day / night, following Mon 07:59:59 / 08:00:00 (swap), ±2 / 52 weeks, UTC input, DST dates and process TZ (New York / Berlin / UTC / Auckland) without effect, missing anchor → SHIFT_SCHEDULE_NOT_ANCHORED, invalid anchors / rule / timestamp. **B** isolated DB: rule seeded without anchor; ANDON creation with no anchor / broken rule / missing schedule still succeeds (UNRESOLVED, routing normal, supervisor recorded); anchor validation, audit (who / when / old / new, append-only), anchor change does not rewrite events; snapshot team A / B → that line's A / B GAP leader, Monday 07:59:59 and next-week swap, supervisor independent of A/B, line-specific, no invented references, no shift fields in public objects. **C** `--http`: 401 / 403 (RESPONDER) / GAP_LEADER view-only, PUT 403 for GAP_LEADER, 400 invalid, foreign Origin 403, SUPERVISOR 200 + audited, `/api/meta` without schedule. **D** Turso-compatible v6 → v7 with an existing event (unchanged, snapshot NULL). |
 | `npm run test:lines` | Line master + ownership (70 checks with `--http --workbook`). **A** isolated DB under `work/lines-test/` with a synthetic workbook (fake names, plant layout): 36 lines exactly once, areas, placeholder processes, shifts without times, ANDON on a real line, parser + sub-group inheritance, BENDING-type warnings, contradiction rejected, import, every line → supervisor / A / B, explicit shift, no duplicate employees, repeated import = no change, changed person → old ended + new, inactive / ended / future / deactivated-employee ignored, constraints (unique, shift rules, FKs), contact columns never read or stored, public master data without people / contact fields, events / history / notifications / routing / users unchanged. **B** Turso-compatible migration: remote driver path on local libSQL that rejects `PRAGMA user_version =` like Turso, v5 with data → v6, rows unchanged. **C** `--http` (`BASE_URL`, `DATABASE_PATH` = server DB): `/api/meta` field names, 401 / 403 / 200 on `/api/admin/lines`, no contact fields, no assigned person in `/api/meta`. **D** `--workbook <file>`: real workbook into a fresh isolated DB, every line = workbook supervisor / A / B; prints counts only. |
 | `npm run db:verify-remote-migration` | Turso DRY RUN: pending migrations + seed inside one transaction that is always rolled back; checks old rows / columns (checksums), FKs, append-only, then that nothing changed. Run with `vercel env run -e production --`. |
@@ -594,6 +626,9 @@ server stopped: dashboard shows disconnect banner, operator sees "호출 실패"
 data intact, operator retry succeeds ✔ · backup script ✔.
 
 ## 12. Known issues / limitations
+
+- **Plant map:** 12 of 36 real lines are not placed yet (tray) until UAP confirms their station. Narrow AQ
+  stations (≈ 80 px at 1920 wide) use ≈ 13 px names on normal tiles; at 1366 px some names break inside words.
 
 - **A/B shift anchor not configured** (v7): the current team / GAP leader is not determined automatically
   until an authorized person enters the plant-confirmed anchor; new ANDON events store the shift as
@@ -744,6 +779,11 @@ answered by UAP and the real line / process master data has been delivered.
 - Equipment master data (Appendix B) is **optional** for the first pilot — do not block this
   milestone waiting for complete equipment data
 
+**Pending plant inputs (plant map, 2026-10-02)**
+- [ ] Confirm the station of the 12 unmapped lines (table in §6 "Shop-floor display v2"; candidates in
+      `UNMAPPED_LINES`), and that HE / CE BENDING = the AQ / AP BENDING cells of page 2
+- [ ] Meaning of the "CAPACITY LINE" label on page 2 (not drawn)
+
 **Pending plant inputs (line ownership, 2026-10-02)** — nothing of this was invented:
 - [ ] Process master per real line (Line → Process)
 - [ ] Trigger master and defect / problem types
@@ -805,6 +845,7 @@ answered by UAP and the real line / process master data has been delivered.
 
 | Date | Change |
 |---|---|
+| 2026-10-02 | Shop-floor display v2 — plant map ANDON on `/dashboard` (approved, merged, deployed): layout config from `layout.pptx` page 2 (24 / 36 lines placed, 12 explicitly unmapped in a tray), line states in place (red / amber / normal, count badge), active panel, shift chip (UNRESOLVED without anchor), board API `shift` field; previous cards at `/dashboard/list`. No schema change. Verified: typecheck / lint / build ✔; isolated copy: test:google 48/48, test:auth 42/42, test:routing 39/39, test:golden 26/26, test:reliability 6/6, test:lines 70/70, test:shifts 54/54, test:display 33/33; browser 1920 × 1080 without scrolling, live NORMAL → OPEN → ACK → CLOSE without reload, disconnect warning; screenshots 1920 × 1080 / 1366 × 768 / tablet. |
 | 2026-10-02 | v7 production rollout: branch merged into main (fast-forward, 4 commits); Turso dry run passed (366 rows unchanged, rolled back) → `db:migrate` v6 → v7 (FK 0; all 366 pre-existing rows unchanged vs. checksum snapshot; `verify:lines` 36/36 × 3, 35 employees, no workbook-derived contact value); pushed `f5fc968`, Vercel Ready (~1.5 min of refused requests between migration and deploy); production: health, `/api/meta` without shift / personnel fields, `/api/admin/shift-schedule` GET / PUT 401 without login or with a forged session, foreign Origin 403, `/admin/shifts` 200, schedule unanchored with empty audit; ANDON creation through the service in a rolled-back transaction → OPEN, routed to MT, shift UNRESOLVED / SHIFT_SCHEDULE_NOT_ANCHORED, supervisor recorded (no test event left). Local plant DB: stop → build → serve, automatic backup `andon-pre-migration-v6-to-v7-…`, v7; 136 events / 440 history / 175 notifications / 92 users / 108 assignments unchanged, anchor NULL. **Anchor not configured.** |
 | 2026-10-02 | A/B shift schedule, schema v7 — implemented on branch `feature/shift-schedule-v7` (deployed later the same day, see the row above): pure resolver (Asia/Seoul, 08:00 / 20:00, weekly swap at Monday 08:00, operational date = shift start, SHIFT_SCHEDULE_NOT_ANCHORED without anchor); `shift_schedule` (rule, anchor empty) + append-only `shift_schedule_audit`; shift snapshot on new ANDON events (never blocks the call; old events NULL); `/admin/shifts` + `/api/admin/shift-schedule` (view / change roles, audited), `masterdata shift show / anchor`. Verified on an isolated copy of the local DB: v6 → v7 with automatic backup, all 136 events / 440 history / 175 notifications / users / 108 assignments unchanged, old events snapshot NULL, anchor NULL; Turso-compatible v6 → v7 (emulation); typecheck / lint / build ✔; test:google 48/48, test:auth 42/42, test:routing 39/39, test:golden 26/26, test:reliability 6/6, test:lines 70/70, test:shifts 54/54; browser: `/admin/shifts` as SUPERVISOR. |
 | 2026-10-01 | Milestone 1: project scaffold (Next.js 16, node:sqlite), data model + state machine, operator / dashboard / responder / history screens, mock notification provider, demo seed, backup, health check, automated Golden Path test. Verified end-to-end (see §11). |
