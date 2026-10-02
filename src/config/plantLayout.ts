@@ -70,7 +70,7 @@ export const STATION_CELLS: StationCell[] = [
   { id: "EXMANI1", layoutLabel: "EXMANI #1", row: 2, slot: "top", x: 28.6, w: 5.9, tone: "AQ", lineCode: "AQ2-EXMANI1", match: "EXACT_NAME" }, // 36.1–41.6
   { id: "EXMANI2", layoutLabel: "EXMANI #2", row: 2, slot: "bottom", x: 28.6, w: 5.9, tone: "AQ", lineCode: "AQ2-EXMANI2", match: "EXACT_NAME" },
   { id: "LAMBDA-FRT", layoutLabel: "LAMBDA FRT", row: 2, slot: "full", x: 35.2, w: 6.4, tone: "AP", candidateLineCode: "AP2-JX-LAMBDA-FRT", note: "DB 'JX LAMBDA FRT' vs layout 'LAMBDA FRT' (AP-coloured cell inside the AQ area)" }, // 41.6–47.6
-  { id: "GAMMA2-TGDI", layoutLabel: "GAMMA2 T-GDI", row: 2, slot: "full", x: 42.3, w: 5.1, tone: "AQ", note: "no DB line with this name (DB AQ-2 has TURBO#1 — not confirmed to be this station)" }, // 47.6–52.6
+  { id: "GAMMA2-TGDI", layoutLabel: "GAMMA2 T-GDI", row: 2, slot: "full", x: 42.3, w: 5.1, tone: "AQ", lineCode: "AQ2-TURBO1", match: "PLANT_DECISION", subLabel: "GAMMA T‑GDI 2차", note: "plant decision 2026-10-02: the GAMMA2 T-GDI station is the AQ-2 line 'TURBO#1' (dedicated GAMMA T-GDI 2차 line)" }, // 47.6–52.6
   { id: "KAPPA-EU7", layoutLabel: "KAPPA EU7", row: 2, slot: "top", x: 48.6, w: 5.0, tone: "AQ", lineCode: "AQ2-TURBO2-EU7", match: "PLANT_DECISION", subLabel: "KAPPA EURO7 · GAMMA T‑GDI 1차", note: "plant decision 2026-10-02: the KAPPA EU7 station is the AQ-2 line 'TURBO #2 EU7' (KAPPA EURO7 mixed with GAMMA T-GDI 1차)" }, // 53.0–57.9
   { id: "KAPPA16", layoutLabel: "KAPPA 1.6", row: 2, slot: "bottom", x: 48.6, w: 5.0, tone: "AQ", lineCode: "AQ2-KAPPA16", match: "EXACT_NAME" },
   // ---- row 2 — AP ASSEMBLY
@@ -128,7 +128,6 @@ export const UNMAPPED_LINES: Record<string, { candidateStation: string | null; r
   "AP1-NX4-CTR2": { candidateStation: "NX4-2", reason: "layout says 'NX4 #2'" },
   "AP2-JX-ASSY": { candidateStation: "JX-ASSY1", reason: "layout says 'JX ASSY #1'" },
   "AP2-JX-LAMBDA-FRT": { candidateStation: "LAMBDA-FRT", reason: "layout says 'LAMBDA FRT'" },
-  "AQ2-TURBO1": { candidateStation: null, reason: "no 'TURBO' label on page 2 ('GAMMA2 T-GDI' unconfirmed)" },
   "AQ3-R-ENG": { candidateStation: null, reason: "layout has 'R-DPF', not 'R-ENG'" },
   "AQ3-STUFFING": { candidateStation: null, reason: "layout has AUTO STUFFING #1 and #2; DB has one 'STUFFING'" },
   "BND-PIPE-CUTTING": { candidateStation: "FORMING-CUTTING", reason: "layout says 'FORMING & CUTTING'" },

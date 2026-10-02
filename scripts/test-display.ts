@@ -34,7 +34,7 @@ function partA() {
   check(new Set(STATION_CELLS.map((c) => c.id)).size === STATION_CELLS.length, "no duplicate station ids");
   check(new Set(linked).size === linked.length, "no line linked to two stations");
   check(STATION_CELLS.every((c) => !c.lineCode || c.match), "every confirmed link states how it was matched");
-  check(STATION_CELLS.find((c) => c.id === "KAPPA-EU7")?.lineCode === "AQ2-TURBO2-EU7" && STATION_CELLS.find((c) => c.id === "GPF")?.lineCode === "AQ1-GPF", "plant decisions: KAPPA EU7 station = TURBO #2 EU7, GPF station = GPF");
+  check(STATION_CELLS.find((c) => c.id === "KAPPA-EU7")?.lineCode === "AQ2-TURBO2-EU7" && STATION_CELLS.find((c) => c.id === "GPF")?.lineCode === "AQ1-GPF" && STATION_CELLS.find((c) => c.id === "GAMMA2-TGDI")?.lineCode === "AQ2-TURBO1", "plant decisions: KAPPA EU7 station = TURBO #2 EU7, GAMMA2 T-GDI station = TURBO#1, GPF station = GPF");
   check(STATION_CELLS.filter((c) => c.candidateLineCode).every((c) => !c.lineCode && unmapped.includes(c.candidateLineCode!)), "candidate (unconfirmed) stations are not linked and their lines are in the unmapped list");
   check(Object.values(UNMAPPED_LINES).every((u) => u.candidateStation === null || STATION_CELLS.some((c) => c.id === u.candidateStation)), "unmapped candidates point to existing stations");
   const boxes = STATION_CELLS.map((c) => ({ id: c.id, ...stationBox(c) }));
