@@ -160,3 +160,17 @@ export async function shiftSnapshotForLine(lineCode: string, at: string): Promis
     return { ...empty, unresolvedReason: code && /^SHIFT_/.test(code) ? code : "SHIFT_RESOLUTION_ERROR" };
   }
 }
+
+/** Shift shown on the public shop-floor display: team + DAY/NIGHT only (no anchor). Never throws. */
+export type PublicShift = { status: "RESOLVED"; team: ShiftTeam; type: "DAY" | "NIGHT"; operationalDate: string; shiftEnd: string } | { status: "UNRESOLVED"; reason: string };
+
+export async function publicShift(at: string = nowIso()): Promise<PublicShift> {
+  try {
+    const s = await currentShift(at);
+    if (!s.ok) return { status: "UNRESOLVED", reason: s.code };
+    return { status: "RESOLVED", team: s.activeTeam, type: s.shiftType, operationalDate: s.operationalDate, shiftEnd: s.shiftEnd };
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    return { status: "UNRESOLVED", reason: code && /^SHIFT_/.test(code) ? code : "SHIFT_RESOLUTION_ERROR" };
+  }
+}

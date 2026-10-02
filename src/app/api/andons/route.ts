@@ -4,6 +4,7 @@ import { deletePhoto, savePhoto } from "@/lib/server/photos";
 import { after } from "next/server";
 import { handle, requestAudit } from "@/lib/server/http";
 import { getSessionUser } from "@/lib/server/auth";
+import { publicShift } from "@/lib/server/shiftService";
 
 export async function GET(req: Request) {
   return handle("GET /api/andons", async () => {
@@ -22,8 +23,10 @@ export async function GET(req: Request) {
       responderId,
       limit: q.get("limit") ? Number(q.get("limit")) : undefined,
     });
-    // serverTime lets clients correct for clock skew when showing elapsed time.
-    return Response.json({ events, counts: await getBoardCounts(), serverTime: new Date().toISOString() });
+    // serverTime lets clients correct for clock skew when showing elapsed time. The board (shop-floor
+    // display) also gets the shift on duty — team + DAY/NIGHT only, or UNRESOLVED; never the anchor.
+    const shift = scope === "board" ? await publicShift() : undefined;
+    return Response.json({ events, counts: await getBoardCounts(), serverTime: new Date().toISOString(), ...(shift ? { shift } : {}) });
   });
 }
 
