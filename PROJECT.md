@@ -3,7 +3,7 @@
 > **Source of truth for AI-to-AI and human handover.** Update this file at the end of every
 > meaningful milestone (sections 11–16 at minimum).
 >
-> Last updated: **2026-10-01** · Milestone 1 — **done** · Milestone 2 — H1 + H2 done · 2A routing foundation — done · 2B registration & authentication — done · **Google authentication provider — done (offline-tested; real Google not yet configured)** · Vercel / Turso cloud demo · **Line master + UAP line ownership (schema v6) — done** · NEXT: Reaction Rules (Appendix A, not started — waits for Process / Trigger master and OBD answers)
+> Last updated: **2026-10-02** · **A/B shift schedule (schema v7) — implemented on branch `feature/shift-schedule-v7`, NOT deployed (production stays v6 until the v7 rollout is approved); anchor NOT configured** · Milestone 1 — **done** · Milestone 2 — H1 + H2 done · 2A routing foundation — done · 2B registration & authentication — done · **Google authentication provider — done (offline-tested; real Google not yet configured)** · Vercel / Turso cloud demo · **Line master + UAP line ownership (schema v6) — done** · NEXT: Reaction Rules (Appendix A, not started — waits for Process / Trigger master and OBD answers)
 
 ---
 
@@ -178,7 +178,7 @@ C:\andon\  (git repository root)
 - `ACTION` and `CLOSE` **require a comment** (action note / corrective action).
 - Invalid transition → HTTP 409. Concurrent updates are guarded by `UPDATE … WHERE status = <read status>`.
 
-**Tables** (`src/lib/server/db.ts`, schema **v6**)
+**Tables** (`src/lib/server/db.ts`, schema **v7** on branch `feature/shift-schedule-v7`; production v6)
 
 | Table | Purpose |
 |---|---|
@@ -187,6 +187,8 @@ C:\andon\  (git repository root)
 | `line` | v6: the **36 real Yeongcheon UAP lines** (`uap_area_code` → uap_area) + the 3 prototype lines T-GDI 1, T-GDI 2, Muffler 1 (`uap_area_code` NULL) — `plant_code` → plant |
 | `process` | processes per line; v6 `placeholder` = 1 marks the one "공정 미지정" stand-in of each real line (real process master pending) |
 | `shift` | v6: A, B — `start_time` / `end_time` NULL = clock times not confirmed |
+| `shift_schedule` | v7: per plant — `time_zone` Asia/Seoul, `day_start` 08:00, `night_start` 20:00, `rotation_weekday` MONDAY, **anchor** `anchor_week_monday` + `anchor_day_team` (both NULL = not configured; never seeded), `updated_at` / `updated_by` |
+| `shift_schedule_audit` | v7: **append-only** (triggers) log of anchor changes — changed_at, user id + name, source WEB / CLI, old and new anchor, client IP, user agent |
 | `line_assignment` | v6: line ownership — line → employee as `SUPERVISOR` (shift NULL) or `GAP_LEADER` (shift A / B), `effective_from` / `effective_to`, `active`, `source` WORKBOOK / ADMIN. One active row per (line, role, shift) (unique index). Ended rows stay as history |
 | `department` | **ME, MT, UAP, QC, PCL** (active); `display_code` ("PC&L"), `sort_order`, `successor_code`. Pre-v3 codes QUALITY, PRODUCTION, MAINTENANCE, LOGISTICS, EHS stay as **inactive** rows with a successor |
 | `category` | issue categories; `default_department` = routing when no rule matches |
@@ -335,9 +337,9 @@ Plant YC ─► UAP area (7) ─► Line (36 real) ─► line_assignment
   AQ-3: same A leader for all five lines, different B leaders for GAMMA #3 / UCC / KAPPA UCC and R-ENG /
   STUFFING). Imported: 7 supervisors + 28 GAP leaders = 35 employees, 108 assignments (36 × 3).
 - **A / B = shift assignment**, modelled in `line_assignment.shift_code` — never part of a name.
-  Shift clock times are not known → the system never guesses the current shift. `resolveLineOwnership`
-  (`src/lib/server/lineAssignments.ts`) returns the supervisor and both shifts' GAP leaders;
-  `currentGapLeader` only when the caller passes the shift explicitly.
+  `resolveLineOwnership` (`src/lib/server/lineAssignments.ts`) returns the supervisor and both shifts' GAP
+  leaders; `currentGapLeader` only when the caller passes the team explicitly. Which team is on duty comes
+  from the A/B shift schedule (v7, below) — and only once its anchor is configured.
 - **In force** = `active = 1`, `effective_from <= now < effective_to` (or open-ended) and the employee
   is active. Inactive, ended, future or deactivated-employee assignments are ignored.
 - **Employees** created by the import: department UAP, role SUPERVISOR / GAP_LEADER, **no login and no
@@ -365,6 +367,34 @@ Plant YC ─► UAP area (7) ─► Line (36 real) ─► line_assignment
 - **Prototype lines** T-GDI 1, T-GDI 2, Muffler 1: hidden from the operator line choice with `line.active = 0`
   (`npm run masterdata -- line deactivate <LINE>`), never deleted. `/api/meta` lists only active lines; events,
   history, dashboard and statistics of these lines are unchanged. Done in the cloud; local DB still active.
+
+**A/B shift schedule (v7)** — confirmed plant rule for Yeongcheon UAP (2026-10-02):
+
+- 12-hour shifts; shift changes at **08:00** (DAY starts, inclusive) and **20:00** (NIGHT starts, inclusive);
+  time zone **Asia/Seoul** (no DST). Shift decisions never use the server / Vercel clock zone.
+- Teams A and B alternate DAY / NIGHT **weekly**. The weekly swap happens at the **Monday 08:00** DAY shift,
+  not at Monday 00:00: a shift belongs to the operational date / week of its **start**, so Monday
+  00:00–07:59:59 is still the previous week's Sunday NIGHT shift.
+- Which team has DAY in a given week needs ONE fact from the plant: the **anchor** (a Monday + the team on
+  DAY that week). From it every past / future week is calculated (even week distance = same DAY team).
+  **The anchor is NOT configured and NOT assumed.** Until it is set, the resolver returns
+  `SHIFT_SCHEDULE_NOT_ANCHORED` and never picks A or B; automatic A/B determination is not authoritative.
+- Pure resolver `src/lib/shiftSchedule.ts` → operationalDate, shiftType DAY / NIGHT, shiftStart / shiftEnd
+  (ISO with +09:00), rotationWeekStart, rotationWeek, dayTeam / nightTeam, activeTeam, nextChangeAt,
+  nextRotationAt. Server side: `src/lib/server/shiftService.ts`.
+- **Anchor administration:** `/admin/shifts` + `GET / PUT /api/admin/shift-schedule` — view: GAP_LEADER,
+  SUPERVISOR, ENGINEER, PLANT_MANAGER; change: SUPERVISOR, PLANT_MANAGER (login, same-origin, server
+  validation: a Monday + A / B). CLI: `npm run masterdata -- shift show | shift anchor <YYYY-MM-DD> <A|B>`.
+  Every change is written to `shift_schedule_audit` (who, when, old, new). Not exposed by any public API.
+- **ANDON snapshot:** each NEW event stores `andon_event.shift_status` (RESOLVED / UNRESOLVED),
+  `shift_unresolved_reason` (e.g. SHIFT_SCHEDULE_NOT_ANCHORED), `shift_team`, `shift_type`,
+  `shift_operational_date`, `shift_start_at`, `gap_leader_assignment_id` (the line's GAP leader of the
+  active team) and `supervisor_assignment_id` (independent of A/B), taken at creation. Events created
+  before v7 keep NULL (no back-fill); changing the anchor never rewrites events. A shift-resolution problem
+  never blocks an ANDON call — the event is created with UNRESOLVED. Snapshot fields are not in public
+  event APIs yet.
+- **Separate from routing:** Line → active team → that line's GAP leader → supervisor is actor ownership.
+  The responsible department (category / routing rules) is unchanged. Nothing is sent (no Kakao).
 
 **Escalation model — prepared, NOT active.** Intended flow:
 `OPEN → RESPONDER notified → no ACK after threshold → GAP_LEADER → SUPERVISOR / ENGINEER → PLANT_MANAGER`.
@@ -465,6 +495,7 @@ npm run dev       # development mode with hot reload
 | `npm run test:routing` | 10 unit checks of the routing resolver / eligibility (no server) + 29 API checks: routing of every category, process-level override (→ PCL, shown "PC&L · 물류"), eligible-responder list, no session → 401, body naming another user (id or name) → rejected, wrong department → 403 without side effects, session responder ACK with user id / name / department / role / device / IP / user agent in history, GAP_LEADER (set by admin) may act, invalid device id dropped, server-side inbox (`mine=1`, incl. pre-v3 QUALITY events), pre-v3 event handled by successor department, full ordered history. |
 | `npm run test:auth` | 42 checks — registration (valid, role in body ignored, no secrets in responses, cookie flags, duplicate e-mail incl. case variant, 5 simultaneous registrations → 1 account, invalid e-mail / department / inactive pre-v3 department / short password / no digit / mismatch / empty name), login (valid, wrong password, unknown user with identical message, session fixation, logout + cookie replay, forged token, foreign Origin → 403, inactive → 403, 6th failure → 429), authorization & routing (new QC / MT / PC&L responders automatically eligible, QC cannot ACK MT, body spoofing rejected, no session → 401, audit fields, deactivated after login → 403, OPERATOR role → 403, admin department change moves eligibility). |
 
+| `npm run test:shifts` | A/B shift schedule (54 checks with `--http`), fixed timestamps only (the anchor in the tests is a TEST value). **A** pure resolver: Mon 07:59:59 (previous week's Sunday NIGHT), Mon 08:00:00, 19:59:59, 20:00:00, Tuesday, Sunday day / night, following Mon 07:59:59 / 08:00:00 (swap), ±2 / 52 weeks, UTC input, DST dates and process TZ (New York / Berlin / UTC / Auckland) without effect, missing anchor → SHIFT_SCHEDULE_NOT_ANCHORED, invalid anchors / rule / timestamp. **B** isolated DB: rule seeded without anchor; ANDON creation with no anchor / broken rule / missing schedule still succeeds (UNRESOLVED, routing normal, supervisor recorded); anchor validation, audit (who / when / old / new, append-only), anchor change does not rewrite events; snapshot team A / B → that line's A / B GAP leader, Monday 07:59:59 and next-week swap, supervisor independent of A/B, line-specific, no invented references, no shift fields in public objects. **C** `--http`: 401 / 403 (RESPONDER) / GAP_LEADER view-only, PUT 403 for GAP_LEADER, 400 invalid, foreign Origin 403, SUPERVISOR 200 + audited, `/api/meta` without schedule. **D** Turso-compatible v6 → v7 with an existing event (unchanged, snapshot NULL). |
 | `npm run test:lines` | Line master + ownership (70 checks with `--http --workbook`). **A** isolated DB under `work/lines-test/` with a synthetic workbook (fake names, plant layout): 36 lines exactly once, areas, placeholder processes, shifts without times, ANDON on a real line, parser + sub-group inheritance, BENDING-type warnings, contradiction rejected, import, every line → supervisor / A / B, explicit shift, no duplicate employees, repeated import = no change, changed person → old ended + new, inactive / ended / future / deactivated-employee ignored, constraints (unique, shift rules, FKs), contact columns never read or stored, public master data without people / contact fields, events / history / notifications / routing / users unchanged. **B** Turso-compatible migration: remote driver path on local libSQL that rejects `PRAGMA user_version =` like Turso, v5 with data → v6, rows unchanged. **C** `--http` (`BASE_URL`, `DATABASE_PATH` = server DB): `/api/meta` field names, 401 / 403 / 200 on `/api/admin/lines`, no contact fields, no assigned person in `/api/meta`. **D** `--workbook <file>`: real workbook into a fresh isolated DB, every line = workbook supervisor / A / B; prints counts only. |
 | `npm run db:verify-remote-migration` | Turso DRY RUN: pending migrations + seed inside one transaction that is always rolled back; checks old rows / columns (checksums), FKs, append-only, then that nothing changed. Run with `vercel env run -e production --`. |
 | `npm run test:google` | 48 checks with a local fake Google (signed test tokens, fake JWKS) — **real Google is not contacted**. Needs an isolated test server and `DATABASE_PATH` under `work/` (see below). Covers redirect allow-list, Origin checks, PKCE / state / nonce, flow cookie flags, wrong state / missing cookie / replay / expiry, onboarding (no subject exposed, replay, role in body ignored), changed Google e-mail → same employee, duplicate subject, one Google per employee, employee-ID claim protection, immutable employee ID, inactive employee, session rotation, no tokens stored, linking with password re-check bound to the session, Google e-mail never auto-links, wrong nonce / audience / issuer / expired / unverified e-mail / bad signature, Host header, real API: operator call, wrong department, body spoofing, role, deactivation, ACK / ACTION / CLOSE with audit; typed KakaoTalk ID is not a notification address; configured-status endpoint; admin employee-id / unlink-google. |
@@ -563,6 +594,10 @@ server stopped: dashboard shows disconnect banner, operator sees "호출 실패"
 data intact, operator retry succeeds ✔ · backup script ✔.
 
 ## 12. Known issues / limitations
+
+- **A/B shift anchor not configured** (v7): the current team / GAP leader is not determined automatically
+  until an authorized person enters the plant-confirmed anchor; new ANDON events store the shift as
+  UNRESOLVED until then. Schema v7 exists only on branch `feature/shift-schedule-v7` (not deployed).
 
 - **Vercel deployment (cloud demo):**
   - **Hobby plan = non-commercial use only.** Company use needs Vercel Pro (and a Turso plan check).
@@ -713,8 +748,11 @@ answered by UAP and the real line / process master data has been delivered.
 - [ ] Process master per real line (Line → Process)
 - [ ] Trigger master and defect / problem types
 - [ ] ME responsibility rules; HSE / safety routing (SAFETY → UAP is still a prototype decision)
-- [ ] **A / B shift clock times** (and rotation) → `shift.start_time / end_time`; then decide how the
-      current shift is determined (until then no automatic current GAP leader)
+- [x] A / B shift clock times and rotation — confirmed 2026-10-02 (08:00 / 20:00, weekly swap Monday 08:00,
+      Asia/Seoul); modelled in schema v7 (`shift_schedule`)
+- [ ] **Shift ANCHOR** — which team is on DAY in one named week (a Monday). Needed before automatic A/B
+      determination is authoritative; enter via `/admin/shifts` or `masterdata shift anchor`
+- [ ] **v7 production rollout** (local plant DB + Turso) — waiting for approval; plan in §15
 - [ ] **PENDING PLANT CONFIRMATION — BENDING shift B leaders per line** (sheets differ, see §6). Kept exactly as
       imported from UAP(Line 구분), locally and in the cloud; not reconciled
 - [ ] Reaction-rule thresholds beyond the documented procedure (Appendix A.10)
@@ -745,6 +783,19 @@ answered by UAP and the real line / process master data has been delivered.
 
 ## 15. Next recommended action
 
+00. **Schema v7 (A/B shift schedule) rollout — proposed plan, needs approval** (branch `feature/shift-schedule-v7`):
+    1. `git checkout main && git merge --ff-only feature/shift-schedule-v7` (do NOT push yet)
+    2. Turso: `vercel env run -e production -- npm run db:verify-remote-migration` (dry run, rolled back)
+    3. Turso: `vercel env run -e production -- npm run db:migrate` (v6 → v7, additive: 2 new tables, 8 nullable
+       andon_event columns, schedule rule row without anchor) — from here the v6 deployment refuses the
+       database until step 5 (a few minutes)
+    4. verify: pre-existing rows unchanged (checksums), `npm run verify:lines`, schedule unanchored
+    5. `git push` → Vercel deploys v7; verify health, `/api/meta`, `/api/admin/shift-schedule` 401, operator
+       page, rolled-back ANDON creation (snapshot UNRESOLVED / NOT_ANCHORED)
+    6. local plant server: `npm run stop` → `npm run build` → `npm run serve` (automatic backup, v6 → v7)
+    7. when UAP confirms the anchor: an authorized SUPERVISOR / PLANT_MANAGER enters it on `/admin/shifts`
+       (audited) on BOTH databases (local and cloud are separate)
+
 0. **Line ownership (2026-10-02):** cloud is on v6 with the assignments. Confirm the BENDING shift B
    leaders and the A / B shift times with UAP; deliver the Process / Trigger master. For every future schema
    change keep the order: `db:verify-remote-migration` → `db:migrate` (both via `vercel env run -e production
@@ -760,6 +811,7 @@ answered by UAP and the real line / process master data has been delivered.
 
 | Date | Change |
 |---|---|
+| 2026-10-02 | A/B shift schedule, schema v7 — on branch `feature/shift-schedule-v7`, **not deployed, production databases unchanged (v6)**: pure resolver (Asia/Seoul, 08:00 / 20:00, weekly swap at Monday 08:00, operational date = shift start, SHIFT_SCHEDULE_NOT_ANCHORED without anchor); `shift_schedule` (rule, anchor empty) + append-only `shift_schedule_audit`; shift snapshot on new ANDON events (never blocks the call; old events NULL); `/admin/shifts` + `/api/admin/shift-schedule` (view / change roles, audited), `masterdata shift show / anchor`. Verified on an isolated copy of the local DB: v6 → v7 with automatic backup, all 136 events / 440 history / 175 notifications / users / 108 assignments unchanged, old events snapshot NULL, anchor NULL; Turso-compatible v6 → v7 (emulation); typecheck / lint / build ✔; test:google 48/48, test:auth 42/42, test:routing 39/39, test:golden 26/26, test:reliability 6/6, test:lines 70/70, test:shifts 54/54; browser: `/admin/shifts` as SUPERVISOR. |
 | 2026-10-01 | Milestone 1: project scaffold (Next.js 16, node:sqlite), data model + state machine, operator / dashboard / responder / history screens, mock notification provider, demo seed, backup, health check, automated Golden Path test. Verified end-to-end (see §11). |
 | 2026-10-01 | Moved project to `C:\andon` (permanent location), fresh `npm install`, git repository initialised. Re-verified typecheck / lint / build / `test:golden` at the new location. |
 | 2026-10-01 | Recovery: removed an accidental nested copy (`digital-andon/`) that broke typecheck/lint/build; tool scope made explicit (commit `a702b41`). |

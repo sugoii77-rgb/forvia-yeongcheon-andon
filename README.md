@@ -24,6 +24,7 @@ npm run serve                 # http://localhost:<PORT from .env>  (builds if ne
 | Register / login / my info | `/register`, `/login`, `/me` |
 | History & analytics | `/history` |
 | Line ownership master (GAP leader / supervisor / engineer / plant manager login) | `/admin/lines` |
+| A/B shift schedule + anchor (view: same roles; change: supervisor / plant manager) | `/admin/shifts` |
 | Health check | `/api/health` |
 
 **Cloud demo (Vercel + Turso + Vercel Blob):** https://forvia-yeongcheon-andon.vercel.app — deploys automatically on push to `main`.
@@ -43,6 +44,7 @@ Limits and operation: PROJECT.md §9 "Vercel deployment" and §12.
 | `npm run test:google` | Google OIDC tests with a fake Google (isolated DB under `work/`, see PROJECT.md §10) |
 | `vercel env run -e production -- npm run db:migrate` | migrate the Vercel (Turso) database — before pushing a schema change |
 | `npm run import:uap -- <workbook.xlsx> [--dry-run]` | ADMIN: import line ownership (Supervisor / GAP leader A / B) from the plant workbook (kept outside the repo) |
+| `npm run test:shifts` | A/B shift schedule tests (fixed timestamps; `-- --http` optional) |
 | `npm run test:lines` | line master / ownership tests (`-- --http`, `-- --workbook <file>` optional) |
 | `npm run masterdata -- list` | ADMIN: show / change users (role, department, active, password reset), routing rules (RUNBOOK.md §7) |
 | `npm run backup` | online DB backup → `data/backups/` |
