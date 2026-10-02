@@ -388,6 +388,9 @@ condition right now?" from several meters away. No schema change.
 - **Plant-confirmed station descriptions (2026-10-02):** GPF = one line for **EURO7 GPF and GAMMA T-GDI 3차**
   (shown under the line name); the KAPPA EU7 station = one line for **KAPPA EU7 and GAMMA TURBO 1차**. Which
   DB line belongs to the KAPPA EU7 station (TURBO #2 EU7 or TURBO#1) is **not confirmed yet** — still in the tray.
+- **Highlight:** an abnormal line gets a bright ring + glow (OPEN red, pulsing; ACK / IN_PROGRESS amber, steady)
+  and, while any ANDON is active, normal tiles, zone titles and landmarks dim to 45 % so the eye goes
+  straight to the abnormal location.
 - **Behaviour:** lines keep their physical position. Normal = dark tile with a muted green bar (recedes);
   OPEN = red (one subtle pulse, off with reduced motion); ACKNOWLEDGED / IN_PROGRESS = amber; CLOSED =
   normal again. Several active events on one line → most urgent state + count badge. Abnormal tile:

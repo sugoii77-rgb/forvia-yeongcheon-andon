@@ -66,7 +66,7 @@ export const STATION_CELLS: StationCell[] = [
 
   // ---- row 2 (middle) — AQ ASSEMBLY ---------------------------------------------------- y 43.8–56.9
   { id: "NUI1-EXMANI", layoutLabel: "NU-I #1 EXMANI", row: 2, slot: "full", x: 14.1, w: 7.1, tone: "AQ", lineCode: "AQ1-NUI1-EXMANI", match: "EXACT_NAME" }, // 23.7–30.3
-  { id: "GPF", layoutLabel: "GPF", row: 2, slot: "full", x: 21.8, w: 6.1, tone: "AQ", lineCode: "AQ1-GPF", match: "EXACT_NAME", subLabel: "EURO7 GPF · GAMMA T2011GDI 3차", note: "plant 2026-10-02: one line for EURO7 GPF and GAMMA T-GDI 3차" }, // 30.3–36.1
+  { id: "GPF", layoutLabel: "GPF", row: 2, slot: "full", x: 21.8, w: 6.1, tone: "AQ", lineCode: "AQ1-GPF", match: "EXACT_NAME", subLabel: "EURO7 GPF · GAMMA T‑GDI 3차", note: "plant 2026-10-02: one line for EURO7 GPF and GAMMA T-GDI 3차" }, // 30.3–36.1
   { id: "EXMANI1", layoutLabel: "EXMANI #1", row: 2, slot: "top", x: 28.6, w: 5.9, tone: "AQ", lineCode: "AQ2-EXMANI1", match: "EXACT_NAME" }, // 36.1–41.6
   { id: "EXMANI2", layoutLabel: "EXMANI #2", row: 2, slot: "bottom", x: 28.6, w: 5.9, tone: "AQ", lineCode: "AQ2-EXMANI2", match: "EXACT_NAME" },
   { id: "LAMBDA-FRT", layoutLabel: "LAMBDA FRT", row: 2, slot: "full", x: 35.2, w: 6.4, tone: "AP", candidateLineCode: "AP2-JX-LAMBDA-FRT", note: "DB 'JX LAMBDA FRT' vs layout 'LAMBDA FRT' (AP-coloured cell inside the AQ area)" }, // 41.6–47.6

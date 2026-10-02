@@ -109,7 +109,7 @@ export default function PlantMapPage() {
 
       <div className="floor-body">
         <section className="pm-wrap" aria-label="Plant map">
-          <div className="pm">
+          <div className={`pm${active.length > 0 ? " pm-has-alarm" : ""}`}>
             {MAP_ZONES.map((z) => (
               <div key={z.id} className={`pm-zone pm-zone-${z.tone}`} style={pct(z)} />
             ))}
