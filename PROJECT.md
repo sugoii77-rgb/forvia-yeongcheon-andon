@@ -3,7 +3,7 @@
 > **Source of truth for AI-to-AI and human handover.** Update this file at the end of every
 > meaningful milestone (sections 11–16 at minimum).
 >
-> Last updated: **2026-10-02** · **A/B shift schedule (schema v7) — implemented on branch `feature/shift-schedule-v7`, NOT deployed (production stays v6 until the v7 rollout is approved); anchor NOT configured** · Milestone 1 — **done** · Milestone 2 — H1 + H2 done · 2A routing foundation — done · 2B registration & authentication — done · **Google authentication provider — done (offline-tested; real Google not yet configured)** · Vercel / Turso cloud demo · **Line master + UAP line ownership (schema v6) — done** · NEXT: Reaction Rules (Appendix A, not started — waits for Process / Trigger master and OBD answers)
+> Last updated: **2026-10-02** · **A/B shift schedule (schema v7) — deployed 2026-10-02 (Turso + Vercel and local plant DB on v7); anchor NOT configured (awaiting plant confirmation)** · Milestone 1 — **done** · Milestone 2 — H1 + H2 done · 2A routing foundation — done · 2B registration & authentication — done · **Google authentication provider — done (offline-tested; real Google not yet configured)** · Vercel / Turso cloud demo · **Line master + UAP line ownership (schema v6) — done** · NEXT: Reaction Rules (Appendix A, not started — waits for Process / Trigger master and OBD answers)
 
 ---
 
@@ -178,7 +178,7 @@ C:\andon\  (git repository root)
 - `ACTION` and `CLOSE` **require a comment** (action note / corrective action).
 - Invalid transition → HTTP 409. Concurrent updates are guarded by `UPDATE … WHERE status = <read status>`.
 
-**Tables** (`src/lib/server/db.ts`, schema **v7** on branch `feature/shift-schedule-v7`; production v6)
+**Tables** (`src/lib/server/db.ts`, schema **v7** — production Turso and local plant DB)
 
 | Table | Purpose |
 |---|---|
@@ -597,7 +597,7 @@ data intact, operator retry succeeds ✔ · backup script ✔.
 
 - **A/B shift anchor not configured** (v7): the current team / GAP leader is not determined automatically
   until an authorized person enters the plant-confirmed anchor; new ANDON events store the shift as
-  UNRESOLVED until then. Schema v7 exists only on branch `feature/shift-schedule-v7` (not deployed).
+  UNRESOLVED / SHIFT_SCHEDULE_NOT_ANCHORED until then (schema v7 is deployed; only the anchor is missing).
 
 - **Vercel deployment (cloud demo):**
   - **Hobby plan = non-commercial use only.** Company use needs Vercel Pro (and a Turso plan check).
@@ -752,7 +752,7 @@ answered by UAP and the real line / process master data has been delivered.
       Asia/Seoul); modelled in schema v7 (`shift_schedule`)
 - [ ] **Shift ANCHOR** — which team is on DAY in one named week (a Monday). Needed before automatic A/B
       determination is authoritative; enter via `/admin/shifts` or `masterdata shift anchor`
-- [ ] **v7 production rollout** (local plant DB + Turso) — waiting for approval; plan in §15
+- [x] **v7 production rollout** (Turso + Vercel + local plant DB) — done 2026-10-02, anchor left NULL
 - [ ] **PENDING PLANT CONFIRMATION — BENDING shift B leaders per line** (sheets differ, see §6). Kept exactly as
       imported from UAP(Line 구분), locally and in the cloud; not reconciled
 - [ ] Reaction-rule thresholds beyond the documented procedure (Appendix A.10)
@@ -783,20 +783,14 @@ answered by UAP and the real line / process master data has been delivered.
 
 ## 15. Next recommended action
 
-00. **Schema v7 (A/B shift schedule) rollout — proposed plan, needs approval** (branch `feature/shift-schedule-v7`):
-    1. `git checkout main && git merge --ff-only feature/shift-schedule-v7` (do NOT push yet)
-    2. Turso: `vercel env run -e production -- npm run db:verify-remote-migration` (dry run, rolled back)
-    3. Turso: `vercel env run -e production -- npm run db:migrate` (v6 → v7, additive: 2 new tables, 8 nullable
-       andon_event columns, schedule rule row without anchor) — from here the v6 deployment refuses the
-       database until step 5 (a few minutes)
-    4. verify: pre-existing rows unchanged (checksums), `npm run verify:lines`, schedule unanchored
-    5. `git push` → Vercel deploys v7; verify health, `/api/meta`, `/api/admin/shift-schedule` 401, operator
-       page, rolled-back ANDON creation (snapshot UNRESOLVED / NOT_ANCHORED)
-    6. local plant server: `npm run stop` → `npm run build` → `npm run serve` (automatic backup, v6 → v7)
-    7. when UAP confirms the anchor: an authorized SUPERVISOR / PLANT_MANAGER enters it on `/admin/shifts`
-       (audited) on BOTH databases (local and cloud are separate)
+00. **A/B shift anchor (v7 deployed 2026-10-02):** when UAP confirms which team is on DAY in one named week
+    (a Monday), an authorized SUPERVISOR / PLANT_MANAGER enters it on `/admin/shifts` (or
+    `npm run masterdata -- shift anchor <YYYY-MM-DD> <A|B>`; audited) on BOTH databases — local plant DB and
+    cloud (Turso) are separate. Until then every new ANDON stores UNRESOLVED / SHIFT_SCHEDULE_NOT_ANCHORED.
+    Future schema changes: same order as the v7 rollout (dry run → `db:migrate` → push; local: stop → build
+    → serve with automatic backup).
 
-0. **Line ownership (2026-10-02):** cloud is on v6 with the assignments. Confirm the BENDING shift B
+0. **Line ownership (2026-10-02):** cloud has the assignments (now on v7). Confirm the BENDING shift B
    leaders and the A / B shift times with UAP; deliver the Process / Trigger master. For every future schema
    change keep the order: `db:verify-remote-migration` → `db:migrate` (both via `vercel env run -e production
    --`) → push. Expect a few minutes in which the old deployment refuses the new schema.
@@ -811,7 +805,8 @@ answered by UAP and the real line / process master data has been delivered.
 
 | Date | Change |
 |---|---|
-| 2026-10-02 | A/B shift schedule, schema v7 — on branch `feature/shift-schedule-v7`, **not deployed, production databases unchanged (v6)**: pure resolver (Asia/Seoul, 08:00 / 20:00, weekly swap at Monday 08:00, operational date = shift start, SHIFT_SCHEDULE_NOT_ANCHORED without anchor); `shift_schedule` (rule, anchor empty) + append-only `shift_schedule_audit`; shift snapshot on new ANDON events (never blocks the call; old events NULL); `/admin/shifts` + `/api/admin/shift-schedule` (view / change roles, audited), `masterdata shift show / anchor`. Verified on an isolated copy of the local DB: v6 → v7 with automatic backup, all 136 events / 440 history / 175 notifications / users / 108 assignments unchanged, old events snapshot NULL, anchor NULL; Turso-compatible v6 → v7 (emulation); typecheck / lint / build ✔; test:google 48/48, test:auth 42/42, test:routing 39/39, test:golden 26/26, test:reliability 6/6, test:lines 70/70, test:shifts 54/54; browser: `/admin/shifts` as SUPERVISOR. |
+| 2026-10-02 | v7 production rollout: branch merged into main (fast-forward, 4 commits); Turso dry run passed (366 rows unchanged, rolled back) → `db:migrate` v6 → v7 (FK 0; all 366 pre-existing rows unchanged vs. checksum snapshot; `verify:lines` 36/36 × 3, 35 employees, no workbook-derived contact value); pushed `f5fc968`, Vercel Ready (~1.5 min of refused requests between migration and deploy); production: health, `/api/meta` without shift / personnel fields, `/api/admin/shift-schedule` GET / PUT 401 without login or with a forged session, foreign Origin 403, `/admin/shifts` 200, schedule unanchored with empty audit; ANDON creation through the service in a rolled-back transaction → OPEN, routed to MT, shift UNRESOLVED / SHIFT_SCHEDULE_NOT_ANCHORED, supervisor recorded (no test event left). Local plant DB: stop → build → serve, automatic backup `andon-pre-migration-v6-to-v7-…`, v7; 136 events / 440 history / 175 notifications / 92 users / 108 assignments unchanged, anchor NULL. **Anchor not configured.** |
+| 2026-10-02 | A/B shift schedule, schema v7 — implemented on branch `feature/shift-schedule-v7` (deployed later the same day, see the row above): pure resolver (Asia/Seoul, 08:00 / 20:00, weekly swap at Monday 08:00, operational date = shift start, SHIFT_SCHEDULE_NOT_ANCHORED without anchor); `shift_schedule` (rule, anchor empty) + append-only `shift_schedule_audit`; shift snapshot on new ANDON events (never blocks the call; old events NULL); `/admin/shifts` + `/api/admin/shift-schedule` (view / change roles, audited), `masterdata shift show / anchor`. Verified on an isolated copy of the local DB: v6 → v7 with automatic backup, all 136 events / 440 history / 175 notifications / users / 108 assignments unchanged, old events snapshot NULL, anchor NULL; Turso-compatible v6 → v7 (emulation); typecheck / lint / build ✔; test:google 48/48, test:auth 42/42, test:routing 39/39, test:golden 26/26, test:reliability 6/6, test:lines 70/70, test:shifts 54/54; browser: `/admin/shifts` as SUPERVISOR. |
 | 2026-10-01 | Milestone 1: project scaffold (Next.js 16, node:sqlite), data model + state machine, operator / dashboard / responder / history screens, mock notification provider, demo seed, backup, health check, automated Golden Path test. Verified end-to-end (see §11). |
 | 2026-10-01 | Moved project to `C:\andon` (permanent location), fresh `npm install`, git repository initialised. Re-verified typecheck / lint / build / `test:golden` at the new location. |
 | 2026-10-01 | Recovery: removed an accidental nested copy (`digital-andon/`) that broke typecheck/lint/build; tool scope made explicit (commit `a702b41`). |
