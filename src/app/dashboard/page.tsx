@@ -35,11 +35,12 @@ const kstClock = new Intl.DateTimeFormat("ko-KR", {
 const pct = (b: { x: number; y: number; w: number; h: number }) => ({ left: `${b.x}%`, top: `${b.y}%`, width: `${b.w}%`, height: `${b.h}%` });
 const stateText = (s: LineState) => (s.state === "OPEN" ? "발생 OPEN" : STATUS_LABEL[s.lead!.status].ko + " " + (s.lead!.status === "ACKNOWLEDGED" ? "ACK" : "IN ACTION"));
 
-function LineTile({ line, st, now, compact }: { line: MapLine; st: LineState | undefined; now: number; compact?: boolean }) {
+function LineTile({ line, st, now, compact, sub }: { line: MapLine; st: LineState | undefined; now: number; compact?: boolean; sub?: string }) {
   if (!st) {
     return (
-      <div className={`pm-line pm-normal${compact ? " pm-chip" : ""}`} data-line={line.code} data-state="NORMAL">
+      <div className={`pm-line pm-normal${compact ? " pm-chip" : ""}`} data-line={line.code} data-state="NORMAL" title={sub}>
         <span className="pm-name">{line.name}</span>
+        {sub && <span className="pm-sub">{sub}</span>}
       </div>
     );
   }
@@ -50,7 +51,7 @@ function LineTile({ line, st, now, compact }: { line: MapLine; st: LineState | u
       className={`pm-line pm-${st.state === "OPEN" ? "open" : "action"}${compact ? " pm-chip" : ""}`}
       data-line={line.code}
       data-state={st.state}
-      title={`${line.name} · ${e.categoryName} · ${e.description}`}
+      title={`${line.name}${sub ? ` (${sub})` : ""} · ${e.categoryName} · ${e.description}`}
     >
       <span className="pm-top">
         <span className="pm-name">{line.name}</span>
@@ -125,7 +126,7 @@ export default function PlantMapPage() {
             {stations.map((s) => (
               <div key={s.cell.id} className="pm-cell" style={pct(s.box)} data-station={s.cell.id}>
                 {s.line ? (
-                  <LineTile line={s.line} st={states.get(s.line.code)} now={now} />
+                  <LineTile line={s.line} st={states.get(s.line.code)} now={now} sub={s.cell.subLabel} />
                 ) : (
                   <div className="pm-unlinked" title="배치도에는 있으나 라인 기준정보와 연결이 확인되지 않음">
                     {s.cell.layoutLabel}

@@ -355,6 +355,7 @@ table.table { width: 100%; border-collapse: collapse; background: #fff; font-siz
 .pm-line { width: 100%; height: 100%; border-radius: 7px; display: flex; flex-direction: column; overflow: hidden; text-decoration: none; color: inherit; position: relative; padding: calc(var(--pmu) * 0.35) calc(var(--pmu) * 0.45); gap: 2px; }
 .pm-normal { background: #151b23; border: 1px solid #263040; border-left: 4px solid #1f5c3a; justify-content: center; }
 .pm-normal .pm-name { color: #a7b2c3; }
+.pm-sub { font-size: clamp(9px, calc(var(--pmu) * 0.68), 13px); font-weight: 600; color: #7d889a; line-height: 1.2; word-break: keep-all; }
 .pm-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 4px; }
 .pm-name { font-weight: 900; font-size: clamp(11px, calc(var(--pmu) * 1.05), 20px); line-height: 1.1; word-break: keep-all; overflow-wrap: break-word; min-width: 0; }
 .pm-open { background: var(--red); color: #fff; border: 2px solid #ff8a93; box-shadow: 0 0 0 0 rgba(229, 32, 46, 0.6); animation: pm-pulse 2.4s ease-in-out infinite; z-index: 2; }

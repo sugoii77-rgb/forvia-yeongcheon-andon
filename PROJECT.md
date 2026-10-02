@@ -385,6 +385,9 @@ condition right now?" from several meters away. No schema change.
   (`match`), remove it from `UNMAPPED_LINES`, run `npm run test:display`.
   Stations without a DB line (R-DPF, GAMMA2 T-GDI, KAPPA EU7, AUTO STUFFING #1 / #2, candidate cells)
   are drawn as faint dashed outlines for orientation only.
+- **Plant-confirmed station descriptions (2026-10-02):** GPF = one line for **EURO7 GPF and GAMMA T-GDI 3차**
+  (shown under the line name); the KAPPA EU7 station = one line for **KAPPA EU7 and GAMMA TURBO 1차**. Which
+  DB line belongs to the KAPPA EU7 station (TURBO #2 EU7 or TURBO#1) is **not confirmed yet** — still in the tray.
 - **Behaviour:** lines keep their physical position. Normal = dark tile with a muted green bar (recedes);
   OPEN = red (one subtle pulse, off with reduced motion); ACKNOWLEDGED / IN_PROGRESS = amber; CLOSED =
   normal again. Several active events on one line → most urgent state + count badge. Abnormal tile:
@@ -783,6 +786,7 @@ answered by UAP and the real line / process master data has been delivered.
 - [ ] Confirm the station of the 12 unmapped lines (table in §6 "Shop-floor display v2"; candidates in
       `UNMAPPED_LINES`), and that HE / CE BENDING = the AQ / AP BENDING cells of page 2
 - [ ] Meaning of the "CAPACITY LINE" label on page 2 (not drawn)
+- [ ] KAPPA EU7 station (KAPPA EU7 + GAMMA TURBO 1차): is the DB line TURBO #2 EU7, TURBO#1, or both?
 
 **Pending plant inputs (line ownership, 2026-10-02)** — nothing of this was invented:
 - [ ] Process master per real line (Line → Process)
