@@ -17,6 +17,8 @@
 //                                                workbook) a local login; prints a temporary password once.
 //                                                Use this instead of letting that person register again
 //                                                (registration would create a second employee record)
+//   line deactivate <LINE> | line activate <LINE>  hide / show a line in the operator line choice; its
+//                                                events, history and statistics stay unchanged
 //   lines                                        line ownership: area, Supervisor, GAP leader A / B (names only)
 //   assign add <LINE> SUPERVISOR <user>          set the line's supervisor (ends the previous assignment)
 //   assign add <LINE> GAP_LEADER <A|B> <user>    set the line's GAP leader of shift A / B
@@ -114,6 +116,9 @@ const [cmd, sub, ...args] = process.argv.slice(2);
 try {
   if (!cmd || cmd === "list") await list();
   else if (cmd === "lines") await lines();
+  else if (cmd === "line" && (sub === "activate" || sub === "deactivate") && args.length === 1) {
+    changed(await db.run("UPDATE line SET active = ? WHERE code = ?", sub === "activate" ? 1 : 0, args[0]), `line ${args[0]} ${sub}d`);
+  }
   else if (cmd === "user" && sub === "set-login" && args.length === 2) {
     const id = await userId(args[0]);
     const email = normalizeEmail(args[1]);
