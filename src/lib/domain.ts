@@ -213,3 +213,20 @@ export interface LineOwnershipList {
   areas: { code: string; name: string }[];
   lines: LineOwnership[];
 }
+
+/** Roles that may CHANGE the A/B shift anchor (viewing: OWNERSHIP_VIEW_ROLES). Assigned by an administrator. */
+export const SHIFT_ANCHOR_EDIT_ROLES: readonly RoleCode[] = ["SUPERVISOR", "PLANT_MANAGER"];
+
+/** Admin view of the shift schedule (GET /api/admin/shift-schedule). Not public. */
+export interface ShiftScheduleView {
+  rule: { timeZone: string; dayStart: string; nightStart: string; rotationWeekday: string };
+  anchor: { anchorWeekMonday: string | null; anchorDayTeam: "A" | "B" | null };
+  updatedAt: string | null;
+  updatedBy: string | null;
+  /** Shift on duty now, or code SHIFT_SCHEDULE_NOT_ANCHORED. */
+  now:
+    | { ok: true; operationalDate: string; shiftType: "DAY" | "NIGHT"; shiftStart: string; shiftEnd: string; rotationWeekStart: string; rotationWeek: number; dayTeam: "A" | "B"; nightTeam: "A" | "B"; activeTeam: "A" | "B"; nextChangeAt: string; nextRotationAt: string }
+    | { ok: false; code: string; message: string };
+  audit: { id: number; changedAt: string; changedBy: string; source: string; old: { anchorWeekMonday: string | null; anchorDayTeam: string | null }; new: { anchorWeekMonday: string | null; anchorDayTeam: string | null } }[];
+  canEdit: boolean;
+}

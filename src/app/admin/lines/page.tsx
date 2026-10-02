@@ -86,7 +86,7 @@ export default function AdminLinesPage() {
               </section>
             ))}
             <p className="muted" style={{ fontSize: 13, marginTop: 16 }}>
-              변경: 관리자 PC에서 <code>npm run import:uap -- &lt;워크북.xlsx&gt;</code> 또는{" "}
+              <Link href="/admin/shifts">근무조 (A/B) 기준정보</Link> · 변경: 관리자 PC에서 <code>npm run import:uap -- &lt;워크북.xlsx&gt;</code> 또는{" "}
               <code>npm run masterdata -- assign …</code> (RUNBOOK.md §7).
             </p>
           </>

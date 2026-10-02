@@ -72,6 +72,9 @@ export default function MePage() {
               {user.active && OWNERSHIP_VIEW_ROLES.includes(user.role) && (
                 <Link className="btn" href="/admin/lines">라인 · 담당 기준정보</Link>
               )}
+              {user.active && OWNERSHIP_VIEW_ROLES.includes(user.role) && (
+                <Link className="btn" href="/admin/shifts">근무조 (A/B)</Link>
+              )}
               <button className="btn" onClick={logout} disabled={busy}>
                 {busy ? "로그아웃 중…" : "로그아웃"}
               </button>

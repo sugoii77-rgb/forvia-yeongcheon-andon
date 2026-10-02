@@ -4,6 +4,7 @@
 // A) pure resolver matrix (Asia/Seoul, boundaries, weekly swap, DST independence, anchor validation)
 // B) isolated database under work/shifts-test/: schedule seed, ANDON creation without / with a broken
 //    schedule, anchor validation + audit, snapshot of team / GAP leader / supervisor on new events
+// C) --http (BASE_URL + DATABASE_PATH of the server): view / change permissions, validation, Origin, audit
 // D) Turso-compatible migration v6 → v7 (remote driver on local libSQL that rejects user_version writes)
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -12,6 +13,8 @@ import { resolveShift, YEONGCHEON_SHIFT_RULE as RULE, type ResolvedShift, type S
 
 const DIR = path.resolve("work/shifts-test", `${Date.now().toString(36)}${crypto.randomBytes(2).toString("hex")}`);
 fs.mkdirSync(DIR, { recursive: true });
+// The server under test (part C) keeps its own DATABASE_PATH; parts B / D use a fresh one.
+const SERVER_DB = process.env.DATABASE_PATH ?? null;
 // Isolated database for parts B / D — set before db.ts is imported. Never Turso.
 delete process.env.TURSO_DATABASE_URL;
 delete process.env.TURSO_AUTH_TOKEN;
@@ -275,12 +278,49 @@ async function partD() {
   d.close();
 }
 
+// ---------------------------------------------------------------- C) HTTP (--http)
+
+async function partC() {
+  const { BASE, Client, admin, registerAccount } = await import("./lib/testkit.ts");
+  console.log(`C) HTTP ${BASE}`);
+  if (!SERVER_DB) throw new Error("part C needs DATABASE_PATH = the database of the server under test");
+  process.env.DATABASE_PATH = path.resolve(SERVER_DB); // admin() CLI must target the SERVER database
+  const health = await fetch(`${BASE}/api/health`).then((r) => r.json());
+  check(path.resolve(health.db) === path.resolve(SERVER_DB), "server under test uses DATABASE_PATH");
+  const URL_ = "/api/admin/shift-schedule";
+  check((await new Client("anon").request("GET", URL_)).status === 401, "GET without login → 401");
+  const resp = await registerAccount("UAP", "shiftresp");
+  check((await resp.client.request("GET", URL_)).status === 403, "self-registered RESPONDER → 403");
+  const gl = await registerAccount("UAP", "shiftgl");
+  admin("user", "role", String(gl.id), "GAP_LEADER");
+  const glView = await gl.client.request("GET", URL_);
+  const v = glView.body as { canEdit: boolean; rule: { timeZone: string }; now: { ok: boolean; code?: string }; audit: unknown[] };
+  check(glView.status === 200 && v.canEdit === false && v.rule.timeZone === "Asia/Seoul", "GAP_LEADER may view (canEdit false)");
+  check((await gl.client.request("PUT", URL_, { anchorWeekMonday: "2026-10-05", anchorDayTeam: "A" })).status === 403, "GAP_LEADER cannot change the anchor → 403");
+  const sv = await registerAccount("UAP", "shiftsv");
+  admin("user", "role", String(sv.id), "SUPERVISOR");
+  const before = ((await sv.client.request("GET", URL_)).body as { audit: unknown[]; anchor: unknown }).audit.length;
+  const bad = await sv.client.request("PUT", URL_, { anchorWeekMonday: "2026-10-07", anchorDayTeam: "A" });
+  check(bad.status === 400 && (bad.body as { code: string }).code === "SHIFT_ANCHOR_INVALID", "SUPERVISOR: Wednesday as anchor → 400 SHIFT_ANCHOR_INVALID");
+  check((await sv.client.request("PUT", URL_, { anchorWeekMonday: "2026-10-05", anchorDayTeam: "C" })).status === 400, "SUPERVISOR: team C → 400");
+  const foreign = await sv.client.request("PUT", URL_, { anchorWeekMonday: "2026-10-05", anchorDayTeam: "A" }, { origin: "https://evil.example" });
+  check(foreign.status === 403, "foreign Origin → 403");
+  const ok = await sv.client.request("PUT", URL_, { anchorWeekMonday: "2026-10-05", anchorDayTeam: "B" });
+  const ov = ok.body as { anchor: { anchorWeekMonday: string; anchorDayTeam: string }; now: { ok: boolean }; audit: { changedBy: string; source: string; new: { anchorDayTeam: string } }[] };
+  check(ok.status === 200 && ov.anchor.anchorWeekMonday === "2026-10-05" && ov.anchor.anchorDayTeam === "B" && ov.now.ok === true, "SUPERVISOR sets a valid anchor → 200, current shift now resolvable");
+  check(ov.audit.length === before + 1 && ov.audit[0].changedBy === sv.name && ov.audit[0].source === "WEB" && ov.audit[0].new.anchorDayTeam === "B", "change audited with the logged-in user's name, source WEB (rejected attempts not audited)");
+  const metaKeys = Object.keys(await fetch(`${BASE}/api/meta`).then((r) => r.json()));
+  check(!metaKeys.some((k) => /shift|anchor/i.test(k)), "/api/meta exposes no shift schedule / anchor");
+  admin("user", "deactivate-test-accounts");
+}
+
 // ---------------------------------------------------------------- main
 
 try {
   partA();
   await partB();
   await partD();
+  if (process.argv.includes("--http")) await partC();
 } catch (err) {
   check(false, `unexpected error: ${(err as Error).stack}`);
 }
