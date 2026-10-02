@@ -8,7 +8,7 @@
 //    contact fields in public responses, demo-line history still served, /dashboard renders
 import { LINES } from "../src/lib/server/masterData.ts";
 import { MAP_LANDMARKS, MAP_ZONES, STATION_CELLS, UNMAPPED_LINES, stationBox } from "../src/config/plantLayout.ts";
-import { displayLines, stationState, elapsedSeconds, formatElapsed, lineStates, placeLines, shiftLabel, sortActive } from "../src/lib/plantMap.ts";
+import { CATEGORY_LEGEND, categoryKey, displayLines, stationState, elapsedSeconds, formatElapsed, lineStates, placeLines, shiftLabel, sortActive } from "../src/lib/plantMap.ts";
 import type { AndonEvent, AndonStatus } from "../src/lib/domain.ts";
 
 let failures = 0;
@@ -97,6 +97,8 @@ function partB() {
   check(formatElapsed(3 * 3600 + 5) === "3:00:05" && elapsedSeconds(events[3], NOW) === 1800, "hours format; closed event uses its close time");
   check(elapsedSeconds(ev("X", "OPEN", new Date(NOW + 5000).toISOString()), NOW) === 0, "clock skew never gives a negative elapsed time");
 
+  check(categoryKey("QUALITY") === "QUALITY" && categoryKey("MATERIAL") === "MATERIAL" && categoryKey("MAINTENANCE") === "MAINTENANCE" && categoryKey("SAFETY") === "SAFETY" && categoryKey("PRODUCTION") === "OTHER" && categoryKey("OTHER") === "OTHER", "problem-type border: 품질 / 물류 / 설비 / 안전, production and other share one colour");
+  check(CATEGORY_LEGEND.length === 5 && new Set(CATEGORY_LEGEND.map((c) => c.key)).size === 5, "legend lists every border colour once");
   check(shiftLabel({ status: "UNRESOLVED" }) === "SHIFT: UNRESOLVED" && shiftLabel(undefined) === "SHIFT: UNRESOLVED" && shiftLabel(null) === "SHIFT: UNRESOLVED", "unresolved / missing shift → 'SHIFT: UNRESOLVED' (no A/B)");
   check(!/\b[AB]\b/.test(shiftLabel({ status: "UNRESOLVED" })) && shiftLabel({ status: "RESOLVED", team: "B", type: "NIGHT" }) === "SHIFT B · NIGHT", "team shown only when resolved");
 

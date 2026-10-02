@@ -7,7 +7,7 @@ import Link from "next/link";
 import { fmtTime, usePolling, useServerNow } from "@/lib/client";
 import { MAP_LANDMARKS, MAP_ZONES } from "@/config/plantLayout";
 import { STATUS_LABEL, type AndonEvent, type MasterData } from "@/lib/domain";
-import { displayLines, stationState, elapsedSeconds, formatElapsed, lineStates, placeLines, shiftLabel, sortActive, type LineState, type MapLine } from "@/lib/plantMap";
+import { CATEGORY_LEGEND, categoryKey, displayLines, stationState, elapsedSeconds, formatElapsed, lineStates, placeLines, shiftLabel, sortActive, type LineState, type MapLine } from "@/lib/plantMap";
 
 type PublicShift = { status: "RESOLVED"; team: "A" | "B"; type: "DAY" | "NIGHT"; operationalDate: string; shiftEnd: string } | { status: "UNRESOLVED"; reason: string };
 interface BoardResponse {
@@ -35,10 +35,10 @@ const kstClock = new Intl.DateTimeFormat("ko-KR", {
 const pct = (b: { x: number; y: number; w: number; h: number }) => ({ left: `${b.x}%`, top: `${b.y}%`, width: `${b.w}%`, height: `${b.h}%` });
 const stateText = (s: LineState) => (s.state === "OPEN" ? "발생 OPEN" : STATUS_LABEL[s.lead!.status].ko + " " + (s.lead!.status === "ACKNOWLEDGED" ? "ACK" : "IN ACTION"));
 
-function LineTile({ line, st, now, compact, sub }: { line: MapLine; st: LineState | undefined; now: number; compact?: boolean; sub?: string }) {
+function LineTile({ line, st, now, compact, sub, tone }: { line: MapLine; st: LineState | undefined; now: number; compact?: boolean; sub?: string; tone?: string }) {
   if (!st) {
     return (
-      <div className={`pm-line pm-normal${compact ? " pm-chip" : ""}`} data-line={line.code} data-state="NORMAL" title={sub}>
+      <div className={`pm-line pm-normal${tone ? ` pm-tone-${tone}` : ""}${compact ? " pm-chip" : ""}`} data-line={line.code} data-state="NORMAL" title={sub}>
         <span className="pm-name">{line.name}</span>
         {sub && <span className="pm-sub">{sub}</span>}
       </div>
@@ -48,9 +48,10 @@ function LineTile({ line, st, now, compact, sub }: { line: MapLine; st: LineStat
   return (
     <Link
       href={`/respond/${encodeURIComponent(e.id)}`}
-      className={`pm-line pm-${st.state === "OPEN" ? "open" : "action"}${compact ? " pm-chip" : ""}`}
+      className={`pm-line pm-${st.state === "OPEN" ? "open" : "action"} pm-c-${categoryKey(e.categoryCode)}${compact ? " pm-chip" : ""}`}
       data-line={line.code}
       data-state={st.state}
+      data-category={categoryKey(e.categoryCode)}
       title={`${line.name}${sub ? ` (${sub})` : ""} · ${e.categoryName} · ${e.description}`}
     >
       <span className="pm-top">
@@ -118,7 +119,7 @@ export default function PlantMapPage() {
               <div key={z.id} className={`pm-zone pm-zone-${z.tone}`} style={pct(z)} />
             ))}
             {MAP_ZONES.filter((z) => z.title).map((z) => (
-              <div key={`${z.id}-t`} className="pm-zone-title" style={{ left: `${z.x}%`, width: `${z.w}%`, top: `${z.titleY}%` }}>
+              <div key={`${z.id}-t`} className={`pm-zone-title pm-zone-title-${z.tone}`} style={{ left: `${z.x}%`, width: `${z.w}%`, top: `${z.titleY}%` }}>
                 {z.title}
               </div>
             ))}
@@ -130,9 +131,9 @@ export default function PlantMapPage() {
             {stations.map((s) => (
               <div key={s.cell.id} className="pm-cell" style={pct(s.box)} data-station={s.cell.id}>
                 {s.line ? (
-                  <LineTile line={s.line} st={stationState([s.line.code, ...(s.cell.aliasLineCodes ?? [])], states)} now={now} sub={s.cell.subLabel} />
+                  <LineTile line={s.line} st={stationState([s.line.code, ...(s.cell.aliasLineCodes ?? [])], states)} now={now} sub={s.cell.subLabel} tone={s.cell.tone} />
                 ) : (
-                  <div className="pm-unlinked" title="배치도에는 있으나 라인 기준정보와 연결이 확인되지 않음">
+                  <div className={`pm-unlinked pm-tone-${s.cell.tone}`} title="배치도에는 있으나 라인 기준정보와 연결이 확인되지 않음">
                     {s.cell.layoutLabel}
                   </div>
                 )}
@@ -145,6 +146,12 @@ export default function PlantMapPage() {
           <h2>
             ACTIVE ANDON <span className="fs-n">{data ? active.length : "-"}</span>
           </h2>
+          <div className="fs-legend" aria-label="테두리 색 = 이상 유형">
+            <span className="fs-legend-t">테두리 = 유형</span>
+            {CATEGORY_LEGEND.map((c) => (
+              <span key={c.key} className={`fs-lg pm-c-${c.key}`}>{c.label}</span>
+            ))}
+          </div>
           {data && active.length === 0 && <div className="fs-clear">✔ 진행 중인 ANDON 없음</div>}
           <ol className="fs-list">
             {active.map((e) => (
@@ -152,6 +159,7 @@ export default function PlantMapPage() {
                 <Link href={`/respond/${encodeURIComponent(e.id)}`} className={`fs-item fs-${e.status === "OPEN" ? "open" : "action"}`}>
                   <span className="fs-line">{e.lineName}</span>
                   <span className="fs-meta">
+                    <i className={`fs-dot pm-c-${categoryKey(e.categoryCode)}`} />
                     {e.categoryName} · {e.status === "OPEN" ? "발생" : `${e.departmentCode} ${STATUS_LABEL[e.status].ko}`}
                   </span>
                   <span className="fs-time">{formatElapsed(elapsedSeconds(e, now))}</span>

@@ -397,6 +397,10 @@ condition right now?" from several meters away. No schema change.
   KAPPA EU7 station (`aliasLineCodes`; the event shows "· T-GDI 1"); its history is unchanged. In narrow cells an
   abnormal tile grows into a readable card above its dimmed neighbours.
   Placed lines: **33 / 36** — still in the tray: **JX/NX4 RESO** (candidate NX4/JX MAIN RESO), **R-ENG**, **STUFFING**.
+- **Colours (2026-10-02, UAP team-lead feedback):** zones and normal tiles use muted versions of the drawing colours
+  (AQ rose, AP blue, sub-assembly / RESO olive). The **border** of an abnormal tile shows the problem type —
+  품질 purple, 물류 blue, 설비 teal, 안전 white, 생산·기타 grey (legend in the side panel, colour dot in the active
+  list) — while fill and glow keep showing the state (red OPEN, amber ACK / IN_PROGRESS).
 - **Highlight:** an abnormal line gets a bright ring + glow (OPEN red, pulsing; ACK / IN_PROGRESS amber, steady)
   and, while any ANDON is active, normal tiles, zone titles and landmarks dim to 45 % so the eye goes
   straight to the abnormal location.

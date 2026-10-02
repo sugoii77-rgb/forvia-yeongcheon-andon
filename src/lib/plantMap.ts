@@ -100,3 +100,19 @@ export function shiftLabel(shift: { status: "RESOLVED"; team: "A" | "B"; type: "
   if (!shift || shift.status !== "RESOLVED") return "SHIFT: UNRESOLVED";
   return `SHIFT ${shift.team} · ${shift.type}`;
 }
+
+/**
+ * Problem type shown as the BORDER colour of an abnormal tile (the fill stays the state colour:
+ * red = OPEN, amber = ACK / IN_PROGRESS). Production and other categories share one neutral colour.
+ */
+export type CategoryKey = "QUALITY" | "MATERIAL" | "MAINTENANCE" | "SAFETY" | "OTHER";
+export const CATEGORY_LEGEND: { key: CategoryKey; label: string }[] = [
+  { key: "QUALITY", label: "품질" },
+  { key: "MATERIAL", label: "물류" },
+  { key: "MAINTENANCE", label: "설비" },
+  { key: "SAFETY", label: "안전" },
+  { key: "OTHER", label: "생산·기타" },
+];
+export function categoryKey(code: string): CategoryKey {
+  return code === "QUALITY" || code === "MATERIAL" || code === "MAINTENANCE" || code === "SAFETY" ? code : "OTHER";
+}

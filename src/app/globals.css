@@ -343,10 +343,26 @@ table.table { width: 100%; border-collapse: collapse; background: #fff; font-siz
 .pm { position: relative; width: 100%; height: 100%; --pmu: 1cqw; }
 .pm > * { position: absolute; box-sizing: border-box; }
 .pm-zone { border-radius: 10px; }
-.pm-zone-AQ { background: #141a24; border: 1px solid #222b38; }
-.pm-zone-AP { background: #121b26; border: 1px solid #1f2d3d; }
-.pm-zone-SUB { background: #17170f; border: 1px solid #2a2a1c; }
-.pm-zone-title { text-align: center; font-size: clamp(11px, calc(var(--pmu) * 1), 18px); font-weight: 800; letter-spacing: 0.25em; color: #5b6676; line-height: 1; }
+/* zone colours follow the plant drawing (AQ pink, AP blue, sub-assembly yellow) but muted, so that the
+   saturated red / amber of an ANDON always dominates */
+.pm-zone-AQ { background: #1b1419; border: 1px solid #3a2531; }
+.pm-zone-AP { background: #111b28; border: 1px solid #1f3651; }
+.pm-zone-SUB { background: #19180e; border: 1px solid #39361a; }
+.pm-normal.pm-tone-AQ { background: #2a1a24; border-color: #4c2e3e; border-left-color: #c46a86; }
+.pm-normal.pm-tone-AP { background: #142538; border-color: #24425f; border-left-color: #3f97cf; }
+.pm-normal.pm-tone-SUB { background: #25230f; border-color: #48431d; border-left-color: #bfae4f; }
+.pm-normal.pm-tone-AQ .pm-name { color: #e2b9c8; }
+.pm-normal.pm-tone-AP .pm-name { color: #b5d4ee; }
+.pm-normal.pm-tone-SUB .pm-name { color: #e0d6a0; }
+.pm-normal.pm-tone-AQ .pm-sub { color: #a9808f; }
+.pm-normal.pm-tone-AP .pm-sub { color: #7f9ab2; }
+.pm-normal.pm-tone-SUB .pm-sub { color: #a69d6c; }
+.pm-unlinked.pm-tone-AQ { border-color: #4a2f3d; color: #7d5a69; }
+.pm-unlinked.pm-tone-AP { border-color: #274660; color: #557590; }
+.pm-unlinked.pm-tone-SUB { border-color: #48431f; color: #7c7448; }
+.pm-zone-title-AQ { color: #b07a8e; }
+.pm-zone-title-AP { color: #6f9fc4; }
+.pm-zone-title { text-align: center; font-size: clamp(11px, calc(var(--pmu) * 1), 18px); font-weight: 800; letter-spacing: 0.25em; color: #7b8698; line-height: 1; }
 .pm-landmark { border: 1px dashed #2a313c; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #4c5563; font-size: clamp(9px, calc(var(--pmu) * 0.75), 13px); font-weight: 700; letter-spacing: 0.08em; text-align: center; padding: 2px; }
 .pm-vertical span { writing-mode: vertical-rl; transform: rotate(180deg); }
 .pm-cell { padding: calc(var(--pmu) * 0.25); container-type: size; }
@@ -396,6 +412,25 @@ table.table { width: 100%; border-collapse: collapse; background: #fff; font-siz
 @container (max-height: 110px) { .pm-desc, .pm-state { display: none; } }
 @container (max-height: 70px) { .pm-cat { display: none; } }
 /* an abnormal station is raised above its neighbours (cells are containment / stacking contexts) */
+/* problem type = BORDER colour of an abnormal tile (fill / glow stay the state colour) */
+.floor { --c-QUALITY: #c084fc; --c-MATERIAL: #38bdf8; --c-MAINTENANCE: #2dd4bf; --c-SAFETY: #ffffff; --c-OTHER: #9ca3af; }
+.pm-open, .pm-action { border-width: 4px; }
+.pm-chip.pm-open, .pm-chip.pm-action { border-width: 3px; }
+.pm-open.pm-c-QUALITY, .pm-action.pm-c-QUALITY { border-color: var(--c-QUALITY); }
+.pm-open.pm-c-MATERIAL, .pm-action.pm-c-MATERIAL { border-color: var(--c-MATERIAL); }
+.pm-open.pm-c-MAINTENANCE, .pm-action.pm-c-MAINTENANCE { border-color: var(--c-MAINTENANCE); }
+.pm-open.pm-c-SAFETY, .pm-action.pm-c-SAFETY { border-color: var(--c-SAFETY); }
+.pm-open.pm-c-OTHER, .pm-action.pm-c-OTHER { border-color: var(--c-OTHER); }
+.fs-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; }
+.fs-legend-t { color: #8a94a3; font-weight: 600; margin-right: 2px; }
+.fs-lg { padding: 1px 8px; border-radius: 6px; border: 3px solid; background: #151b23; }
+.fs-lg.pm-c-QUALITY { border-color: var(--c-QUALITY); } .fs-lg.pm-c-MATERIAL { border-color: var(--c-MATERIAL); }
+.fs-lg.pm-c-MAINTENANCE { border-color: var(--c-MAINTENANCE); } .fs-lg.pm-c-SAFETY { border-color: var(--c-SAFETY); }
+.fs-lg.pm-c-OTHER { border-color: var(--c-OTHER); }
+.fs-dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.fs-dot.pm-c-QUALITY { background: var(--c-QUALITY); } .fs-dot.pm-c-MATERIAL { background: var(--c-MATERIAL); }
+.fs-dot.pm-c-MAINTENANCE { background: var(--c-MAINTENANCE); } .fs-dot.pm-c-SAFETY { background: var(--c-SAFETY); }
+.fs-dot.pm-c-OTHER { background: var(--c-OTHER); }
 .pm-cell:has(.pm-open), .pm-cell:has(.pm-action) { z-index: 5; }
 .pm-cell:has(.pm-open) { z-index: 6; }
 /* narrow stations: an abnormal tile grows into a readable card over its (dimmed) neighbours */
