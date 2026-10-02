@@ -313,3 +313,114 @@ table.table { width: 100%; border-collapse: collapse; background: #fff; font-siz
   .bar-row { grid-template-columns: 100px 1fr 32px; }
   .dash-grid { grid-template-columns: 1fr; }
 }
+
+/* ---------- shop-floor display v2: plant map (/dashboard) ---------- */
+.floor {
+  height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  background: #0b0e13;
+  color: #e8ecf2;
+  overflow: hidden;
+}
+.floor-head { display: flex; align-items: center; gap: 14px; padding: 10px 18px; border-bottom: 1px solid #1d232d; flex-wrap: wrap; }
+.floor-title { font-size: 24px; font-weight: 900; letter-spacing: 0.03em; color: #e8ecf2; text-decoration: none; white-space: nowrap; }
+.floor-title small { font-weight: 600; opacity: 0.6; }
+.floor-head .spacer { flex: 1; }
+.fc { font-size: 20px; font-weight: 800; padding: 4px 14px; border-radius: 10px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.fc-open { background: var(--red); color: #fff; }
+.fc-action { background: var(--yellow); color: #2b2000; }
+.fc-normal { background: #13241b; color: #7fd3a2; }
+.fc-shift { background: #1a2130; color: #cfd8e6; font-size: 18px; }
+.fc-unresolved { background: transparent; color: #9aa4b2; border: 1px dashed #4b5566; }
+.floor-clock { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; opacity: 0.9; white-space: nowrap; }
+
+.floor-body { display: grid; grid-template-columns: 1fr 340px; gap: 12px; padding: 12px; min-height: 0; }
+/* --pmu = 1 % of the map width, resolved ONCE on .pm (registered → px) so tiles, which are their own
+   size containers (to hide secondary lines when short), still scale with the whole map. */
+@property --pmu { syntax: "<length>"; inherits: true; initial-value: 14px; }
+.pm-wrap { min-width: 0; min-height: 0; container-type: size; }
+.pm { position: relative; width: 100%; height: 100%; --pmu: 1cqw; }
+.pm > * { position: absolute; box-sizing: border-box; }
+.pm-zone { border-radius: 10px; }
+.pm-zone-AQ { background: #141a24; border: 1px solid #222b38; }
+.pm-zone-AP { background: #121b26; border: 1px solid #1f2d3d; }
+.pm-zone-SUB { background: #17170f; border: 1px solid #2a2a1c; }
+.pm-zone-title { text-align: center; font-size: clamp(11px, calc(var(--pmu) * 1), 18px); font-weight: 800; letter-spacing: 0.25em; color: #5b6676; line-height: 1; }
+.pm-landmark { border: 1px dashed #2a313c; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #4c5563; font-size: clamp(9px, calc(var(--pmu) * 0.75), 13px); font-weight: 700; letter-spacing: 0.08em; text-align: center; padding: 2px; }
+.pm-vertical span { writing-mode: vertical-rl; transform: rotate(180deg); }
+.pm-cell { padding: calc(var(--pmu) * 0.25); container-type: size; }
+.pm-unlinked { width: 100%; height: 100%; border: 1px dashed #2b333f; border-radius: 6px; display: flex; align-items: center; justify-content: center; text-align: center; color: #4d5766; word-break: keep-all; font-size: clamp(9px, calc(var(--pmu) * 0.7), 12px); font-weight: 700; padding: 2px; overflow: hidden; }
+
+.pm-line { width: 100%; height: 100%; border-radius: 7px; display: flex; flex-direction: column; overflow: hidden; text-decoration: none; color: inherit; position: relative; padding: calc(var(--pmu) * 0.35) calc(var(--pmu) * 0.45); gap: 2px; }
+.pm-normal { background: #151b23; border: 1px solid #263040; border-left: 4px solid #1f5c3a; justify-content: center; }
+.pm-normal .pm-name { color: #a7b2c3; }
+.pm-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 4px; }
+.pm-name { font-weight: 900; font-size: clamp(11px, calc(var(--pmu) * 1.05), 20px); line-height: 1.1; word-break: keep-all; overflow-wrap: break-word; min-width: 0; }
+.pm-open { background: var(--red); color: #fff; border: 2px solid #ff8a93; box-shadow: 0 0 0 0 rgba(229, 32, 46, 0.6); animation: pm-pulse 2.4s ease-in-out infinite; z-index: 2; }
+.pm-action { background: var(--yellow); color: #231a00; border: 2px solid #ffd966; z-index: 1; }
+.pm-cat { font-size: clamp(10px, calc(var(--pmu) * 0.8), 15px); font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; }
+.pm-desc { font-size: clamp(9px, calc(var(--pmu) * 0.72), 14px); line-height: 1.2; opacity: 0.95; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pm-time { font-size: clamp(14px, calc(var(--pmu) * 1.45), 30px); font-weight: 900; font-variant-numeric: tabular-nums; line-height: 1; margin-top: auto; }
+.pm-state { font-size: clamp(9px, calc(var(--pmu) * 0.7), 13px); font-weight: 800; opacity: 0.9; }
+.pm-badge { flex: none; min-width: 1.6em; height: 1.6em; padding: 0 0.35em; border-radius: 999px; background: #0b0e13; color: #fff; font-size: clamp(10px, calc(var(--pmu) * 0.8), 15px); font-weight: 900; display: flex; align-items: center; justify-content: center; }
+@keyframes pm-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(229, 32, 46, 0); } 50% { box-shadow: 0 0 0 5px rgba(229, 32, 46, 0.45); } }
+
+.floor-side { min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 10px; }
+.floor-side h2 { margin: 0; font-size: 20px; letter-spacing: 0.08em; display: flex; align-items: center; gap: 10px; }
+.fs-n { background: #222a36; border-radius: 999px; padding: 0 10px; font-size: 18px; }
+.fs-clear { border: 2px dashed #24533a; color: #7fd3a2; border-radius: 12px; padding: 18px; text-align: center; font-size: 20px; font-weight: 800; }
+.fs-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.fs-item { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "line time" "meta time"; gap: 0 10px; align-items: center; padding: 5px 10px; border-radius: 10px; text-decoration: none; color: inherit; background: #151b23; border-left: 8px solid; }
+.fs-open { border-left-color: var(--red); background: #2a0f12; }
+.fs-action { border-left-color: var(--yellow); background: #262006; }
+.fs-line { grid-area: line; font-size: 19px; font-weight: 900; }
+.fs-meta { grid-area: meta; font-size: 13px; opacity: 0.8; }
+.fs-time { grid-area: time; font-size: 24px; font-weight: 900; font-variant-numeric: tabular-nums; }
+.fs-tray { margin-top: auto; border-top: 1px solid #1d232d; padding-top: 8px; }
+.fs-tray h3 { margin: 0 0 6px; font-size: 13px; color: #8a94a3; font-weight: 700; }
+.fs-chips { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; }
+.pm-chip { height: auto; min-height: 28px; flex-direction: row; align-items: center; justify-content: space-between; gap: 6px; padding: 4px 8px; }
+.pm-chip .pm-name { font-size: 12px; }
+.pm-chip .pm-time { font-size: 15px; margin-top: 0; }
+.pm-chip .pm-badge { font-size: 11px; }
+.pm-chip .pm-top { align-items: center; }
+/* short or narrow tiles: drop the secondary lines rather than clipping the essentials */
+@container (max-height: 110px) { .pm-desc, .pm-state { display: none; } }
+@container (max-height: 70px) { .pm-cat { display: none; } }
+/* narrow stations (≈ 80 px on a 1920 monitor): tighter padding and type so names wrap at spaces only */
+@container (max-width: 100px) {
+  .pm-line { padding: 4px 4px 4px 5px; }
+  .pm-normal { border-left-width: 3px; }
+  .pm-name { font-size: clamp(10px, calc(var(--pmu) * 0.86), 16px); letter-spacing: -0.01em; }
+  .pm-time { font-size: clamp(13px, calc(var(--pmu) * 1.3), 26px); }
+}
+
+@media (prefers-reduced-motion: reduce) { .pm-open { animation: none; } }
+/* ordinary desktop / laptop (e.g. 1366 × 768): one-line header, narrower side panel */
+@media (max-width: 1500px) and (min-width: 1101px) {
+  .floor-head { gap: 8px; padding: 6px 12px; flex-wrap: nowrap; }
+  .floor-title { font-size: 18px; }
+  .fc { font-size: 15px; padding: 3px 9px; }
+  .fc-shift { font-size: 14px; }
+  .floor-clock { font-size: 16px; }
+  .floor-body { grid-template-columns: 1fr 270px; gap: 8px; padding: 8px; }
+  .floor-side h2 { font-size: 16px; }
+  .fs-item { padding: 3px 8px; border-left-width: 6px; }
+  .fs-line { font-size: 15px; }
+  .fs-meta { font-size: 11px; }
+  .fs-time { font-size: 18px; }
+  .pm-chip { min-height: 24px; padding: 2px 6px; }
+  .pm-chip .pm-name { font-size: 11px; }
+  .pm-chip .pm-time { font-size: 12px; }
+}
+/* small screens: map keeps its geometry and scrolls; the active list comes first */
+@media (max-width: 1100px) {
+  .floor { height: auto; min-height: 100vh; overflow: visible; }
+  .floor-body { grid-template-columns: 1fr; }
+  .floor-side { order: -1; overflow: visible; }
+  .pm-wrap { overflow-x: auto; height: 660px; }
+  .pm { width: 1100px; height: 640px; --pmu: 11px; }
+  .fc, .floor-clock { font-size: 15px; }
+  .floor-title { font-size: 18px; }
+}

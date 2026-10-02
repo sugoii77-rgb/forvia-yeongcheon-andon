@@ -24,7 +24,7 @@ const kstClock = new Intl.DateTimeFormat("ko-KR", {
   hour12: false,
 });
 
-export default function DashboardPage() {
+export default function DashboardListPage() {
   const { data, lastSuccess, clockOffsetMs } = usePolling<BoardResponse>("/api/andons?scope=board", POLL_MS);
   const now = useServerNow(clockOffsetMs);
   const stale = lastSuccess == null || now - clockOffsetMs - lastSuccess > STALE_MS;
