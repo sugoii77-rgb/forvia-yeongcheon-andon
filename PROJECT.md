@@ -3,7 +3,7 @@
 > **Source of truth for AI-to-AI and human handover.** Update this file at the end of every
 > meaningful milestone (sections 11–16 at minimum).
 >
-> Last updated: **2026-10-01** · Milestone 1 — **done** · Milestone 2 — H1 + H2 done · 2A routing foundation — done · 2B registration & authentication — done · **Google authentication provider — done (offline-tested; real Google not yet configured)** · NEXT: Reaction Rules (Appendix A, not started)
+> Last updated: **2026-10-01** · Milestone 1 — **done** · Milestone 2 — H1 + H2 done · 2A routing foundation — done · 2B registration & authentication — done · **Google authentication provider — done (offline-tested; real Google not yet configured)** · Vercel / Turso cloud demo · **Line master + UAP line ownership (schema v6) — done** · NEXT: Reaction Rules (Appendix A, not started — waits for Process / Trigger master and OBD answers)
 
 ---
 
@@ -178,17 +178,20 @@ C:\andon\  (git repository root)
 - `ACTION` and `CLOSE` **require a comment** (action note / corrective action).
 - Invalid transition → HTTP 409. Concurrent updates are guarded by `UPDATE … WHERE status = <read status>`.
 
-**Tables** (`src/lib/server/db.ts`, schema **v4**)
+**Tables** (`src/lib/server/db.ts`, schema **v6**)
 
 | Table | Purpose |
 |---|---|
 | `plant` | YC Yeongcheon (single plant for now) |
-| `line` | T-GDI 1, T-GDI 2, Muffler 1 — `plant_code` → plant |
-| `process` | processes per line |
+| `uap_area` | v6: UAP production areas AP-1, AP-2, AQ-1, AQ-2, AQ-3, BENDING, RESO (plant YC) |
+| `line` | v6: the **36 real Yeongcheon UAP lines** (`uap_area_code` → uap_area) + the 3 prototype lines T-GDI 1, T-GDI 2, Muffler 1 (`uap_area_code` NULL) — `plant_code` → plant |
+| `process` | processes per line; v6 `placeholder` = 1 marks the one "공정 미지정" stand-in of each real line (real process master pending) |
+| `shift` | v6: A, B — `start_time` / `end_time` NULL = clock times not confirmed |
+| `line_assignment` | v6: line ownership — line → employee as `SUPERVISOR` (shift NULL) or `GAP_LEADER` (shift A / B), `effective_from` / `effective_to`, `active`, `source` WORKBOOK / ADMIN. One active row per (line, role, shift) (unique index). Ended rows stay as history |
 | `department` | **ME, MT, UAP, QC, PCL** (active); `display_code` ("PC&L"), `sort_order`, `successor_code`. Pre-v3 codes QUALITY, PRODUCTION, MAINTENANCE, LOGISTICS, EHS stay as **inactive** rows with a successor |
 | `category` | issue categories; `default_department` = routing when no rule matches |
 | `role` | OPERATOR, RESPONDER, GAP_LEADER, SUPERVISOR, ENGINEER, PLANT_MANAGER; `can_respond`, `escalation_level` (prepared) |
-| `app_user` | employee = id, **employee_id** (v4: unique, permanent once set — trigger), name (not unique), email (LOCAL login e-mail, unique; NULL = no local login), department_code → department, role → role, active, source, created_at; contact (v4): phone, kakao_id (typed KakaoTalk ID — reference only, NOT a notification address), company_email (optional). Never delete — deactivate |
+| `app_user` | employee = id, **employee_id** (v4: unique, permanent once set — trigger), name (not unique), email (LOCAL login e-mail, unique; NULL = no local login), department_code → department, role → role, active, source, created_at; contact (v4): phone, kakao_id (typed KakaoTalk ID — reference only, NOT a notification address), company_email (optional); v6 `import_key` (unique; set for employees created by the workbook import → one record per person). Never delete — deactivate |
 | `user_identity` | how a person logs in: provider LOCAL / GOOGLE (KAKAO later), subject (LOCAL: e-mail; GOOGLE: Google's stable `sub`), password_hash (LOCAL only), provider_email (v4, metadata only), last_login_at; unique (provider, subject); at most one GOOGLE identity per employee (v4) |
 | `google_auth_flow` | v4: short-lived (10 min) server-side Google login state: phase AUTHORIZATION (state, nonce, PKCE verifier, next path, link target + session hash) or ONBOARDING (verified sub / e-mail / name). Browser holds only an opaque token (cookie scoped to /api/auth/google); rows are consumed once |
 | `user_session` | server-side sessions: SHA-256 of the cookie token, user_id, expires_at, revoked_at, device / IP / user agent at login |
@@ -312,6 +315,56 @@ and sends it as header `x-andon-device` on every request. The server stores it w
 (CREATE, ACKNOWLEDGE, ACTION, CLOSE), plus the actor's user id, name, department and role at that time.
 The responder screen shows them in the history timeline.
 
+**Line master and line ownership (v6)** — source: plant workbook "모바일 안돈시스템(261001) QC.xlsx"
+(sheets 개인정보 and UAP(Line 구분); the workbook stays outside the repository — it contains personal data).
+
+```
+Plant YC ─► UAP area (7) ─► Line (36 real) ─► line_assignment
+                                               ├─ SUPERVISOR            (no shift)
+                                               ├─ GAP_LEADER  shift A
+                                               └─ GAP_LEADER  shift B ─► app_user (employee, one per person)
+```
+
+- **Lines** (code → name as in the workbook): AP-1 Main #1, Main #2, FRT, NX4 CTR, NX4 MAIN, NX4 CTR #2 ·
+  AP-2 CTR #1, CTR #2, Main #3, JX ASSY, JX SUB, JX LAMBDA FRT · AQ-1 NU-I #1, NU-I #1 EXMANI, GPF,
+  NU-I #2, NU-I #2 EXMANI · AQ-2 KAPPA 1.6, TURBO #2 EU7, EXMANI #1, EXMANI #2, GAMMA #2, TURBO#1 ·
+  AQ-3 GAMMA #3, UCC, KAPPA UCC, R-ENG, STUFFING · BENDING HE BENDING, PIPE CUTTING, CE BENDING ·
+  RESO LOCKSEAM, QX RESO, CTR RESO, SX2 RESO, JX/NX4 RESO. Defined in `masterData.ts` (no personal data).
+- **Ownership is line-specific.** Each line has one supervisor and one GAP leader per shift. A supervisor
+  owns all lines of an area; within an area, sub-groups of lines have different A / B GAP leaders (e.g.
+  AQ-3: same A leader for all five lines, different B leaders for GAMMA #3 / UCC / KAPPA UCC and R-ENG /
+  STUFFING). Imported: 7 supervisors + 28 GAP leaders = 35 employees, 108 assignments (36 × 3).
+- **A / B = shift assignment**, modelled in `line_assignment.shift_code` — never part of a name.
+  Shift clock times are not known → the system never guesses the current shift. `resolveLineOwnership`
+  (`src/lib/server/lineAssignments.ts`) returns the supervisor and both shifts' GAP leaders;
+  `currentGapLeader` only when the caller passes the shift explicitly.
+- **In force** = `active = 1`, `effective_from <= now < effective_to` (or open-ended) and the employee
+  is active. Inactive, ended, future or deactivated-employee assignments are ignored.
+- **Employees** created by the import: department UAP, role SUPERVISOR / GAP_LEADER, **no login and no
+  contact data** (phone, Google ID, Kakao ID, employee ID, e-mail are never read from the workbook).
+  Matching key `app_user.import_key` → repeating the import or a person covering several lines never
+  duplicates the employee. To let such a person log in, an administrator runs
+  `npm run masterdata -- user set-login <user> <e-mail>` (registering again would create a second record).
+- **Workbook cross-check** (`scripts/lib/uap-workbook.ts`): the UAP sheet is line-specific and decides
+  each line's leaders; supervisors, their lines and areas must agree with 개인정보 (otherwise the import
+  is refused). Known difference, reported as a warning: for **BENDING shift B**, 개인정보 lists both B
+  leaders for all three lines, while UAP(Line 구분) assigns one to HE BENDING + PIPE CUTTING and the other
+  to CE BENDING. The UAP sheet was used — **to be confirmed by the plant** (OBD list below).
+- **Ownership ≠ responsible department.** Supervisor / GAP leader is the *actor* who owns the line. Which
+  department must act on an ANDON is still decided by category + routing rules (unchanged). Future
+  hierarchy (Appendix A): Plant → Line → Process → Trigger → Reaction Rule → Actor role → Responsible
+  department → Eligible responder; `line_assignment` provides "Actor role → person" for a line.
+- **Process master is missing** → each real line has one process "공정 미지정" (`process.placeholder = 1`)
+  because `andon_event.process_id` is required. The operator screen selects it automatically and says
+  the process master is in preparation. Replace it when the plant delivers the Line → Process master
+  (add real processes, deactivate the placeholder; existing events keep it).
+- **Who sees what:** `/api/meta` (public, operator) returns areas, lines and processes only — no people.
+  `/admin/lines` + `GET /api/admin/lines` show line → supervisor / GAP leaders (names only) and require
+  a login with role GAP_LEADER, SUPERVISOR, ENGINEER or PLANT_MANAGER (assigned by an administrator;
+  self-registered accounts are RESPONDER and get 403).
+- **Prototype lines** T-GDI 1, T-GDI 2, Muffler 1 stay active (demo events, tests). Deactivating them is a
+  plant decision.
+
 **Escalation model — prepared, NOT active.** Intended flow:
 `OPEN → RESPONDER notified → no ACK after threshold → GAP_LEADER → SUPERVISOR / ENGINEER → PLANT_MANAGER`.
 `escalation_policy` (code, optional department/category scope, `active` = 0) and `escalation_step`
@@ -411,6 +464,8 @@ npm run dev       # development mode with hot reload
 | `npm run test:routing` | 10 unit checks of the routing resolver / eligibility (no server) + 29 API checks: routing of every category, process-level override (→ PCL, shown "PC&L · 물류"), eligible-responder list, no session → 401, body naming another user (id or name) → rejected, wrong department → 403 without side effects, session responder ACK with user id / name / department / role / device / IP / user agent in history, GAP_LEADER (set by admin) may act, invalid device id dropped, server-side inbox (`mine=1`, incl. pre-v3 QUALITY events), pre-v3 event handled by successor department, full ordered history. |
 | `npm run test:auth` | 42 checks — registration (valid, role in body ignored, no secrets in responses, cookie flags, duplicate e-mail incl. case variant, 5 simultaneous registrations → 1 account, invalid e-mail / department / inactive pre-v3 department / short password / no digit / mismatch / empty name), login (valid, wrong password, unknown user with identical message, session fixation, logout + cookie replay, forged token, foreign Origin → 403, inactive → 403, 6th failure → 429), authorization & routing (new QC / MT / PC&L responders automatically eligible, QC cannot ACK MT, body spoofing rejected, no session → 401, audit fields, deactivated after login → 403, OPERATOR role → 403, admin department change moves eligibility). |
 
+| `npm run test:lines` | Line master + ownership (70 checks with `--http --workbook`). **A** isolated DB under `work/lines-test/` with a synthetic workbook (fake names, plant layout): 36 lines exactly once, areas, placeholder processes, shifts without times, ANDON on a real line, parser + sub-group inheritance, BENDING-type warnings, contradiction rejected, import, every line → supervisor / A / B, explicit shift, no duplicate employees, repeated import = no change, changed person → old ended + new, inactive / ended / future / deactivated-employee ignored, constraints (unique, shift rules, FKs), contact columns never read or stored, public master data without people / contact fields, events / history / notifications / routing / users unchanged. **B** Turso-compatible migration: remote driver path on local libSQL that rejects `PRAGMA user_version =` like Turso, v5 with data → v6, rows unchanged. **C** `--http` (`BASE_URL`, `DATABASE_PATH` = server DB): `/api/meta` field names, 401 / 403 / 200 on `/api/admin/lines`, no contact fields, no assigned person in `/api/meta`. **D** `--workbook <file>`: real workbook into a fresh isolated DB, every line = workbook supervisor / A / B; prints counts only. |
+| `npm run db:verify-remote-migration` | Turso DRY RUN: pending migrations + seed inside one transaction that is always rolled back; checks old rows / columns (checksums), FKs, append-only, then that nothing changed. Run with `vercel env run -e production --`. |
 | `npm run test:google` | 48 checks with a local fake Google (signed test tokens, fake JWKS) — **real Google is not contacted**. Needs an isolated test server and `DATABASE_PATH` under `work/` (see below). Covers redirect allow-list, Origin checks, PKCE / state / nonce, flow cookie flags, wrong state / missing cookie / replay / expiry, onboarding (no subject exposed, replay, role in body ignored), changed Google e-mail → same employee, duplicate subject, one Google per employee, employee-ID claim protection, immutable employee ID, inactive employee, session rotation, no tokens stored, linking with password re-check bound to the session, Google e-mail never auto-links, wrong nonce / audience / issuer / expired / unverified e-mail / bad signature, Host header, real API: operator call, wrong department, body spoofing, role, deactivation, ACK / ACTION / CLOSE with audit; typed KakaoTalk ID is not a notification address; configured-status endpoint; admin employee-id / unlink-google. |
 
 > **Isolated Google test** (keeps the live DB untouched): copy a backup to `work/google/x.db`, start
@@ -646,11 +701,23 @@ data intact, operator retry succeeds ✔ · backup script ✔.
 design in **Appendix A**. Not started. Do not code before the open business decisions (A.10) are
 answered by UAP and the real line / process master data has been delivered.
 - [ ] Confirm open business decisions OBD-1 … OBD-17 (Appendix A.10) with UAP
-- [ ] Load real lines / processes (Gamma 1차, Gamma 2차, Nu 1차, Nu 2차, NX4, JX, …) from UAP
+- [x] Load real lines from UAP — 36 lines + supervisor / A / B GAP leader per line (schema v6, 2026-10-02)
+- [ ] Load real processes per line (replaces the placeholder "공정 미지정")
 - [ ] Implement trigger / reaction-rule master data (revisioned), trigger selection in the operator
       call, next-action guidance, rule reference stored per ANDON, arrival / QRCI milestones
 - Equipment master data (Appendix B) is **optional** for the first pilot — do not block this
   milestone waiting for complete equipment data
+
+**Pending plant inputs (line ownership, 2026-10-02)** — nothing of this was invented:
+- [ ] Process master per real line (Line → Process)
+- [ ] Trigger master and defect / problem types
+- [ ] ME responsibility rules; HSE / safety routing (SAFETY → UAP is still a prototype decision)
+- [ ] **A / B shift clock times** (and rotation) → `shift.start_time / end_time`; then decide how the
+      current shift is determined (until then no automatic current GAP leader)
+- [ ] Confirm BENDING shift B leaders per line (sheets differ, see §6)
+- [ ] Reaction-rule thresholds beyond the documented procedure (Appendix A.10)
+- [ ] Should the cloud demo (Turso) receive the personnel assignments? (currently only the local DB)
+- [ ] Should the prototype lines T-GDI 1 / T-GDI 2 / Muffler 1 be deactivated for operators?
 
 **Milestone 4 — Escalation / proactive (rule-based first, AI later)** — data model prepared in 2A
 - [ ] Configure `escalation_step.after_minutes` per policy (no defaults in code) and activate
@@ -674,6 +741,11 @@ answered by UAP and the real line / process master data has been delivered.
 
 ## 15. Next recommended action
 
+0. **Line ownership (2026-10-02):** confirm the BENDING shift B leaders and the A / B shift times with
+   UAP; deliver the Process / Trigger master. Before the next cloud deploy: `vercel env run -e production
+   -- npm run db:verify-remote-migration`, then `npm run db:migrate` the same way, **then** push (the
+   deployed app refuses a schema mismatch). Decide whether the personnel assignments go to Turso.
+
 1. ~~Move the project to a permanent short path and put it under git~~ — done 2026-10-01 (`C:\andon`).
 2. Decide where the demo server runs; on that PC follow RUNBOOK.md §8 (first-time setup) and
    register auto-start with `-AtStartup`. Then reboot it once and confirm the system comes back alone.
@@ -690,6 +762,7 @@ answered by UAP and the real line / process master data has been delivered.
 | 2026-10-01 | Milestone 2 part 1 — H1: photo problems never block the ANDON call (server warning instead of 400; on-device resize to ≤1600 px JPEG; `test:reliability`). H2: `scripts/supervisor.ts` (`npm run serve/status/stop`), restart + watchdog + auto-rebuild + stale-process cleanup + daily logs, Windows auto-start scripts, RUNBOOK.md. Verified: typecheck/lint/build ✔, `test:golden` 26/26, `test:reliability` 6/6, browser: 12.2 MB 4000×3000 photo → 631 KB 1600×1200 JPEG; undecodable photo → note, call still possible; supervisor: crash → back in 2 s, stale server stopped, double start refused, failing health → restart after 3 checks, missing build → rebuilt (healthy 5 s after start), stop → port free. Auto-start task validated by dry run only (not registered). |
 | 2026-10-01 | Milestone 2A — responsibility & routing foundation: schema v2 with migration runner + pre-migration backup; plant / role / routing_rule / escalation_policy / escalation_step tables; app_user with role FK (MANAGER → SUPERVISOR); deterministic routing (process rule > line rule > category default) stored per event; server-side responder validation; device id / IP / user agent on every history row; eligible-only responder picker; `npm run masterdata`; `npm run test:routing`. Verified: fresh DB + seed, live-DB copy v1→v2 (40 events / 136 history rows preserved), live DB migrated with backup; typecheck / lint / build ✔; test:routing 38/38, test:golden 26/26, test:reliability 6/6; mobile UI ACK shows device + IP + "Android · Chrome" in history. |
 | 2026-10-01 | Milestone 2B — user registration & authentication: schema v3 (departments ME / MT / UAP / QC / PCL with old codes kept inactive + successor; app_user rebuilt with e-mail, non-unique name; user_identity, user_session, user_notification_channel; actor department / role on history rows); scrypt passwords; server-side sessions (HttpOnly, SameSite=Lax); /register, /login, /me; responder actions only as the logged-in user; masterdata CLI admin commands; tests use registered throw-away accounts. Migration verified on a copy and on the live DB: events 73 / history 239 / notifications 67 / users 10 unchanged, event-department and history checksums identical. Verified: typecheck / lint / build ✔; test:auth 42/42, test:routing 39/39, test:golden 26/26, test:reliability 6/6; browser (mobile): register → back to the event → ACK / ACTION / CLOSE as the logged-in QC user → timeline shows name, QC · 품질 · RESPONDER, device, IP, browser; QC user on an MT ANDON: no buttons + 403 from the API; logout. |
+| 2026-10-02 | Line master + UAP line ownership (schema v6): `uap_area`, `line.uap_area_code`, `process.placeholder`, `shift` (A / B, times NULL), `app_user.import_key`, `line_assignment` (SUPERVISOR / GAP_LEADER by shift, effective dates, active). 36 real lines in 7 areas + placeholder process each; `npm run import:uap` (workbook parser with cross-check of both sheets; contact columns never read), `masterdata lines / assign / user set-login`; operator line choice grouped by area with automatic placeholder process; `/admin/lines` + `/api/admin/lines` (login + GAP_LEADER / SUPERVISOR / ENGINEER / PLANT_MANAGER; names only); `/api/meta` without people. Migration: local live DB copy v5 → v6 (136 events / 440 history / 175 notifications / 57 users unchanged; +36 lines, +36 processes), then the live local DB (automatic backup, re-verified against it); Turso production: dry run in a rolled-back transaction (142 rows unchanged, nothing changed afterwards) — **Turso not migrated** (app not pushed). Workbook imported into the local live DB: 35 employees, 108 assignments, 3 warnings (BENDING shift B). Verified: typecheck / lint / build ✔; isolated v6 server: test:google 48/48, test:auth 42/42, test:routing 39/39, test:golden 26/26, test:reliability 6/6, test:lines 70/70; browser (mobile): operator areas + CE BENDING call with "공정 미지정" → MT; /admin/lines 403 for RESPONDER, 7 areas / 36 lines for SUPERVISOR. |
 | 2026-10-01 | Vercel deployment: async DB layer (`sql.ts`: node:sqlite file driver + Turso libSQL driver), schema v5 (`login_throttle` in the DB), photos in private Vercel Blob, notifications via `after()`; Turso keeps the schema version in `schema_meta` (it rejects `PRAGMA user_version = …`). Created Vercel project + GitHub auto-deploy, Turso `andon-db`, Blob `andon-photos`; migrated Turso v0→v5 and seeded 20 demo events. Verified on Turso: FK enforcement, transaction rollback, append-only triggers (UPDATE / DELETE rejected); Blob: save / read back identical bytes / unauthenticated URL 403 / delete; deployed https://forvia-yeongcheon-andon.vercel.app: `/api/health` backend remote, dashboard renders demo data. NOT verified on Vercel: login + ACK / ACTION / CLOSE and photo upload through the deployed UI (would create accounts / test events in the demo DB). Local plant server unchanged (SQLite file, v5). |
 | 2026-10-01 | Google authentication provider (Astra implemented; reviewed and completed after Astra's usage limit): schema v4 (employee_id permanent + unique, phone, company_email, user_identity.provider_email, one Google identity per employee, google_auth_flow); Google OIDC via openid-client (PKCE, state, nonce, JWKS signature, issuer / audience / expiry); onboarding; linking with local password re-check bound to the session. Review fixes: notification address only from verified channel; onboarding department labels; Google button hidden when unconfigured; 409 on races; safe logging; admin employee-id / unlink-google. Migration v3→v4 verified on a fresh copy of the live DB (all old rows / columns unchanged) and then on the live DB. Isolated v4 regression: test:google 48/48, test:auth 42/42, test:routing 39/39, test:golden 26/26, test:reliability 6/6. Real Google sign-in NOT tested (no Google Cloud client configured). |
 
@@ -810,9 +883,10 @@ the meaning of historical ANDONs (same principle as routing_rule_id on events).
 
 ### A.9 Line / process master data
 
-Real lines and processes are being collected from UAP (Gamma 1차, Gamma 2차, Nu 1차, Nu 2차, NX4, JX,
-…). The current demo lines (T-GDI 1, T-GDI 2, Muffler 1) are placeholders. **Do not invent the full
-list.**
+**Lines: delivered** (2026-10-02, workbook 261001) — 36 real UAP lines in 7 areas with supervisor and
+A / B GAP leaders, imported in schema v6 (§6 "Line master and line ownership"). **Processes, triggers
+and defect types: still missing** — each real line has only the placeholder process "공정 미지정".
+The demo lines (T-GDI 1, T-GDI 2, Muffler 1) are prototype placeholders. **Do not invent processes.**
 
 ### A.10 Open business decisions (confirm with UAP before coding)
 

@@ -13,6 +13,15 @@
 //                                                pre-assigning prevents a newcomer from claiming that ID
 //   user unlink-google <user>                    remove the Google login (e.g. lost Google account); ends sessions
 //   user deactivate-test-accounts                deactivates all *@andon.test accounts (API tests)
+//   user set-login <user> <e-mail>               give an account without login (e.g. imported from the
+//                                                workbook) a local login; prints a temporary password once.
+//                                                Use this instead of letting that person register again
+//                                                (registration would create a second employee record)
+//   lines                                        line ownership: area, Supervisor, GAP leader A / B (names only)
+//   assign add <LINE> SUPERVISOR <user>          set the line's supervisor (ends the previous assignment)
+//   assign add <LINE> GAP_LEADER <A|B> <user>    set the line's GAP leader of shift A / B
+//   assign end <assignmentId>                    end an assignment (kept as history)
+//   (bulk: npm run import:uap -- <workbook.xlsx>)
 //   route add <CATEGORY> <LINE> [<processId>] <DEPARTMENT> ["note"]
 //   route deactivate <ruleId> | route activate <ruleId>
 //   category default <CATEGORY> <DEPARTMENT>     department used when no routing rule matches
@@ -34,8 +43,10 @@ function table(title: string, rows: Row[]) {
 
 async function list() {
   table("plant", await all("SELECT code, name, name_ko, active FROM plant"));
-  table("line", await all("SELECT code, name, plant_code, active FROM line ORDER BY sort_order"));
-  table("process", await all("SELECT id, line_code, name, active FROM process ORDER BY line_code, sort_order"));
+  table("uap_area", await all("SELECT code, name, plant_code, active FROM uap_area ORDER BY sort_order"));
+  table("line (uap_area NULL = prototype line)", await all("SELECT code, name, plant_code, uap_area_code AS uap_area, active FROM line ORDER BY sort_order"));
+  table("process (placeholder 1 = 공정 미지정, real process master pending)", await all("SELECT id, line_code, name, placeholder, active FROM process ORDER BY line_code, sort_order"));
+  table("shift (times NULL = not confirmed)", await all("SELECT code, name_ko, start_time, end_time, active FROM shift ORDER BY sort_order"));
   table(
     "department (inactive rows = pre-v3 codes kept for history; successor = current department)",
     await all("SELECT code, display_code, name_ko, name_en, active, successor_code FROM department ORDER BY active DESC, sort_order"),
@@ -66,6 +77,28 @@ async function userId(ref: string): Promise<number> {
   return (row as { id: number }).id;
 }
 
+async function lines() {
+  const { listLineOwnership } = await import("../src/lib/server/lineAssignments.ts");
+  const o = await listLineOwnership();
+  const fmt = (p: { userId: number; name: string } | null) => (p ? `${p.name} (#${p.userId})` : "—");
+  table(
+    "line ownership in force now (shift times: " + (o.shifts.map((s) => `${s.code} ${s.startTime ?? "?"}–${s.endTime ?? "?"}`).join(", ")) + ")",
+    o.lines.map((l) => ({
+      area: l.uapAreaCode ?? "(prototype)",
+      line: l.lineCode,
+      name: l.lineName,
+      active: l.lineActive ? 1 : 0,
+      supervisor: fmt(l.supervisor),
+      ...Object.fromEntries(Object.entries(l.gapLeaders).map(([sh, p]) => [`GL ${sh}`, fmt(p)])),
+    })),
+  );
+  table(
+    "line_assignment (all, newest first)",
+    await all(`SELECT a.id, a.line_code, a.assignment_role AS role, a.shift_code AS shift, a.user_id, u.name, a.effective_from, a.effective_to, a.active, a.source
+                FROM line_assignment a JOIN app_user u ON u.id = a.user_id ORDER BY a.id DESC LIMIT 200`),
+  );
+}
+
 async function requireActiveDepartment(code: string) {
   if (!(await db.get("SELECT 1 FROM department WHERE code = ? AND active = 1", code))) {
     throw new Error(`department ${code} does not exist or is inactive (use ME, MT, UAP, QC, PCL)`);
@@ -80,7 +113,48 @@ function changed(res: { changes: number | bigint }, what: string) {
 const [cmd, sub, ...args] = process.argv.slice(2);
 try {
   if (!cmd || cmd === "list") await list();
-  else if (cmd === "user" && sub === "add" && args.length === 3) {
+  else if (cmd === "lines") await lines();
+  else if (cmd === "user" && sub === "set-login" && args.length === 2) {
+    const id = await userId(args[0]);
+    const email = normalizeEmail(args[1]);
+    if (!/^[^s@]+@[^s@]+.[^s@]+$/.test(email)) throw new Error("invalid e-mail");
+    const temp = `Andon-${crypto.randomBytes(6).toString("base64url")}1`;
+    const hash = await hashPassword(temp);
+    await db.transaction(async () => {
+      if (await db.get("SELECT 1 FROM user_identity WHERE user_id = ? AND provider = 'LOCAL'", id)) throw new Error(`user #${id} already has a local login (use reset-password)`);
+      if (await db.get("SELECT 1 FROM app_user WHERE email = ? AND id <> ?", email, id)) throw new Error("e-mail already used by another account");
+      await db.run("UPDATE app_user SET email = ? WHERE id = ?", email, id);
+      await db.run("INSERT INTO user_identity (user_id, provider, subject, password_hash, created_at) VALUES (?, 'LOCAL', ?, ?, ?)", id, email, hash, nowIso());
+    });
+    console.log(`OK: user #${id} can log in with ${email}`);
+    console.log(`Temporary password (shown once): ${temp}`);
+  } else if (cmd === "assign" && sub === "add" && (args.length === 3 || args.length === 4)) {
+    const [line, role] = args;
+    const shift = role === "GAP_LEADER" ? args[2] : null;
+    if (!(role === "SUPERVISOR" && args.length === 3) && !(role === "GAP_LEADER" && args.length === 4)) {
+      throw new Error("usage: assign add <LINE> SUPERVISOR <user> | assign add <LINE> GAP_LEADER <A|B> <user>");
+    }
+    const id = await userId(args[args.length - 1]);
+    const now = nowIso();
+    await db.transaction(async () => {
+      if (!(await db.get("SELECT 1 FROM line WHERE code = ?", line))) throw new Error(`line ${line} not found (see: lines)`);
+      await db.run(
+        "UPDATE line_assignment SET active = 0, effective_to = ? WHERE line_code = ? AND assignment_role = ? AND IFNULL(shift_code, '-') = IFNULL(?, '-') AND active = 1",
+        now, line, role, shift,
+      );
+      await db.run(
+        `INSERT INTO line_assignment (line_code, user_id, assignment_role, shift_code, effective_from, active, source, created_at)
+         VALUES (?, ?, ?, ?, ?, 1, 'ADMIN', ?)`,
+        line, id, role, shift, now, now,
+      );
+    });
+    console.log(`OK: ${line} ${role}${shift ? " " + shift : ""} = user #${id}`);
+  } else if (cmd === "assign" && sub === "end" && args.length === 1) {
+    changed(
+      await db.run("UPDATE line_assignment SET active = 0, effective_to = ? WHERE id = ? AND active = 1", nowIso(), Number(args[0])),
+      `assignment #${args[0]} ended`,
+    );
+  } else if (cmd === "user" && sub === "add" && args.length === 3) {
     await requireActiveDepartment(args[1]);
     const r = (await db.run("INSERT INTO app_user (name, department_code, role, active, source, created_at) VALUES (?, ?, ?, 1, 'ADMIN', ?)", args[0], args[1], args[2], nowIso()));
     console.log(`OK: user #${r.lastInsertRowid} "${args[0]}" ${args[1]} ${args[2]} (no login; the person can register separately)`);

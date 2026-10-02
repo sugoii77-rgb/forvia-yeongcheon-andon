@@ -24,7 +24,10 @@
     "masterdata": "node scripts/masterdata.ts",
     "test:auth": "node scripts/test-auth.ts",
     "test:google": "node scripts/test-google.ts",
-    "db:migrate": "node scripts/db-migrate.ts"
+    "db:migrate": "node scripts/db-migrate.ts",
+    "import:uap": "node scripts/import-uap.ts",
+    "test:lines": "node scripts/test-lines.ts",
+    "db:verify-remote-migration": "node scripts/verify-remote-migration.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",
@@ -40,6 +43,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.8",
+    "exceljs": "^4.4.0",
     "jose": "6.2.12",
     "typescript": "^5"
   }

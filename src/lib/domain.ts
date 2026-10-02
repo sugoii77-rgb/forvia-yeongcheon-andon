@@ -174,10 +174,42 @@ export interface NotificationLogEntry {
 export interface MasterData {
   plant: string;
   plants: { code: string; name: string; nameKo: string }[];
-  lines: { code: string; name: string; plantCode: string }[];
-  processes: { id: number; lineCode: string; name: string }[];
+  /** UAP areas (AP-1 … RESO). Public: codes and names only. */
+  uapAreas: { code: string; name: string }[];
+  /** uapAreaCode null = prototype line. No people / ownership here (public endpoint). */
+  lines: { code: string; name: string; plantCode: string; uapAreaCode: string | null }[];
+  /** placeholder = "공정 미지정" stand-in for a line whose process master is not available yet. */
+  processes: { id: number; lineCode: string; name: string; placeholder: boolean }[];
   categories: { code: string; nameKo: string; nameEn: string; defaultDepartment: string }[];
   /** Active operational departments, in display order. */
   departments: { code: string; displayCode: string; label: string; nameKo: string; nameEn: string }[];
   roles: { code: RoleCode; nameKo: string; nameEn: string; canRespond: boolean; escalationLevel: number | null }[];
+}
+
+/** Roles that may see the line ownership master (/admin/lines). Assigned by an administrator only. */
+export const OWNERSHIP_VIEW_ROLES: readonly RoleCode[] = ["GAP_LEADER", "SUPERVISOR", "ENGINEER", "PLANT_MANAGER"];
+
+/** A person in line-ownership data: id and name only — never contact fields. */
+export interface LinePerson {
+  userId: number;
+  name: string;
+}
+
+/** Line → Supervisor + GAP leader per shift (actor ownership, not the responsible department). */
+export interface LineOwnership {
+  lineCode: string;
+  lineName: string;
+  uapAreaCode: string | null;
+  lineActive: boolean;
+  supervisor: LinePerson | null;
+  gapLeaders: Record<string, LinePerson | null>;
+  /** Shift used for currentGapLeader; null = not known (shift clock times are not configured). */
+  shift: string | null;
+  currentGapLeader: LinePerson | null;
+}
+
+export interface LineOwnershipList {
+  shifts: { code: string; nameKo: string; startTime: string | null; endTime: string | null }[];
+  areas: { code: string; name: string }[];
+  lines: LineOwnership[];
 }

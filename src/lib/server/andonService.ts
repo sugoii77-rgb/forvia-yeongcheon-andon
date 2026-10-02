@@ -108,10 +108,12 @@ export async function getMasterData(): Promise<MasterData> {
   return {
     plant: plants[0]?.name ?? "",
     plants,
-    lines: (await db.all("SELECT code, name, plant_code FROM line WHERE active = 1 ORDER BY sort_order"))
-      .map((r) => ({ code: r.code as string, name: r.name as string, plantCode: r.plant_code as string })),
-    processes: (await db.all("SELECT id, line_code, name FROM process WHERE active = 1 ORDER BY line_code, sort_order"))
-      .map((r) => ({ id: r.id as number, lineCode: r.line_code as string, name: r.name as string })),
+    uapAreas: (await db.all("SELECT code, name FROM uap_area WHERE active = 1 ORDER BY sort_order"))
+      .map((r) => ({ code: r.code as string, name: r.name as string })),
+    lines: (await db.all("SELECT code, name, plant_code, uap_area_code FROM line WHERE active = 1 ORDER BY sort_order"))
+      .map((r) => ({ code: r.code as string, name: r.name as string, plantCode: r.plant_code as string, uapAreaCode: (r.uap_area_code as string | null) ?? null })),
+    processes: (await db.all("SELECT id, line_code, name, placeholder FROM process WHERE active = 1 ORDER BY line_code, sort_order"))
+      .map((r) => ({ id: r.id as number, lineCode: r.line_code as string, name: r.name as string, placeholder: r.placeholder === 1 })),
     categories: (await db.all("SELECT code, name_ko, name_en, default_department FROM category WHERE active = 1 ORDER BY sort_order"))
       .map((r) => ({
         code: r.code as string,

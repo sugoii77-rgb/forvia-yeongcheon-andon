@@ -14,10 +14,13 @@ import {
   ESCALATION_STEPS,
   LEGACY_DEPARTMENT_SUCCESSORS,
   LINES,
+  PLACEHOLDER_PROCESS_NAME,
   PLANTS,
   PROCESSES,
   ROLES,
   ROUTING_RULES,
+  SHIFTS,
+  UAP_AREAS,
   USERS,
 } from "./masterData.ts";
 import { FileDriver, RemoteDriver, type Driver, type Param, type Sql } from "./sql.ts";
@@ -382,6 +385,60 @@ async function migrateV5(db: Sql) {
   `);
 }
 
+/**
+ * v6 — Yeongcheon line master + UAP line ownership (Supervisor / GAP leader by shift).
+ *  - uap_area (AP-1 … RESO); line.uap_area_code (NULL = prototype line without an area)
+ *  - process.placeholder: 1 = "공정 미지정" stand-in while the real process master is missing
+ *  - shift (A, B): start_time / end_time NULL until the plant confirms the clock times
+ *  - app_user.import_key: stable key of an employee created by the workbook import (no duplicates
+ *    when one person covers several lines or the import is repeated)
+ *  - line_assignment: line → employee as SUPERVISOR (no shift) or GAP_LEADER (shift A / B), with
+ *    effective_from / effective_to + active. Ownership (actor), NOT the responsible department —
+ *    routing_rule / category decide the department, unchanged.
+ * Additive only (new tables, nullable / defaulted columns): no existing row changes.
+ */
+async function migrateV6(db: Sql) {
+  await db.exec(`
+    CREATE TABLE uap_area (
+      code       TEXT PRIMARY KEY,
+      plant_code TEXT NOT NULL REFERENCES plant(code),
+      name       TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      active     INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
+    );
+    ALTER TABLE line ADD COLUMN uap_area_code TEXT REFERENCES uap_area(code);
+    ALTER TABLE process ADD COLUMN placeholder INTEGER NOT NULL DEFAULT 0 CHECK (placeholder IN (0, 1));
+    CREATE TABLE shift (
+      code       TEXT PRIMARY KEY,
+      name_ko    TEXT NOT NULL,
+      start_time TEXT,                       -- 'HH:MM' local time; NULL = not confirmed by the plant
+      end_time   TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      active     INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
+    );
+    ALTER TABLE app_user ADD COLUMN import_key TEXT;
+    CREATE UNIQUE INDEX idx_app_user_import_key ON app_user(import_key) WHERE import_key IS NOT NULL;
+    CREATE TABLE line_assignment (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      line_code       TEXT NOT NULL REFERENCES line(code),
+      user_id         INTEGER NOT NULL REFERENCES app_user(id),
+      assignment_role TEXT NOT NULL CHECK (assignment_role IN ('SUPERVISOR', 'GAP_LEADER')),
+      shift_code      TEXT REFERENCES shift(code),
+      effective_from  TEXT NOT NULL,
+      effective_to    TEXT,                  -- NULL = open-ended
+      active          INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      source          TEXT NOT NULL CHECK (source IN ('WORKBOOK', 'ADMIN')),
+      source_ref      TEXT,                  -- e.g. workbook file name
+      created_at      TEXT NOT NULL,
+      CHECK ((assignment_role = 'SUPERVISOR' AND shift_code IS NULL) OR (assignment_role = 'GAP_LEADER' AND shift_code IS NOT NULL)),
+      CHECK (effective_to IS NULL OR effective_to >= effective_from)
+    );
+    -- at most one ACTIVE supervisor per line and one ACTIVE GAP leader per line and shift
+    CREATE UNIQUE INDEX idx_line_assignment_current ON line_assignment(line_code, assignment_role, IFNULL(shift_code, '-')) WHERE active = 1;
+    CREATE INDEX idx_line_assignment_user ON line_assignment(user_id);
+  `);
+}
+
 const MIGRATIONS: { version: number; up: (db: Sql) => Promise<void>; foreignKeysOff?: boolean }[] = [
   { version: 1, up: (db) => db.exec(V1_SQL) },
   { version: 2, up: migrateV2 },
@@ -389,6 +446,7 @@ const MIGRATIONS: { version: number; up: (db: Sql) => Promise<void>; foreignKeys
   { version: 3, up: migrateV3, foreignKeysOff: true },
   { version: 4, up: migrateV4 },
   { version: 5, up: migrateV5 },
+  { version: 6, up: migrateV6 },
 ];
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
 
@@ -428,12 +486,13 @@ function backupBeforeMigration(conn: DatabaseSync, from: number) {
  * File databases are backed up first. A remote database (Turso) cannot switch foreign keys off, so a
  * migration that needs it (v3) can only run on a remote database that is still empty (fresh install).
  */
-export async function migrate(d: Driver, conn?: DatabaseSync): Promise<void> {
+/** Migrates to the current schema (`target` lower only in tests that need an older schema). */
+export async function migrate(d: Driver, conn?: DatabaseSync, target: number = SCHEMA_VERSION): Promise<void> {
   const current = await schemaVersion(d);
   if (current > SCHEMA_VERSION) {
     throw new Error(`Database schema v${current} is newer than this application (v${SCHEMA_VERSION}). Update the application; do not downgrade.`);
   }
-  const pending = MIGRATIONS.filter((m) => m.version > current);
+  const pending = MIGRATIONS.filter((m) => m.version > current && m.version <= target);
   if (pending.length === 0) return;
   if (d.kind === "remote" && current > 0 && pending.some((m) => m.foreignKeysOff)) {
     throw new Error("This migration rebuilds a referenced table and must run on a SQLite file copy, not on Turso.");
@@ -482,8 +541,17 @@ export async function seedMasterData(db: Sql): Promise<void> {
       c.code, c.nameKo, c.nameEn, c.defaultDepartment, c.sortOrder,
     );
   }
+  for (const a of UAP_AREAS) {
+    await db.run("INSERT OR IGNORE INTO uap_area (code, plant_code, name, sort_order) VALUES (?, 'YC', ?, ?)", a.code, a.name, a.sortOrder);
+  }
   for (const l of LINES) {
-    await db.run("INSERT OR IGNORE INTO line (code, name, sort_order, plant_code) VALUES (?, ?, ?, ?)", l.code, l.name, l.sortOrder, l.plantCode);
+    await db.run(
+      "INSERT OR IGNORE INTO line (code, name, sort_order, plant_code, uap_area_code) VALUES (?, ?, ?, ?, ?)",
+      l.code, l.name, l.sortOrder, l.plantCode, l.uapAreaCode ?? null,
+    );
+  }
+  for (const sh of SHIFTS) {
+    await db.run("INSERT OR IGNORE INTO shift (code, name_ko, sort_order) VALUES (?, ?, ?)", sh.code, sh.nameKo, sh.sortOrder);
   }
   // AUTOINCREMENT tables: "INSERT ... WHERE NOT EXISTS" instead of INSERT OR IGNORE, which would
   // consume an id from the sequence on every start-up even when the row already exists.
@@ -492,6 +560,15 @@ export async function seedMasterData(db: Sql): Promise<void> {
       `INSERT INTO process (line_code, name, sort_order) SELECT ?1, ?2, ?3
        WHERE NOT EXISTS (SELECT 1 FROM process WHERE line_code = ?1 AND name = ?2)`,
       p.lineCode, p.name, p.sortOrder,
+    );
+  }
+  // Real lines have no process master yet → one marked placeholder process each (see masterData.ts).
+  for (const l of LINES) {
+    if (!l.uapAreaCode) continue;
+    await db.run(
+      `INSERT INTO process (line_code, name, sort_order, placeholder) SELECT ?1, ?2, 0, 1
+       WHERE NOT EXISTS (SELECT 1 FROM process WHERE line_code = ?1)`,
+      l.code, PLACEHOLDER_PROCESS_NAME,
     );
   }
   for (const u of USERS) {

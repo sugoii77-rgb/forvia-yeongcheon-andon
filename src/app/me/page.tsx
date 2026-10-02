@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { TopBar } from "@/components/TopBar";
 import { api, useMe } from "@/lib/client";
+import { OWNERSHIP_VIEW_ROLES } from "@/lib/domain";
 import { GoogleLogin } from "@/components/GoogleLogin";
 
 export default function MePage() {
@@ -68,6 +69,9 @@ export default function MePage() {
             {error && <div className="alert alert-error">{error}</div>}
             <div className="row" style={{ marginTop: 12 }}>
               <Link className="btn btn-primary" href="/respond">내 부서 ANDON 보기</Link>
+              {user.active && OWNERSHIP_VIEW_ROLES.includes(user.role) && (
+                <Link className="btn" href="/admin/lines">라인 · 담당 기준정보</Link>
+              )}
               <button className="btn" onClick={logout} disabled={busy}>
                 {busy ? "로그아웃 중…" : "로그아웃"}
               </button>

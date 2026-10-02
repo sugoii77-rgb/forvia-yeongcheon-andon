@@ -110,7 +110,26 @@ npm run masterdata -- route add OTHER TGDI1 5 PCL "포장 라벨은 물류"   # 
 npm run masterdata -- route add MATERIAL MUF1 UAP            # 라인별 라우팅 규칙
 npm run masterdata -- route deactivate 3
 npm run masterdata -- category default SAFETY UAP            # 유형 기본 담당 부서
+npm run masterdata -- lines                                  # 라인별 감독자 · A/B조 GAP 리더 (이름만)
+npm run masterdata -- assign add AP1-MAIN1 SUPERVISOR 12     # 감독자 변경 (이전 배정은 종료, 이력 보존)
+npm run masterdata -- assign add AP1-MAIN1 GAP_LEADER A 15   # A조 GAP 리더 변경
+npm run masterdata -- assign end 40                          # 배정 종료
+npm run masterdata -- user set-login 12 hong@example.com     # 워크북으로 등록된 사람에게 로그인 부여 (재가입 금지: 중복 생성됨)
 ```
+
+**라인 · 담당자 일괄 반영 (워크북)** — 워크북은 개인정보가 있으므로 저장소에 넣지 마세요.
+
+```powershell
+npm run import:uap -- "C:\Users\<사용자>\Downloads\모바일 안돈시스템(261001) QC.xlsx" --dry-run   # 미리보기 (저장 안 함)
+npm run import:uap -- "C:\Users\<사용자>\Downloads\모바일 안돈시스템(261001) QC.xlsx"             # 반영
+```
+
+- 두 시트(개인정보, UAP(Line 구분))를 교차 확인합니다. 감독자 · 라인 · 구역이 다르면 **반영하지 않습니다**.
+  GAP 리더가 개인정보 시트에 더 넓게 적힌 경우는 경고로 표시하고 UAP 시트(라인별)를 따릅니다.
+- 연락처 · 사번 · Google/카카오 ID · 이메일은 읽지 않습니다. 같은 사람은 한 번만 등록됩니다. 다시 실행해도 안전합니다.
+- 라인 이름은 워크북 표기와 정확히 같아야 합니다(`npm run masterdata -- list` 의 line 표).
+- A/B 조 근무 시간이 정해지지 않아 "현재 근무조" GAP 리더는 아직 자동으로 정하지 않습니다.
+- 라인 담당(감독자/GAP 리더)은 **책임 부서와 별개**입니다. 책임 부서는 이상 유형 · 라우팅 규칙으로 정해집니다.
 
 - 부서 Departments: `ME` 생산기술, `MT` 보전, `UAP` 생산, `QC` 품질, `PCL` (표시 PC&L) 물류.
   이전 코드(QUALITY 등)는 비활성 상태로 이력에만 남아 있습니다.

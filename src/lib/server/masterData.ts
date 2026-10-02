@@ -63,10 +63,59 @@ export const CATEGORIES = [
   { code: "OTHER", nameKo: "기타", nameEn: "Other", defaultDepartment: "UAP", sortOrder: 6 },
 ];
 
-export const LINES = [
+/**
+ * UAP areas (production areas) of the Yeongcheon plant — source: workbook
+ * "모바일 안돈시스템(261001) QC.xlsx", sheets 개인정보 (column 부서-1) and UAP(Line 구분). Since schema v6.
+ */
+export const UAP_AREAS = [
+  { code: "AP-1", name: "AP-1", sortOrder: 1 },
+  { code: "AP-2", name: "AP-2", sortOrder: 2 },
+  { code: "AQ-1", name: "AQ-1", sortOrder: 3 },
+  { code: "AQ-2", name: "AQ-2", sortOrder: 4 },
+  { code: "AQ-3", name: "AQ-3", sortOrder: 5 },
+  { code: "BENDING", name: "BENDING", sortOrder: 6 },
+  { code: "RESO", name: "RESO", sortOrder: 7 },
+];
+
+/**
+ * Lines. The first three are the PROTOTYPE demo lines (no UAP area; demo events and tests use them).
+ * The others are the REAL Yeongcheon UAP lines from the workbook (schema v6); `name` is spelled exactly
+ * as in the workbook (it is the key the assignment import matches on). Codes are stable internal ids.
+ */
+export const LINES: { code: string; name: string; plantCode: string; sortOrder: number; uapAreaCode?: string }[] = [
   { code: "TGDI1", name: "T-GDI 1", plantCode: "YC", sortOrder: 1 },
   { code: "TGDI2", name: "T-GDI 2", plantCode: "YC", sortOrder: 2 },
   { code: "MUF1", name: "Muffler 1", plantCode: "YC", sortOrder: 3 },
+  ...(
+    [
+      ["AP-1", [["AP1-MAIN1", "Main #1"], ["AP1-MAIN2", "Main #2"], ["AP1-FRT", "FRT"], ["AP1-NX4-CTR", "NX4 CTR"], ["AP1-NX4-MAIN", "NX4 MAIN"], ["AP1-NX4-CTR2", "NX4 CTR #2"]]],
+      ["AP-2", [["AP2-CTR1", "CTR #1"], ["AP2-CTR2", "CTR #2"], ["AP2-MAIN3", "Main #3"], ["AP2-JX-ASSY", "JX ASSY"], ["AP2-JX-SUB", "JX SUB"], ["AP2-JX-LAMBDA-FRT", "JX LAMBDA FRT"]]],
+      ["AQ-1", [["AQ1-NUI1", "NU-I #1"], ["AQ1-NUI1-EXMANI", "NU-I #1 EXMANI"], ["AQ1-GPF", "GPF"], ["AQ1-NUI2", "NU-I #2"], ["AQ1-NUI2-EXMANI", "NU-I #2 EXMANI"]]],
+      ["AQ-2", [["AQ2-KAPPA16", "KAPPA 1.6"], ["AQ2-TURBO2-EU7", "TURBO #2 EU7"], ["AQ2-EXMANI1", "EXMANI #1"], ["AQ2-EXMANI2", "EXMANI #2"], ["AQ2-GAMMA2", "GAMMA #2"], ["AQ2-TURBO1", "TURBO#1"]]],
+      ["AQ-3", [["AQ3-GAMMA3", "GAMMA #3"], ["AQ3-UCC", "UCC"], ["AQ3-KAPPA-UCC", "KAPPA UCC"], ["AQ3-R-ENG", "R-ENG"], ["AQ3-STUFFING", "STUFFING"]]],
+      ["BENDING", [["BND-HE-BENDING", "HE BENDING"], ["BND-PIPE-CUTTING", "PIPE CUTTING"], ["BND-CE-BENDING", "CE BENDING"]]],
+      ["RESO", [["RESO-LOCKSEAM", "LOCKSEAM"], ["RESO-QX", "QX RESO"], ["RESO-CTR", "CTR RESO"], ["RESO-SX2", "SX2 RESO"], ["RESO-JX-NX4", "JX/NX4 RESO"]]],
+    ] as const
+  ).flatMap(([area, lines], ai) =>
+    lines.map(([code, name], li) => ({ code, name, plantCode: "YC", sortOrder: 100 * (ai + 1) + li + 1, uapAreaCode: area })),
+  ),
+];
+
+/**
+ * The real lines have NO process master yet (pending plant input). andon_event.process_id is required,
+ * so each real line gets ONE clearly marked placeholder process (process.placeholder = 1). It is not a
+ * real process: replace it when the plant provides the Line → Process master.
+ */
+export const PLACEHOLDER_PROCESS_NAME = "공정 미지정";
+
+/**
+ * Shifts. A and B are the shift assignments of the GAP leaders in the workbook. Clock times are NOT
+ * known yet (pending plant decision) → start_time / end_time stay NULL and the application never
+ * guesses which shift is currently on duty.
+ */
+export const SHIFTS = [
+  { code: "A", nameKo: "A조", sortOrder: 1 },
+  { code: "B", nameKo: "B조", sortOrder: 2 },
 ];
 
 export const PROCESSES: { lineCode: string; name: string; sortOrder: number }[] = [

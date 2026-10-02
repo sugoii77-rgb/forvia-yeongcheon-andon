@@ -18,7 +18,7 @@ export default function OperatorPage() {
 
   // Station defaults are remembered per device (tablets are usually fixed to one line).
   const [lineCode, setLineCode] = useStoredState("andon.operator.line", "");
-  const [processId, setProcessId] = useStoredState("andon.operator.process", "");
+  const [chosenProcessId, setProcessId] = useStoredState("andon.operator.process", "");
   const [operator, setOperator] = useStoredState("andon.operator.name", "");
   const [categoryCode, setCategoryCode] = useState("");
   const [description, setDescription] = useState("");
@@ -93,7 +93,16 @@ export default function OperatorPage() {
   }
 
   const processes = meta?.processes.filter((p) => p.lineCode === lineCode) ?? [];
+  // A real line without a process master has exactly one placeholder process: chosen automatically.
+  const onlyPlaceholder = processes.length === 1 && processes[0].placeholder;
+  const processId = onlyPlaceholder ? String(processes[0].id) : chosenProcessId;
   const validProcess = processes.some((p) => String(p.id) === processId);
+  // Lines grouped by UAP area (prototype lines without an area last).
+  const lineGroups = meta
+    ? [...meta.uapAreas.map((a) => ({ key: a.code, title: a.name })), { key: "", title: "시범 라인 (Prototype)" }]
+        .map((g) => ({ ...g, lines: meta.lines.filter((l) => (l.uapAreaCode ?? "") === g.key) }))
+        .filter((g) => g.lines.length > 0)
+    : [];
 
   async function submit() {
     if (state.kind === "sending") return; // guard against double taps
@@ -209,25 +218,37 @@ export default function OperatorPage() {
           <>
             <div className="field">
               <span className="field-label">라인<span className="en">Line</span></span>
-              <div className="choices">
-                {meta.lines.map((l) => (
-                  <button
-                    key={l.code}
-                    type="button"
-                    className="choice"
-                    aria-pressed={lineCode === l.code}
-                    onClick={() => {
-                      setLineCode(l.code);
-                      setProcessId("");
-                    }}
-                  >
-                    {l.name}
-                  </button>
-                ))}
-              </div>
+              {lineGroups.map((g) => (
+                <div key={g.key || "prototype"} className="line-group">
+                  {lineGroups.length > 1 && <div className="line-group-title">{g.title}</div>}
+                  <div className="choices">
+                    {g.lines.map((l) => (
+                      <button
+                        key={l.code}
+                        type="button"
+                        className="choice"
+                        aria-pressed={lineCode === l.code}
+                        onClick={() => {
+                          setLineCode(l.code);
+                          setProcessId("");
+                        }}
+                      >
+                        {l.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
 
-            {lineCode && (
+            {lineCode && onlyPlaceholder && (
+              <div className="field">
+                <span className="field-label">공정<span className="en">Process</span></span>
+                <p className="muted" style={{ margin: 0 }}>{processes[0].name} — 이 라인의 공정 기준정보는 준비 중입니다.</p>
+              </div>
+            )}
+
+            {lineCode && !onlyPlaceholder && (
               <div className="field">
                 <span className="field-label">공정<span className="en">Process</span></span>
                 <div className="choices">
