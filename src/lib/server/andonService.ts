@@ -12,6 +12,7 @@ import {
 } from "../domain.ts";
 import { db, nowIso } from "./db.ts";
 import { AndonError, type AuditInfo } from "./errors.ts";
+import { shiftSnapshotForLine } from "./shiftService.ts";
 import { departmentAliases, departmentLabelMap, resolveResponsibility, validateResponder } from "./routingService.ts";
 
 export { AndonError, type AuditInfo };
@@ -260,6 +261,9 @@ export async function createEvent(input: CreateAndonInput): Promise<{ event: And
 
   const plant = (await db.get("SELECT p.name FROM line l JOIN plant p ON p.code = l.plant_code WHERE l.code = ?", input.lineCode)) as { name: string } | undefined;
   const createdAt = input.createdAt ?? nowIso();
+  // Shift context at creation (team, DAY/NIGHT, GAP leader / supervisor assignment). Never throws — an
+  // unresolved shift (e.g. anchor not configured) is stored as UNRESOLVED and the ANDON goes ahead.
+  const shift = await shiftSnapshotForLine(input.lineCode, createdAt);
   const id = await db.transaction(async () => {
     const prefix = `AND-${kstDateKey(createdAt)}-`;
     const last = (await db.get("SELECT id FROM andon_event WHERE id LIKE ? ORDER BY id DESC LIMIT 1", `${prefix}%`)) as { id: string } | undefined;
@@ -269,8 +273,10 @@ export async function createEvent(input: CreateAndonInput): Promise<{ event: And
     const resp = await resolveResponsibility(input.lineCode, input.processId, input.categoryCode);
 
     (await db.run(`INSERT INTO andon_event (id, plant, line_code, process_id, category_code, department_code, routing_rule_id,
-         description, photo_file, status, created_by, created_at, updated_at, client_request_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)`, newId,
+         description, photo_file, status, created_by, created_at, updated_at, client_request_id,
+         shift_status, shift_unresolved_reason, shift_team, shift_type, shift_operational_date, shift_start_at,
+         gap_leader_assignment_id, supervisor_assignment_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, newId,
       plant?.name ?? "",
       input.lineCode,
       input.processId,
@@ -282,7 +288,15 @@ export async function createEvent(input: CreateAndonInput): Promise<{ event: And
       createdBy,
       createdAt,
       createdAt,
-      input.clientRequestId ?? null));
+      input.clientRequestId ?? null,
+      shift.status,
+      shift.unresolvedReason,
+      shift.team,
+      shift.type,
+      shift.operationalDate,
+      shift.startAt,
+      shift.gapLeaderAssignmentId,
+      shift.supervisorAssignmentId));
     // Operators have no accounts yet: user_id stays NULL, the typed name is recorded as-is.
     await insertTransition(
       newId,

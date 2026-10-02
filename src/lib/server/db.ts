@@ -20,6 +20,7 @@ import {
   ROLES,
   ROUTING_RULES,
   SHIFTS,
+  SHIFT_SCHEDULES,
   UAP_AREAS,
   USERS,
 } from "./masterData.ts";
@@ -439,6 +440,60 @@ async function migrateV6(db: Sql) {
   `);
 }
 
+/**
+ * v7 — A/B shift schedule (confirmed rule: 12 h shifts 08:00 / 20:00 Asia/Seoul, weekly A/B swap at the
+ * Monday 08:00 DAY shift) + shift context snapshot on NEW ANDON events.
+ *  - shift_schedule: one row per plant with the rule and the ANCHOR (week Monday + DAY team). Anchor NULL =
+ *    not configured → automatic A/B determination is unavailable (SHIFT_SCHEDULE_NOT_ANCHORED)
+ *  - shift_schedule_audit: append-only log of anchor changes (who, when, old, new)
+ *  - andon_event.shift_*: snapshot at creation. NULL on events created before v7 (never back-filled);
+ *    shift_status UNRESOLVED + reason when the shift could not be resolved — the ANDON is created anyway.
+ * Additive only.
+ */
+async function migrateV7(db: Sql) {
+  await db.exec(`
+    CREATE TABLE shift_schedule (
+      plant_code         TEXT PRIMARY KEY REFERENCES plant(code),
+      time_zone          TEXT NOT NULL,
+      day_start          TEXT NOT NULL,          -- 'HH:MM' DAY shift start (inclusive)
+      night_start        TEXT NOT NULL,          -- 'HH:MM' NIGHT shift start (inclusive)
+      rotation_weekday   TEXT NOT NULL,          -- weekly A/B swap at this weekday's DAY shift start
+      anchor_week_monday TEXT,                   -- YYYY-MM-DD; NULL = not configured
+      anchor_day_team    TEXT REFERENCES shift(code),
+      updated_at         TEXT,
+      updated_by_user_id INTEGER REFERENCES app_user(id),
+      updated_by         TEXT,
+      CHECK ((anchor_week_monday IS NULL AND anchor_day_team IS NULL) OR (anchor_week_monday IS NOT NULL AND anchor_day_team IS NOT NULL))
+    );
+    CREATE TABLE shift_schedule_audit (
+      id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+      plant_code             TEXT NOT NULL REFERENCES plant(code),
+      changed_at             TEXT NOT NULL,
+      changed_by_user_id     INTEGER REFERENCES app_user(id),
+      changed_by             TEXT NOT NULL,      -- user name at that time, or 'CLI (administrator)'
+      source                 TEXT NOT NULL CHECK (source IN ('WEB', 'CLI')),
+      old_anchor_week_monday TEXT,
+      old_anchor_day_team    TEXT,
+      new_anchor_week_monday TEXT,
+      new_anchor_day_team    TEXT,
+      client_ip              TEXT,
+      user_agent             TEXT
+    );
+    CREATE TRIGGER trg_shift_audit_no_update BEFORE UPDATE ON shift_schedule_audit
+    BEGIN SELECT RAISE(ABORT, 'shift_schedule_audit is append-only'); END;
+    CREATE TRIGGER trg_shift_audit_no_delete BEFORE DELETE ON shift_schedule_audit
+    BEGIN SELECT RAISE(ABORT, 'shift_schedule_audit is append-only'); END;
+    ALTER TABLE andon_event ADD COLUMN shift_status TEXT CHECK (shift_status IN ('RESOLVED', 'UNRESOLVED'));
+    ALTER TABLE andon_event ADD COLUMN shift_unresolved_reason TEXT;
+    ALTER TABLE andon_event ADD COLUMN shift_team TEXT CHECK (shift_team IN ('A', 'B'));
+    ALTER TABLE andon_event ADD COLUMN shift_type TEXT CHECK (shift_type IN ('DAY', 'NIGHT'));
+    ALTER TABLE andon_event ADD COLUMN shift_operational_date TEXT;
+    ALTER TABLE andon_event ADD COLUMN shift_start_at TEXT;
+    ALTER TABLE andon_event ADD COLUMN gap_leader_assignment_id INTEGER REFERENCES line_assignment(id);
+    ALTER TABLE andon_event ADD COLUMN supervisor_assignment_id INTEGER REFERENCES line_assignment(id);
+  `);
+}
+
 const MIGRATIONS: { version: number; up: (db: Sql) => Promise<void>; foreignKeysOff?: boolean }[] = [
   { version: 1, up: (db) => db.exec(V1_SQL) },
   { version: 2, up: migrateV2 },
@@ -447,6 +502,7 @@ const MIGRATIONS: { version: number; up: (db: Sql) => Promise<void>; foreignKeys
   { version: 4, up: migrateV4 },
   { version: 5, up: migrateV5 },
   { version: 6, up: migrateV6 },
+  { version: 7, up: migrateV7 },
 ];
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
 
@@ -552,6 +608,13 @@ export async function seedMasterData(db: Sql): Promise<void> {
   }
   for (const sh of SHIFTS) {
     await db.run("INSERT OR IGNORE INTO shift (code, name_ko, sort_order) VALUES (?, ?, ?)", sh.code, sh.nameKo, sh.sortOrder);
+  }
+  // Rule only — the anchor is NEVER seeded (it must be configured by an authorized administrator).
+  for (const sc of SHIFT_SCHEDULES) {
+    await db.run(
+      "INSERT OR IGNORE INTO shift_schedule (plant_code, time_zone, day_start, night_start, rotation_weekday) VALUES (?, ?, ?, ?, ?)",
+      sc.plantCode, sc.rule.timeZone, sc.rule.dayStart, sc.rule.nightStart, sc.rule.rotationWeekday,
+    );
   }
   // AUTOINCREMENT tables: "INSERT ... WHERE NOT EXISTS" instead of INSERT OR IGNORE, which would
   // consume an id from the sequence on every start-up even when the row already exists.

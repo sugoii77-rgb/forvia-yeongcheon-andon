@@ -159,7 +159,7 @@ async function checksum(sql: string) {
 
 async function partA() {
   console.log(`A) Line master + ownership (isolated DB ${path.relative(process.cwd(), process.env.DATABASE_PATH!)})`);
-  check(Number((await db.get("PRAGMA user_version"))?.user_version) === SCHEMA_VERSION && SCHEMA_VERSION === 6, `schema v${SCHEMA_VERSION}`);
+  check(Number((await db.get("PRAGMA user_version"))?.user_version) === SCHEMA_VERSION && SCHEMA_VERSION >= 6, `schema v${SCHEMA_VERSION} (line master since v6)`);
 
   // line master
   check(REAL_LINES.length === 36, "36 real UAP lines in the line master definition");
@@ -351,10 +351,13 @@ async function partB() {
   // rows that exist before the migration (seeding afterwards may ADD rows, e.g. the 36 new lines)
   const maxRowid: Record<string, number> = {};
   for (const t of tables) maxRowid[t] = Number((await d.get(`SELECT IFNULL(MAX(rowid), 0) AS m FROM "${t}"`))!.m);
+  // columns as they exist BEFORE the migration (later migrations only add columns)
+  const oldCols: Record<string, string[]> = {};
+  for (const t of tables) oldCols[t] = (await d.all(`PRAGMA table_info("${t}")`)).map((c) => `"${c.name as string}"`);
   const snap = async () => {
     const out: Record<string, string> = {};
     for (const t of tables) {
-      const cols = (await d.all(`PRAGMA table_info("${t}")`)).map((c) => `"${c.name as string}"`).filter((c) => !["\"uap_area_code\"", "\"placeholder\"", "\"import_key\""].includes(c));
+      const cols = oldCols[t];
       out[t] = crypto.createHash("sha256").update(JSON.stringify(await d.all(`SELECT ${cols.join(",")} FROM "${t}" WHERE rowid <= ${maxRowid[t]} ORDER BY rowid`))).digest("hex");
     }
     return out;
@@ -364,7 +367,7 @@ async function partB() {
   await d.exec("PRAGMA user_version = 1").then(() => check(false, "emulation rejects user_version writes"), () => check(true, "emulation rejects user_version writes (like Turso)"));
   await migrate(d);
   await d.transaction(() => seedMasterData(d));
-  check((await schemaVersion(d)) === 6, "migrated v5 → v6 through the remote driver");
+  check((await schemaVersion(d)) === SCHEMA_VERSION, `migrated v5 → v${SCHEMA_VERSION} (incl. v6 line master) through the remote driver`);
   check(JSON.stringify(await snap()) === JSON.stringify(before), `all ${counts} existing rows / columns unchanged (events, history, notifications, users, routing, lines, processes)`);
   check((await d.all("PRAGMA foreign_key_check")).length === 0, "foreign keys OK after migration");
   check(Number((await d.get("SELECT COUNT(*) AS n FROM line WHERE uap_area_code IS NOT NULL"))!.n) === 36, "line master seeded (36 real lines)");

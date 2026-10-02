@@ -2,6 +2,7 @@
 // Inserted with INSERT OR IGNORE on DB start-up, so edits made in the DB (or with
 // `npm run masterdata`) are never overwritten. Changing a value here does NOT change an existing DB.
 import type { RoleCode } from "../domain.ts";
+import { YEONGCHEON_SHIFT_RULE, type ShiftRule } from "../shiftSchedule.ts";
 
 export const PLANTS = [{ code: "YC", name: "Yeongcheon", nameKo: "영천" }];
 /** Plant name stored on each event (single-plant prototype). */
@@ -109,14 +110,21 @@ export const LINES: { code: string; name: string; plantCode: string; sortOrder: 
 export const PLACEHOLDER_PROCESS_NAME = "공정 미지정";
 
 /**
- * Shifts. A and B are the shift assignments of the GAP leaders in the workbook. Clock times are NOT
- * known yet (pending plant decision) → start_time / end_time stay NULL and the application never
- * guesses which shift is currently on duty.
+ * Shift TEAMS A and B (the GAP leaders' shift assignment in the workbook). A team has no fixed clock
+ * time — teams rotate DAY / NIGHT weekly — so shift.start_time / end_time stay NULL; the DAY / NIGHT
+ * times and the weekly rotation are in shift_schedule (SHIFT_SCHEDULES below, schema v7).
  */
 export const SHIFTS = [
   { code: "A", nameKo: "A조", sortOrder: 1 },
   { code: "B", nameKo: "B조", sortOrder: 2 },
 ];
+
+/**
+ * Shift schedule rule per plant (schema v7) — confirmed by the plant 2026-10-02: 12-hour shifts,
+ * DAY 08:00 / NIGHT 20:00, Asia/Seoul, A/B swap DAY/NIGHT weekly at the Monday 08:00 DAY shift.
+ * The ANCHOR (which team has DAY in a given week) is not known yet and is NOT seeded.
+ */
+export const SHIFT_SCHEDULES: { plantCode: string; rule: ShiftRule }[] = [{ plantCode: "YC", rule: YEONGCHEON_SHIFT_RULE }];
 
 export const PROCESSES: { lineCode: string; name: string; sortOrder: number }[] = [
   { lineCode: "TGDI1", name: "WCC Canning", sortOrder: 1 },

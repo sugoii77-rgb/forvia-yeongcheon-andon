@@ -24,6 +24,9 @@
 //   assign add <LINE> GAP_LEADER <A|B> <user>    set the line's GAP leader of shift A / B
 //   assign end <assignmentId>                    end an assignment (kept as history)
 //   (bulk: npm run import:uap -- <workbook.xlsx>)
+//   shift show                                   A/B shift rule, anchor, current shift / team, anchor audit log
+//   shift anchor <YYYY-MM-DD> <A|B>              set the anchor: a MONDAY and the team on DAY shift in that
+//                                                week (confirm with UAP first!). Audited (who / when / old / new)
 //   route add <CATEGORY> <LINE> [<processId>] <DEPARTMENT> ["note"]
 //   route deactivate <ruleId> | route activate <ruleId>
 //   category default <CATEGORY> <DEPARTMENT>     department used when no routing rule matches
@@ -116,6 +119,25 @@ const [cmd, sub, ...args] = process.argv.slice(2);
 try {
   if (!cmd || cmd === "list") await list();
   else if (cmd === "lines") await lines();
+  else if (cmd === "shift" && (sub === "show" || !sub)) {
+    const { getShiftConfig, currentShift, listShiftAudit } = await import("../src/lib/server/shiftService.ts");
+    const c = await getShiftConfig();
+    console.log(`rule    : ${c.rule.timeZone}, DAY ${c.rule.dayStart} / NIGHT ${c.rule.nightStart}, weekly A/B swap at ${c.rule.rotationWeekday} ${c.rule.dayStart}`);
+    console.log(`anchor  : ${c.anchor.anchorWeekMonday ? `week of ${c.anchor.anchorWeekMonday}, DAY team ${c.anchor.anchorDayTeam} (set ${c.updatedAt} by ${c.updatedBy})` : "NOT CONFIGURED — automatic A/B determination unavailable"}`);
+    const now = await currentShift();
+    console.log(now.ok
+      ? `now     : ${now.shiftType} of ${now.operationalDate}, team ${now.activeTeam} (DAY ${now.dayTeam} / NIGHT ${now.nightTeam}), next change ${now.nextChangeAt}, next A/B swap ${now.nextRotationAt}`
+      : `now     : ${now.code}`);
+    table("anchor audit (newest first)", (await listShiftAudit(20)).map((a) => ({ id: a.id, changed_at: a.changedAt, by: a.changedBy, source: a.source, old: `${a.old.anchorWeekMonday ?? "-"} ${a.old.anchorDayTeam ?? ""}`, new: `${a.new.anchorWeekMonday} ${a.new.anchorDayTeam}` })));
+  } else if (cmd === "shift" && sub === "anchor" && args.length === 2) {
+    const os = await import("node:os");
+    const { setShiftAnchor } = await import("../src/lib/server/shiftService.ts");
+    const r = await setShiftAnchor(
+      { anchorWeekMonday: args[0], anchorDayTeam: args[1].toUpperCase() as "A" | "B" },
+      { userId: null, name: `CLI administrator (${os.userInfo().username})`, source: "CLI" },
+    );
+    console.log(r.changed ? `OK: anchor = week of ${args[0]}, DAY team ${args[1].toUpperCase()} (audited)` : "No change: the anchor already has this value.");
+  }
   else if (cmd === "line" && (sub === "activate" || sub === "deactivate") && args.length === 1) {
     changed(await db.run("UPDATE line SET active = ? WHERE code = ?", sub === "activate" ? 1 : 0, args[0]), `line ${args[0]} ${sub}d`);
   }
