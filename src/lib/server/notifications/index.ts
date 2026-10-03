@@ -1,11 +1,13 @@
 // Notification layer. ANDON business logic only calls `notifyAndonCreated(event)`.
-// To add KakaoTalk: implement NotificationProvider in kakaoProvider.ts and
-// register it in createProvider() below. No other code needs to change.
-import type { AndonEvent } from "../../domain";
-import { db, nowIso } from "../db";
-import { primaryRecipients } from "../routingService";
+// Providers: "mock" (log only) and "kakao" (KakaoTalk "send to me" — each employee links their own
+// Kakao account on /me; see ../kakaoNotify.ts). Selected by NOTIFICATION_PROVIDER.
+import type { AndonEvent } from "../../domain.ts";
+import { db, nowIso } from "../db.ts";
+import { sendKakaoMemoTo } from "../kakaoNotify.ts";
+import { primaryRecipients } from "../routingService.ts";
 
 export interface NotificationRecipient {
+  userId: number;
   name: string;
   departmentCode: string;
   /** Provider-specific address (e.g. Kakao user id). Null for the mock provider. */
@@ -31,12 +33,32 @@ class MockNotificationProvider implements NotificationProvider {
   }
 }
 
+/** KakaoTalk memo ("나에게 보내기") into the recipient's own chat. Needs a verified KAKAO channel. */
+class KakaoMemoProvider implements NotificationProvider {
+  readonly name = "kakao";
+  async send(recipient: NotificationRecipient, message: NotificationMessage) {
+    if (!recipient.address) throw new Error("카카오 알림 미연결 (KAKAO_NOT_LINKED)");
+    await sendKakaoMemoTo(recipient.userId, kakaoText(message), message.link);
+  }
+}
+
+/** ≤ 200 characters (Kakao text template limit); the link is always kept in full. */
+export function kakaoText(m: NotificationMessage): string {
+  const room = 200 - m.link.length - 2;
+  let head = `${m.title}
+${m.body}`;
+  if (head.length > room) head = head.slice(0, Math.max(0, room - 1)) + "…";
+  return `${head}
+${m.link}`;
+}
+
 function createProvider(): NotificationProvider {
   const name = process.env.NOTIFICATION_PROVIDER || "mock";
   switch (name) {
     case "mock":
       return new MockNotificationProvider();
-    // case "kakao": return new KakaoNotificationProvider(process.env.KAKAO_...);
+    case "kakao":
+      return new KakaoMemoProvider();
     default:
       console.warn(`[notify] unknown NOTIFICATION_PROVIDER "${name}", falling back to mock`);
       return new MockNotificationProvider();
@@ -63,6 +85,7 @@ export function buildAndonMessage(event: AndonEvent): NotificationMessage {
  */
 async function resolveRecipients(event: AndonEvent): Promise<NotificationRecipient[]> {
   return (await primaryRecipients(event.departmentCode)).map((u) => ({
+    userId: u.id,
     name: u.name,
     departmentCode: u.departmentCode,
     address: u.kakaoRecipientId,

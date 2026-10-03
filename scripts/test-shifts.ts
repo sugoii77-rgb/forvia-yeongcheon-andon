@@ -265,7 +265,7 @@ async function partD() {
   `);
   check((await schemaVersion(d)) === 6, "remote-path database at v6 with an existing event");
   const old = JSON.stringify(await d.all("SELECT id, line_code, process_id, status, department_code, created_at FROM andon_event")) + JSON.stringify(await d.all("SELECT * FROM andon_transition"));
-  await migrate(d);
+  await migrate(d, undefined, 7);
   await d.transaction(() => seedMasterData(d));
   check((await schemaVersion(d)) === 7, "migrated v6 → v7 through the remote driver (version in schema_meta)");
   const after = JSON.stringify(await d.all("SELECT id, line_code, process_id, status, department_code, created_at FROM andon_event")) + JSON.stringify(await d.all("SELECT * FROM andon_transition"));

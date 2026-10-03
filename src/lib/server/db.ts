@@ -494,6 +494,39 @@ async function migrateV7(db: Sql) {
   `);
 }
 
+/**
+ * v8 — KakaoTalk "send to me" notifications (each employee links their own Kakao account once).
+ *  - kakao_link: per employee, the Kakao app user id and the OAuth tokens, ENCRYPTED (AES-256-GCM);
+ *    one Kakao account per employee and one employee per Kakao account
+ *  - kakao_link_flow: short-lived (10 min) one-time OAuth state, bound to the session that started it
+ *  The notification address itself stays in user_notification_channel (provider KAKAO, verified only
+ *  after a successful confirmation message). Additive only.
+ */
+async function migrateV8(db: Sql) {
+  await db.exec(`
+    CREATE TABLE kakao_link (
+      user_id            INTEGER PRIMARY KEY REFERENCES app_user(id),
+      kakao_user_id      TEXT NOT NULL UNIQUE,
+      access_token_enc   TEXT NOT NULL,
+      access_expires_at  TEXT NOT NULL,
+      refresh_token_enc  TEXT NOT NULL,
+      refresh_expires_at TEXT,
+      scope              TEXT,
+      linked_at          TEXT NOT NULL,
+      updated_at         TEXT NOT NULL,
+      last_sent_at       TEXT,
+      last_error         TEXT
+    );
+    CREATE TABLE kakao_link_flow (
+      state_hash   TEXT PRIMARY KEY,
+      user_id      INTEGER NOT NULL REFERENCES app_user(id),
+      session_hash TEXT NOT NULL,
+      created_at   TEXT NOT NULL,
+      expires_at   TEXT NOT NULL
+    );
+  `);
+}
+
 const MIGRATIONS: { version: number; up: (db: Sql) => Promise<void>; foreignKeysOff?: boolean }[] = [
   { version: 1, up: (db) => db.exec(V1_SQL) },
   { version: 2, up: migrateV2 },
@@ -503,6 +536,7 @@ const MIGRATIONS: { version: number; up: (db: Sql) => Promise<void>; foreignKeys
   { version: 5, up: migrateV5 },
   { version: 6, up: migrateV6 },
   { version: 7, up: migrateV7 },
+  { version: 8, up: migrateV8 },
 ];
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
 
