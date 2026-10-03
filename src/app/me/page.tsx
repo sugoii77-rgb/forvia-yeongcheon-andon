@@ -6,6 +6,7 @@ import { TopBar } from "@/components/TopBar";
 import { api, useMe } from "@/lib/client";
 import { OWNERSHIP_VIEW_ROLES } from "@/lib/domain";
 import { GoogleLogin } from "@/components/GoogleLogin";
+import { KakaoNotify } from "@/components/KakaoNotify";
 
 export default function MePage() {
   const router = useRouter();
@@ -81,6 +82,7 @@ export default function MePage() {
             </div>
           </div>
         )}
+        {user?.active && <KakaoNotify />}
       </main>
     </>
   );

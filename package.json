@@ -30,7 +30,8 @@
     "db:verify-remote-migration": "node scripts/verify-remote-migration.ts",
     "verify:lines": "node scripts/verify-line-import.ts",
     "test:shifts": "node scripts/test-shifts.ts",
-    "test:display": "node scripts/test-display.ts"
+    "test:display": "node scripts/test-display.ts",
+    "test:kakao": "node scripts/test-kakao.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",
