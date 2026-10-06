@@ -7,6 +7,7 @@ import { api, useMe } from "@/lib/client";
 import { OWNERSHIP_VIEW_ROLES } from "@/lib/domain";
 import { GoogleLogin } from "@/components/GoogleLogin";
 import { KakaoNotify } from "@/components/KakaoNotify";
+import { PasswordChange } from "@/components/PasswordChange";
 
 export default function MePage() {
   const router = useRouter();
@@ -83,6 +84,7 @@ export default function MePage() {
           </div>
         )}
         {user?.active && <KakaoNotify />}
+        {user?.active && user.email && <PasswordChange />}
       </main>
     </>
   );

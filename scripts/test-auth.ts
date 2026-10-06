@@ -86,6 +86,31 @@ async function main() {
   forged.cookie = `andon_session=${crypto.randomBytes(32).toString("base64url")}`;
   check((await me(forged)) === null, "invalid / unknown session token → not logged in");
 
+  // password change (own account, from the session)
+  const pwAcc = await registerAccount("QC", "auth-pwchange");
+  const pwA = new Client("pw-a");
+  const pwB = new Client("pw-b");
+  await login(pwA, pwAcc.email, pwAcc.password);
+  await login(pwB, pwAcc.email, pwAcc.password);
+  const NEWPW = `Nw${crypto.randomBytes(6).toString("hex")}8`;
+  const chg = (c: Client, body: Record<string, unknown>, headers: Record<string, string> = {}) => c.request("POST", "/api/auth/password", body, headers);
+  const good = { currentPassword: pwAcc.password, newPassword: NEWPW, newPasswordConfirm: NEWPW };
+  check((await chg(new Client("anon"), good)).status === 401, "password change without login → 401");
+  const pwEvil = await chg(pwA, good, { origin: "http://evil.example" });
+  check(pwEvil.status === 403 && pwEvil.body.code === "BAD_ORIGIN", `password change from a foreign Origin → 403 (${pwEvil.body.code})`);
+  const pwWrong = await chg(pwA, { ...good, currentPassword: "wrongpass1" });
+  check(pwWrong.status === 400 && pwWrong.body.code === "WRONG_CURRENT_PASSWORD", `wrong current password → 400 (${pwWrong.body.code})`);
+  const pwWeak = await chg(pwA, { ...good, newPassword: "short1", newPasswordConfirm: "short1" });
+  check(pwWeak.status === 400 && pwWeak.body.code === "INVALID_PASSWORD", `weak new password → 400 (${pwWeak.body.code})`);
+  const pwMis = await chg(pwA, { ...good, newPasswordConfirm: `${NEWPW}x` });
+  check(pwMis.status === 400 && pwMis.body.code === "PASSWORD_MISMATCH", `new password confirmation mismatch → 400 (${pwMis.body.code})`);
+  const pwSame = await chg(pwA, { ...good, newPassword: pwAcc.password, newPasswordConfirm: pwAcc.password });
+  check(pwSame.status === 400 && pwSame.body.code === "SAME_PASSWORD", `new = current password → 400 (${pwSame.body.code})`);
+  const pwOk = await chg(pwA, good);
+  check(pwOk.status === 200 && !leaksSecret(pwOk.raw, NEWPW) && !pwOk.raw.includes(pwAcc.password), `password changed → 200, no secrets in response (${pwOk.status})`);
+  check((await me(pwA))?.email === pwAcc.email && (await me(pwB)) === null, "after the change: this session stays logged in, the other session is ended");
+  check((await login(new Client("x"), pwAcc.email, pwAcc.password)).status === 401 && (await login(new Client("x"), pwAcc.email, NEWPW)).status === 200, "old password rejected, new password accepted");
+
   const evil = await login(new Client("csrf"), email("valid"), PW, { origin: "http://evil.example" });
   check(evil.status === 403 && evil.body.code === "BAD_ORIGIN", `cross-site login request (foreign Origin) → 403 (${evil.status})`);
 

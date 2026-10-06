@@ -294,3 +294,48 @@ export function assertSameOrigin(req: Request) {
   }
   if (host !== req.headers.get("host")) throw new AndonError(403, "허용되지 않은 요청입니다.", "BAD_ORIGIN");
 }
+
+// ---------------------------------------------------------------- password change
+
+export interface PasswordChangeInput {
+  currentPassword: unknown;
+  newPassword: unknown;
+  newPasswordConfirm: unknown;
+}
+
+/**
+ * The logged-in user changes their own LOCAL password (e.g. after an administrator reset). The current
+ * password is required and counts towards the login throttle. All OTHER sessions of the user are ended;
+ * the session making the change stays logged in.
+ */
+export async function changePassword(req: Request, input: PasswordChangeInput, audit: AuditInfo): Promise<void> {
+  const user = await getSessionUser(req);
+  if (!user) throw new AndonError(401, "로그인이 필요합니다.", "AUTH_REQUIRED");
+  if (!user.active) throw new AndonError(403, "비활성(사용 중지)된 계정입니다. 관리자에게 문의하세요.", "ACCOUNT_INACTIVE");
+  const row = (await db.get("SELECT subject, password_hash FROM user_identity WHERE user_id = ? AND provider = 'LOCAL'", user.id)) as
+    | { subject: string; password_hash: string | null }
+    | undefined;
+  if (!row?.password_hash) throw new AndonError(400, "이 계정에는 이메일·비밀번호 로그인이 없습니다.", "NO_LOCAL_LOGIN");
+
+  const current = typeof input.currentPassword === "string" ? input.currentPassword : "";
+  const next = typeof input.newPassword === "string" ? input.newPassword : "";
+  const confirm = typeof input.newPasswordConfirm === "string" ? input.newPasswordConfirm : "";
+  const key = throttleKey(row.subject, audit.clientIp);
+  await assertNotLocked(key);
+  if (!(await verifyPassword(current, row.password_hash))) {
+    await recordFailure(key);
+    throw new AndonError(400, "현재 비밀번호가 올바르지 않습니다.", "WRONG_CURRENT_PASSWORD");
+  }
+  await clearFailures(key);
+  validatePassword(next);
+  if (next !== confirm) throw new AndonError(400, "새 비밀번호 확인이 일치하지 않습니다.", "PASSWORD_MISMATCH");
+  if (next === current) throw new AndonError(400, "현재 비밀번호와 다른 비밀번호를 입력하세요.", "SAME_PASSWORD");
+
+  const hash = await hashPassword(next);
+  const keep = sha256(readCookie(req, SESSION_COOKIE) ?? "");
+  await db.transaction(async () => {
+    await db.run("UPDATE user_identity SET password_hash = ? WHERE user_id = ? AND provider = 'LOCAL'", hash, user.id);
+    await db.run("UPDATE user_session SET revoked_at = ? WHERE user_id = ? AND token_hash <> ? AND revoked_at IS NULL", nowIso(), user.id, keep);
+  });
+  console.info(`[auth] user #${user.id} changed password`);
+}
