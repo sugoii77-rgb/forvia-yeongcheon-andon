@@ -3,7 +3,7 @@
 > **Source of truth for AI-to-AI and human handover.** Update this file at the end of every
 > meaningful milestone (sections 11–16 at minimum).
 >
-> Last updated: **2026-10-03** · **KakaoTalk "send to me" notifications (schema v8) — deployed 2026-10-03; each employee links their own Kakao account on `/me`** · **Shop-floor display v2 (plant map on `/dashboard`) — deployed 2026-10-02; 35 / 36 lines placed, JX/NX4 RESO awaiting position decision** · **A/B shift schedule (schema v7) — deployed 2026-10-02 (Turso + Vercel and local plant DB on v7); anchor NOT configured (awaiting plant confirmation)** · Milestone 1 — **done** · Milestone 2 — H1 + H2 done · 2A routing foundation — done · 2B registration & authentication — done · **Google authentication provider — done (offline-tested; real Google not yet configured)** · Vercel / Turso cloud demo · **Line master + UAP line ownership (schema v6) — done** · NEXT: Reaction Rules (Appendix A, not started — waits for Process / Trigger master and OBD answers)
+> Last updated: **2026-10-03** · **KakaoTalk "send to me" notifications (schema v8) — deployed 2026-10-03; each employee links their own Kakao account on `/me`** · **Shop-floor display v2 (plant map on `/dashboard`) — deployed 2026-10-02; all 36 / 36 lines placed** · **A/B shift schedule (schema v7) — deployed 2026-10-02 (Turso + Vercel and local plant DB on v7); anchor NOT configured (awaiting plant confirmation)** · Milestone 1 — **done** · Milestone 2 — H1 + H2 done · 2A routing foundation — done · 2B registration & authentication — done · **Google authentication provider — done (offline-tested; real Google not yet configured)** · Vercel / Turso cloud demo · **Line master + UAP line ownership (schema v6) — done** · NEXT: Reaction Rules (Appendix A, not started — waits for Process / Trigger master and OBD answers)
 
 ---
 
@@ -401,7 +401,9 @@ condition right now?" from several meters away. No schema change.
   abnormal tile grows into a readable card above its dimmed neighbours.
   **Plant decision 2026-10-06:** **R-ENG** → the R-DPF station; **STUFFING** → one station covering AUTO STUFFING #1 and #2
   (one DB line, both drawing cells merged).
-  Placed lines: **35 / 36** — still in the tray: **JX/NX4 RESO** (candidate NX4/JX MAIN RESO).
+  **Plant decision 2026-10-06:** **JX/NX4 RESO** → the NX4/JX MAIN RESO station. There is **no 'Muffler' line**: the prototype
+  line **Muffler 1** is LOCKSEAM — its ANDONs light the NX4/JX LOCK SEAM station (`aliasLineCodes`); history unchanged.
+  Placed lines: **36 / 36** — the tray only appears for an active ANDON on a line without a station.
 - **Colours (2026-10-02, UAP team-lead feedback):** zones and normal tiles use muted versions of the drawing colours
   (AQ rose, AP blue, sub-assembly / RESO olive). The **border** of an abnormal tile shows the problem type —
   품질 purple, 물류 blue, 설비 teal, 안전 white, 생산·기타 grey (legend in the side panel, colour dot in the active
@@ -807,8 +809,8 @@ answered by UAP and the real line / process master data has been delivered.
 **Pending plant inputs (plant map, 2026-10-02)**
 - [x] Stations of 9 of the 12 unmapped lines decided by the plant (2026-10-02)
 - [x] R-ENG → R-DPF, STUFFING → AUTO STUFFING #1 · #2 (plant decision 2026-10-06)
-- [ ] Remaining: JX/NX4 RESO (NX4/JX MAIN RESO?);
-      and confirm HE / CE BENDING = the AQ / AP BENDING cells of page 2
+- [x] JX/NX4 RESO → NX4/JX MAIN RESO; Muffler 1 = LOCKSEAM (alias) (plant decision 2026-10-06)
+- [ ] Confirm HE / CE BENDING = the AQ / AP BENDING cells of page 2
 - [ ] Meaning of the "CAPACITY LINE" label on page 2 (not drawn)
 - [x] KAPPA EU7 station = DB line "TURBO #2 EU7" (plant decision 2026-10-02; shown "KAPPA EURO7 · GAMMA T-GDI 1차")
 - [x] GAMMA T-GDI 2차 dedicated line = "GAMMA2 T-GDI" station = DB line "TURBO#1" (plant decision 2026-10-02)

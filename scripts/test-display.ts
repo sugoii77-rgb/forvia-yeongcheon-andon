@@ -112,8 +112,11 @@ function partB() {
   const demoEvent = ev("TGDI1", "OPEN", t(60));
   demoEvent.lineName = "T-GDI 1";
   const withDemo = placeLines(shown, [...events, demoEvent]);
-  const mufEvent = ev("MUF1", "IN_PROGRESS", t(50));
-  check(placeLines(shown, [mufEvent]).unplaced.some((l) => l.code === "MUF1") && !placeLines(shown, [ev("MUF1", "CLOSED", t(60), t(1))]).unplaced.some((l) => l.code === "MUF1"), "a demo line without a station appears (tray) ONLY while it has an active event — an alarm is never hidden");
+  const strayEvent = ev("XTEST", "IN_PROGRESS", t(50));
+  strayEvent.lineName = "Unknown test line";
+  check(placeLines(shown, [strayEvent]).unplaced.some((l) => l.code === "XTEST") && !placeLines(shown, [ev("XTEST", "CLOSED", t(60), t(1))]).unplaced.some((l) => l.code === "XTEST"), "a line without a station appears (tray) ONLY while it has an active event — an alarm is never hidden");
+  const lock = placeLines(shown, [ev("MUF1", "IN_PROGRESS", t(50))]);
+  check(!lock.unplaced.some((l) => l.code === "MUF1") && stationState(["RESO-LOCKSEAM", ...(lock.stations.find((s) => s.cell.id === "NX4JX-LOCKSEAM")!.cell.aliasLineCodes ?? [])], lineStates([ev("MUF1", "IN_PROGRESS", t(50))]))?.state === "ACTION", "plant 2026-10-06: Muffler 1 (no such line) = LOCKSEAM — its event lights the LOCK SEAM station, not the tray");
   check(lineStates([demoEvent]).get("TGDI1")?.state === "OPEN", "old event on a hidden demo line keeps its state (history intact)");
   const kappa = withDemo.stations.find((s) => s.cell.id === "KAPPA-EU7")!;
   const merged = stationState([kappa.line!.code, ...(kappa.cell.aliasLineCodes ?? [])], lineStates([...events, demoEvent, ev("AQ2-TURBO2-EU7", "ACKNOWLEDGED", t(2))]));
