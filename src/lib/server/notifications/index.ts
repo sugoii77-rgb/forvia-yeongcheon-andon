@@ -80,7 +80,8 @@ export function buildAndonMessage(event: AndonEvent): NotificationMessage {
 }
 
 /**
- * Initial recipients = active RESPONDER users of the event's responsible department
+ * Initial recipients of the event's responsible department (routingService.primaryRecipients: every
+ * member that may respond for HSE / ME / MT / QC, RESPONDER accounts for the other departments)
  * (decided by routingService; escalation roles are notified later, when escalation exists).
  */
 async function resolveRecipients(event: AndonEvent): Promise<NotificationRecipient[]> {

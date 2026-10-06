@@ -162,22 +162,34 @@ export async function eligibleResponders(eventDepartmentCode: string): Promise<R
 }
 
 /**
- * First responders of a department: receive the initial notification (escalation roles come later).
+ * Responsible departments whose EVERY member receives the initial ANDON notification — team leader
+ * included, any role that may respond (plant decision 2026-10-06: HSE, ME, MT, QC). Other departments
+ * (UAP, PC&L) notify their RESPONDER accounts only.
+ */
+export const ALL_MEMBER_NOTIFY_DEPARTMENTS: readonly string[] = ["HSE", "ME", "MT", "QC"];
+
+/**
+ * Receivers of the initial notification of a department (escalation comes later, with Reaction Rules):
+ * all members that may respond for ALL_MEMBER_NOTIFY_DEPARTMENTS, otherwise RESPONDER accounts.
  * The KakaoTalk address comes ONLY from a verified, active user_notification_channel row — never from
  * app_user.kakao_id, which is a manually typed contact reference and not a verified recipient.
  */
 export async function primaryRecipients(
   eventDepartmentCode: string,
 ): Promise<(ResponderSummary & { kakaoRecipientId: string | null })[]> {
+  const dept = await effectiveDepartment(eventDepartmentCode);
   return (
     await db.all(
       `SELECT u.id, u.name, u.department_code, u.role,
               (SELECT c.recipient_id FROM user_notification_channel c
                WHERE c.user_id = u.id AND c.provider = 'KAKAO' AND c.verified = 1 AND c.active = 1
                ORDER BY c.id LIMIT 1) AS kakao_recipient_id
-       FROM app_user u
-       WHERE u.active = 1 AND u.role = 'RESPONDER' AND u.department_code = ? ORDER BY u.id`,
-      await effectiveDepartment(eventDepartmentCode),
+       FROM app_user u JOIN role r ON r.code = u.role
+       WHERE u.active = 1 AND u.department_code = ?1
+         AND (u.role = 'RESPONDER' OR (?2 = 1 AND r.can_respond = 1))
+       ORDER BY u.id`,
+      dept,
+      ALL_MEMBER_NOTIFY_DEPARTMENTS.includes(dept) ? 1 : 0,
     )
   ).map((r) => ({
     id: r.id as number,

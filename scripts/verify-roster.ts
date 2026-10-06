@@ -5,9 +5,8 @@
 // the workbook is only a checklist; nothing is imported. Matching is by exact name (names only).
 // Reads ONLY 부서-1, 이름, 직급 — never 사번, Google ID, KakaoTalk ID, 연락처 or e-mail.
 //
-// Team leaders (직급 팀장) are NOT initial ANDON recipients (plant decision 2026-10-06: escalation later,
-// with Reaction Rules). Self-registration makes everyone RESPONDER, so a registered team leader is
-// reported until an administrator changes the role (npm run masterdata -- user role <user> ENGINEER).
+// Recipients: for HSE / ME / MT / QC every active member that may respond gets the ANDON message, team
+// leader included (plant decision 2026-10-06; routingService.ALL_MEMBER_NOTIFY_DEPARTMENTS).
 import fs from "node:fs";
 import ExcelJS from "exceljs";
 
@@ -83,11 +82,13 @@ for (const p of people) {
     issues.push(`${p.name}: duplicate accounts`);
   } else {
     const a = acc[0];
+    const { ALL_MEMBER_NOTIFY_DEPARTMENTS } = await import("../src/lib/server/routingService.ts");
+    const recipient = a.role === "RESPONDER" || (ALL_MEMBER_NOTIFY_DEPARTMENTS.includes(dept) && a.role !== "OPERATOR");
     const parts = [`account #${a.id} ${a.role}`, kakao.has(a.id) ? "Kakao ✔" : "Kakao not linked"];
-    if (leader && a.role === "RESPONDER") {
-      parts.push("team leader is RESPONDER → would get every ANDON; change role (escalation later)");
-      issues.push(`${p.name}: team leader registered as RESPONDER`);
-    } else if (!leader && a.role === "RESPONDER" && kakao.has(a.id)) ready++;
+    if (!recipient) {
+      parts.push("role does not receive ANDON messages in this department");
+      issues.push(`${p.name}: role ${a.role} is not a recipient`);
+    } else if (kakao.has(a.id)) ready++;
     status = parts.join(" · ");
   }
   console.log(`  ${leader ? "[팀장]" : "      "} ${p.name.padEnd(6)} ${status}`);
@@ -95,7 +96,6 @@ for (const p of people) {
 const names = new Set(people.map((p) => p.name));
 const others = users.filter((u) => u.active === 1 && !names.has(u.name));
 console.log(`\nother active ${dept} accounts not in the roster: ${others.length}${others.length ? " → " + others.map((u) => `#${u.id} ${u.name} (${u.role}, ${u.source})`).join(", ") : ""}`);
-const responders = people.filter((p) => p.rank !== "팀장").length;
-console.log(`ready to receive ${dept} ANDON alerts (registered RESPONDER + Kakao linked): ${ready} / ${responders}`);
+console.log(`ready to receive ${dept} ANDON alerts (registered recipient + Kakao linked): ${ready} / ${people.length}`);
 if (issues.length) console.log(`to fix: ${issues.length}\n  - ${issues.join("\n  - ")}`);
 process.exit(0);
