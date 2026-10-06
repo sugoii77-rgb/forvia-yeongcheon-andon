@@ -61,7 +61,7 @@ export const STATION_CELLS: StationCell[] = [
   { id: "KAPPA-UCC", layoutLabel: "KAPPA UCC", row: 1, slot: "top", x: 37.9, w: 5.3, tone: "AQ", lineCode: "AQ3-KAPPA-UCC", match: "EXACT_NAME" }, // 44.0–49.1
   { id: "GAMMA2", layoutLabel: "GAMMA #2", row: 1, slot: "bottom", x: 37.9, w: 5.3, tone: "AQ", lineCode: "AQ2-GAMMA2", match: "EXACT_NAME", note: "label straddles the GAMMA#3 / KAPPA UCC cells" },
   { id: "UCC", layoutLabel: "UCC", row: 1, slot: "full", x: 44.0, w: 4.7, tone: "AQ", lineCode: "AQ3-UCC", match: "EXACT_NAME" }, // 49.1–53.7
-  { id: "R-DPF", layoutLabel: "R-DPF", row: 1, slot: "full", x: 49.9, w: 4.3, tone: "AQ", note: "no DB line named R-DPF; DB AQ-3 has R-ENG (different name) — not linked" }, // 54.1–58.4
+  { id: "R-DPF", layoutLabel: "R-DPF", row: 1, slot: "full", x: 49.9, w: 4.3, tone: "AQ", lineCode: "AQ3-R-ENG", match: "PLANT_DECISION", subLabel: "R-DPF", note: "DB AQ-3 'R-ENG' vs layout 'R-DPF'; placed by plant decision 2026-10-06" }, // 54.1–58.4
   // ---- row 1 — AP ASSEMBLY
   { id: "JX-ASSY1", layoutLabel: "JX ASSY #1", row: 1, slot: "full", x: 57.5, w: 6.3, tone: "AP", lineCode: "AP2-JX-ASSY", match: "PLANT_DECISION", subLabel: "JX ASSY #1", note: "DB 'JX ASSY' vs layout 'JX ASSY #1'; placed by plant decision 2026-10-02" }, // 60.6–66.5
   { id: "NX4-2", layoutLabel: "NX4 #2", row: 1, slot: "full", x: 64.7, w: 7.2, tone: "AP", lineCode: "AP1-NX4-CTR2", match: "PLANT_DECISION", subLabel: "NX4 #2", note: "DB 'NX4 CTR #2' vs layout 'NX4 #2'; placed by plant decision 2026-10-02" }, // 66.7–73.4
@@ -91,8 +91,8 @@ export const STATION_CELLS: StationCell[] = [
   { id: "FORMING-CUTTING", layoutLabel: "FORMING & CUTTING", row: 3, slot: "top", x: 8.7, w: 29.6, tone: "SUB", lineCode: "BND-PIPE-CUTTING", match: "PLANT_DECISION", subLabel: "FORMING & CUTTING", note: "DB 'PIPE CUTTING' vs layout 'FORMING & CUTTING'; placed by plant decision 2026-10-02" }, // 19.2–44.9
   { id: "AQ-BENDING", layoutLabel: "AQ BENDING", row: 3, slot: "bottom", x: 8.7, w: 13.2, tone: "SUB", lineCode: "BND-HE-BENDING", match: "PAGE1_NAME", note: "page 1 names this exact cell 'HE BENDING'" }, // 18.1–31.0
   { id: "AP-BENDING", layoutLabel: "AP BENDING", row: 3, slot: "bottom", x: 22.7, w: 15.6, tone: "SUB", lineCode: "BND-CE-BENDING", match: "PAGE1_NAME", note: "page 1 names this exact cell 'CE BENDING'" }, // 31.0–43.9
-  { id: "AUTO-STUFFING2", layoutLabel: "AUTO STUFFING #2", row: 3, slot: "top", x: 39.1, w: 13.9, tone: "SUB", note: "DB has one line 'STUFFING' (AQ-3); layout shows #1 and #2 — not linked" }, // 45.0–57.4
-  { id: "AUTO-STUFFING1", layoutLabel: "AUTO STUFFING #1", row: 3, slot: "bottom", x: 39.1, w: 13.9, tone: "SUB", note: "see AUTO STUFFING #2" },
+  // AUTO STUFFING #1 and #2 are one DB line 'STUFFING' → one station over both drawing cells.
+  { id: "AUTO-STUFFING", layoutLabel: "AUTO STUFFING #1 · #2", row: 3, slot: "full", x: 39.1, w: 13.9, tone: "SUB", lineCode: "AQ3-STUFFING", match: "PLANT_DECISION", subLabel: "AUTO STUFFING #1 · #2", note: "DB AQ-3 'STUFFING' covers layout AUTO STUFFING #1 and #2; placed by plant decision 2026-10-06" }, // 45.0–57.4
   // ---- row 3 — RESO
   { id: "NX4JX-LOCKSEAM", layoutLabel: "NX4/JX LOCK SEAM", row: 3, slot: "full", x: 58.5, w: 8.6, tone: "SUB", lineCode: "RESO-LOCKSEAM", match: "PLANT_DECISION", subLabel: "NX4/JX LOCK SEAM", note: "DB 'LOCKSEAM' vs layout 'NX4/JX LOCK SEAM'; placed by plant decision 2026-10-02" }, // 61.5–69.3
   { id: "QX-MAIN-RESO", layoutLabel: "QX MAIN RESO", row: 3, slot: "full", x: 68.1, w: 9.2, tone: "SUB", lineCode: "RESO-QX", match: "PLANT_DECISION", subLabel: "QX MAIN RESO", note: "DB 'QX RESO' vs layout 'QX MAIN RESO'; placed by plant decision 2026-10-02" }, // 69.6–78.0
@@ -130,7 +130,5 @@ export function stationBox(c: StationCell, gap = 0.6): { x: number; y: number; w
  * is either on a station or here). They are shown in the "position to confirm" tray, never hidden.
  */
 export const UNMAPPED_LINES: Record<string, { candidateStation: string | null; reason: string }> = {
-  "AQ3-R-ENG": { candidateStation: null, reason: "layout has 'R-DPF', not 'R-ENG'" },
-  "AQ3-STUFFING": { candidateStation: null, reason: "layout has AUTO STUFFING #1 and #2; DB has one 'STUFFING'" },
   "RESO-JX-NX4": { candidateStation: "NX4JX-MAIN-RESO", reason: "layout says 'NX4/JX MAIN RESO'" },
 };
