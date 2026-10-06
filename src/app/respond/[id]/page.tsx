@@ -32,6 +32,7 @@ const ROUTING_LABEL: Record<string, string> = {
   LINE_PROCESS_CATEGORY: "공정별 규칙",
   LINE_CATEGORY: "라인별 규칙",
   CATEGORY_DEFAULT: "유형 기본값",
+  GAP_LEADER_CALL: "GAP 리더 호출",
 };
 
 /** "Android · Chrome" style summary of a user-agent string (display only). */
@@ -118,7 +119,9 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
   const elapsed = (end - new Date(e.createdAt).getTime()) / 1000;
   const eligible = data.eligibleResponders;
   const viewer = data.viewer;
-  const responsibleLabel = data.responsibility
+  const responsibleLabel = e.departments.length > 1
+    ? e.departmentLabel
+    : data.responsibility
     ? data.responsibility.effectiveDepartmentCode === data.responsibility.departmentCode
       ? data.responsibility.departmentLabel
       : `${data.responsibility.departmentLabel} → ${data.responsibility.effectiveDepartmentCode}`
@@ -145,6 +148,12 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
           <dl className="kv" style={{ marginTop: 10 }}>
             <dt>이상 유형</dt>
             <dd>{e.categoryName}</dd>
+            {e.situations.length > 0 && (
+              <>
+                <dt>상황</dt>
+                <dd>{e.situations.join(", ")}</dd>
+              </>
+            )}
             <dt>담당 부서</dt>
             <dd>
               {responsibleLabel}

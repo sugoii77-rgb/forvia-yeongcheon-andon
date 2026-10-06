@@ -35,6 +35,8 @@ export const DEPARTMENTS = [
   { code: "UAP", displayCode: "UAP", nameKo: "생산", nameEn: "Production", sortOrder: 3 },
   { code: "QC", displayCode: "QC", nameKo: "품질", nameEn: "Quality", sortOrder: 4 },
   { code: "PCL", displayCode: "PC&L", nameKo: "물류", nameEn: "Production Control & Logistics", sortOrder: 5 },
+  // plant table 2026-10-06: 단품불량 → SQA (supplier quality, part of the quality team, called separately)
+  { code: "SQA", displayCode: "SQA", nameKo: "외주품질", nameEn: "Supplier Quality Assurance", sortOrder: 6 },
 ];
 
 /**
@@ -42,6 +44,35 @@ export const DEPARTMENTS = [
  * table as inactive rows with successor_code, so historical events keep their original code.
  * EHS → UAP is a prototype decision (no safety department among the five) — confirm with the plant.
  */
+/**
+ * Situations a GAP leader picks when calling (plant table 2026-10-06, "상황 → 호출"). Picking one adds its
+ * call target (department; SV = the line's supervisor) and suggests the issue category. Code-defined
+ * (not stored in the DB); events store the chosen codes (andon_event.situations, v9).
+ */
+export const CALL_SITUATIONS: { code: string; nameKo: string; target: string; category: string }[] = [
+  { code: "QC_MISSING", nameKo: "누락", target: "QC", category: "QUALITY" },
+  { code: "QC_WELD", nameKo: "용접불량", target: "QC", category: "QUALITY" },
+  { code: "QC_APPEARANCE", nameKo: "외관불량", target: "QC", category: "QUALITY" },
+  { code: "QC_LEAK_NG", nameKo: "Leak NG", target: "QC", category: "QUALITY" },
+  { code: "QC_STANDARD", nameKo: "검사기준 불명확", target: "QC", category: "QUALITY" },
+  { code: "QC_GAUGE", nameKo: "검사구 문제", target: "QC", category: "QUALITY" },
+  { code: "SQA_PART", nameKo: "단품불량", target: "SQA", category: "QUALITY" },
+  { code: "MT_STOP", nameKo: "설비 정지", target: "MT", category: "MAINTENANCE" },
+  { code: "MT_ROBOT", nameKo: "Robot Fault", target: "MT", category: "MAINTENANCE" },
+  { code: "MT_NUTRUNNER", nameKo: "Nutrunner Fault", target: "MT", category: "MAINTENANCE" },
+  { code: "MT_LEAK_TESTER", nameKo: "Leak Tester NG", target: "MT", category: "MAINTENANCE" },
+  { code: "MT_SENSOR", nameKo: "Sensor Fault", target: "MT", category: "MAINTENANCE" },
+  { code: "ME_CONDITION", nameKo: "공정조건 이상", target: "ME", category: "PRODUCTION" },
+  { code: "ME_CYCLE_TIME", nameKo: "싸이클타임 불량", target: "ME", category: "PRODUCTION" },
+  { code: "ME_TOOLING", nameKo: "치공구 문제", target: "ME", category: "PRODUCTION" },
+  { code: "ME_NEW_ISSUE", nameKo: "신규 문제 원인 미확정", target: "ME", category: "PRODUCTION" },
+  { code: "PCL_SHORTAGE", nameKo: "자재 부족", target: "PCL", category: "MATERIAL" },
+  { code: "PCL_WRONG_INPUT", nameKo: "잘못 투입", target: "PCL", category: "MATERIAL" },
+  { code: "PCL_FIFO", nameKo: "FIFO 문제", target: "PCL", category: "MATERIAL" },
+  { code: "SV_MANPOWER", nameKo: "인원 부족", target: "SV", category: "PRODUCTION" },
+  { code: "SV_METHOD", nameKo: "작업방법 문제", target: "SV", category: "PRODUCTION" },
+];
+
 export const LEGACY_DEPARTMENT_SUCCESSORS: Record<string, string> = {
   QUALITY: "QC",
   MAINTENANCE: "MT",

@@ -80,11 +80,29 @@ export function buildAndonMessage(event: AndonEvent): NotificationMessage {
 }
 
 /**
- * Initial recipients of the event's responsible department (routingService.primaryRecipients: every
- * member that may respond for HSE / ME / MT / QC, RESPONDER accounts for the other departments)
- * (decided by routingService; escalation roles are notified later, when escalation exists).
+ * Recipients of a new ANDON: the people the GAP leader chose at the call (v9 andon_call_recipient), or —
+ * for events created without a choice (server-internal callers) — the department rule
+ * (routingService.primaryRecipients). Escalation roles are notified later, when escalation exists.
+ * The KakaoTalk address comes ONLY from a verified, active user_notification_channel row.
  */
 async function resolveRecipients(event: AndonEvent): Promise<NotificationRecipient[]> {
+  const chosen = await db.all(
+    `SELECT u.id, u.name, x.department_code,
+            (SELECT c.recipient_id FROM user_notification_channel c
+             WHERE c.user_id = u.id AND c.provider = 'KAKAO' AND c.verified = 1 AND c.active = 1
+             ORDER BY c.id LIMIT 1) AS kakao_recipient_id
+     FROM andon_call_recipient x JOIN app_user u ON u.id = x.user_id
+     WHERE x.event_id = ? AND u.active = 1 ORDER BY u.id`,
+    event.id,
+  );
+  if (chosen.length > 0 || (await db.get("SELECT 1 FROM andon_event_department WHERE event_id = ?", event.id))) {
+    return chosen.map((u) => ({
+      userId: u.id as number,
+      name: u.name as string,
+      departmentCode: u.department_code as string,
+      address: (u.kakao_recipient_id as string | null) ?? null,
+    }));
+  }
   return (await primaryRecipients(event.departmentCode)).map((u) => ({
     userId: u.id,
     name: u.name,
@@ -136,7 +154,7 @@ export async function notifyAndonCreated(event: AndonEvent): Promise<void> {
       console.error("[notify] recipient lookup failed", err);
     }
     if (recipients.length === 0) {
-      await logAttempt(event.id, p.name, `(dept:${event.departmentCode})`, "FAILED", text, "수신자 없음 (no recipients configured)");
+      await logAttempt(event.id, p.name, `(dept:${event.departmentCode})`, "FAILED", text, "수신자 없음 (no recipients chosen / configured)");
       return;
     }
     for (const r of recipients) {

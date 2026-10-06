@@ -160,7 +160,7 @@ export default function PlantMapPage() {
                   <span className="fs-line">{e.lineName}</span>
                   <span className="fs-meta">
                     <i className={`fs-dot pm-c-${categoryKey(e.categoryCode)}`} />
-                    {e.categoryName} · {e.status === "OPEN" ? "발생" : `${e.departmentCode} ${STATUS_LABEL[e.status].ko}`}
+                    {e.categoryName} · {e.status === "OPEN" ? "발생" : `${e.departments.map((d) => d.code).join("·")} ${STATUS_LABEL[e.status].ko}`}
                   </span>
                   <span className="fs-time">{formatElapsed(elapsedSeconds(e, now))}</span>
                 </Link>

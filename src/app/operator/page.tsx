@@ -2,9 +2,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { TopBar } from "@/components/TopBar";
-import { api, fmtTime, newRequestId, useStoredState } from "@/lib/client";
+import { api, fmtTime, newRequestId, useMe, useStoredState } from "@/lib/client";
 import { preparePhoto } from "@/lib/photoPrep";
-import type { AndonEvent, MasterData } from "@/lib/domain";
+import { CALL_ROLES, type AndonEvent, type CallSituation, type CallTargetDepartment, type MasterData } from "@/lib/domain";
+import { MultiSelect } from "@/components/MultiSelect";
 
 type SubmitState =
   | { kind: "idle" }
@@ -12,14 +13,24 @@ type SubmitState =
   | { kind: "ok"; event: AndonEvent; duplicate: boolean; photoWarning: string | null }
   | { kind: "error"; message: string };
 
+// ANDON call by the GAP leader (plant decision 2026-10-06): the GAP leader judges the situation and calls
+// one or more departments and, within each, the people who get the message. Login required.
 export default function OperatorPage() {
+  const { user, loaded } = useMe();
+  const canCall = !!user?.active && CALL_ROLES.includes(user.role);
+  const [targets, setTargets] = useState<CallTargetDepartment[] | null>(null);
+  const [categoryDefaults, setCategoryDefaults] = useState<Record<string, string>>({});
+  const [situationList, setSituationList] = useState<CallSituation[]>([]);
+  const [situations, setSituations] = useState<string[]>([]);
+  const [targetsError, setTargetsError] = useState<string | null>(null);
+  const [deps, setDeps] = useState<string[]>([]);
+  const [people, setPeople] = useState<Record<string, string[]>>({});
   const [meta, setMeta] = useState<MasterData | null>(null);
   const [metaError, setMetaError] = useState<string | null>(null);
 
   // Station defaults are remembered per device (tablets are usually fixed to one line).
   const [lineCode, setLineCode] = useStoredState("andon.operator.line", "");
   const [chosenProcessId, setProcessId] = useStoredState("andon.operator.process", "");
-  const [operator, setOperator] = useStoredState("andon.operator.name", "");
   const [categoryCode, setCategoryCode] = useState("");
   const [description, setDescription] = useState("");
   // `photo` is the already-resized JPEG. Resizing starts as soon as a photo is picked.
@@ -47,6 +58,60 @@ export default function OperatorPage() {
     );
   }, []);
   useEffect(loadMeta, [loadMeta]);
+  const loadTargets = useCallback(() => {
+    // with the line: the line's supervisor is pre-chosen when SV is called
+    api<{ departments: CallTargetDepartment[]; categoryDefaults: Record<string, string>; situations: CallSituation[] }>(
+      `/api/call-targets${lineCode ? `?line=${encodeURIComponent(lineCode)}` : ""}`,
+    ).then(
+      (r) => {
+        setTargets(r.departments);
+        setCategoryDefaults(r.categoryDefaults ?? {});
+        setSituationList(r.situations ?? []);
+        setTargetsError(null);
+      },
+      (e: Error) => setTargetsError(e.message),
+    );
+  }, [lineCode]);
+  useEffect(() => {
+    if (canCall) loadTargets();
+  }, [canCall, loadTargets]);
+
+  /** Departments changed: a newly added department starts with ALL its people chosen (the department rule). */
+  function chooseDeps(next: string[]) {
+    setDeps(next);
+    setPeople((cur) => {
+      const out: Record<string, string[]> = {};
+      for (const d of next) {
+        const t = targets?.find((x) => x.code === d);
+        out[d] = cur[d] ?? (t?.defaultMemberIds ?? t?.members.map((m) => m.id) ?? []).map(String);
+      }
+      return out;
+    });
+  }
+  function chooseCategory(code: string) {
+    setCategoryCode(code);
+    // Suggest the category's usual department while none is chosen yet; the GAP leader can change it.
+    const def = categoryDefaults[code];
+    if (deps.length === 0 && def && targets?.some((t) => t.code === def)) chooseDeps([def]);
+  }
+  /** Situation picked: its call target is added (with its default people) and the category suggested. */
+  function toggleSituation(code: string) {
+    const on = !situations.includes(code);
+    setSituations(on ? [...situations, code] : situations.filter((c) => c !== code));
+    if (!on) return;
+    const sit = situationList.find((s) => s.code === code);
+    if (!sit) return;
+    if (!categoryCode) setCategoryCode(sit.category);
+    if (!deps.includes(sit.target) && targets?.some((t) => t.code === sit.target)) {
+      chooseDeps((targets ?? []).map((t) => t.code).filter((c) => c === sit.target || deps.includes(c)));
+    }
+  }
+  const situationGroups = [...new Set(situationList.map((s) => s.target))].map((target) => ({
+    target,
+    label: targets?.find((t) => t.code === target)?.label ?? target,
+    items: situationList.filter((s) => s.target === target),
+  }));
+  const recipientCount = deps.reduce((n, d) => n + (people[d]?.length ?? 0), 0);
 
   useEffect(() => {
     return () => {
@@ -110,7 +175,8 @@ export default function OperatorPage() {
       !lineCode && "라인",
       !validProcess && "공정",
       !categoryCode && "이상 유형",
-      !description.trim() && "이상 내용",
+      deps.length === 0 && "조치부서",
+      !description.trim() && situations.length === 0 && "상황 또는 이상 내용",
     ].filter(Boolean);
     if (missing.length) {
       setValidation(`${missing.join(", ")}을(를) 선택/입력하세요.`);
@@ -134,8 +200,12 @@ export default function OperatorPage() {
     form.set("lineCode", lineCode);
     form.set("processId", processId);
     form.set("categoryCode", categoryCode);
-    form.set("description", description.trim());
-    form.set("createdBy", operator.trim());
+    // the description may be left empty when situations were picked: their names are used
+    const sitText = situationList.filter((s) => situations.includes(s.code)).map((s) => s.nameKo).join(", ");
+    form.set("description", description.trim() ? (sitText ? `[${sitText}] ${description.trim()}` : description.trim()) : sitText);
+    for (const s of situations) form.append("situations", s);
+    for (const d of deps) form.append("departments", d);
+    for (const d of deps) for (const id of people[d] ?? []) form.append("recipients", id);
     form.set("clientRequestId", requestId.current);
     if (photoToSend) form.set("photo", photoToSend);
 
@@ -159,6 +229,8 @@ export default function OperatorPage() {
   function reset() {
     requestId.current = newRequestId();
     setCategoryCode("");
+    setSituations([]);
+    chooseDeps([]);
     setDescription("");
     clearPhoto();
     setState({ kind: "idle" });
@@ -174,9 +246,9 @@ export default function OperatorPage() {
             ✔ ANDON 호출 완료 (sent)
             <div style={{ fontSize: 34, fontWeight: 900, margin: "8px 0" }}>{e.id}</div>
             <div style={{ fontWeight: 500, fontSize: 18 }}>
-              {e.lineName} / {e.processName} · {e.categoryName} · 담당: {e.departmentLabel}
+              {e.lineName} / {e.processName} · {e.categoryName} · 조치부서: {e.departmentLabel}
               <br />
-              발생시각 {fmtTime(e.createdAt)} — 현황판에 표시되고 담당자에게 알림이 전송됩니다.
+              발생시각 {fmtTime(e.createdAt)} — 현황판에 표시되고 선택한 사람에게 카카오톡 알림이 전송됩니다.
               {state.duplicate && <><br />(이미 접수된 호출입니다 · already registered)</>}
             </div>
           </div>
@@ -204,17 +276,31 @@ export default function OperatorPage() {
     <>
       <TopBar />
       <main className="page">
-        <h1>ANDON 호출 <span className="muted" style={{ fontSize: 16 }}>Operator Call</span></h1>
+        <h1>ANDON 호출 <span className="muted" style={{ fontSize: 16 }}>GAP Leader Call</span></h1>
 
-        {metaError && (
+        {!loaded && <p className="muted">불러오는 중…</p>}
+        {loaded && !user && (
+          <div className="card">
+            <p style={{ marginTop: 0 }}>ANDON 호출은 <strong>GAP 리더</strong>가 로그인해서 합니다. 작업자는 GAP 리더를 불러 주세요.</p>
+            <Link className="btn btn-primary" href="/login?next=/operator">로그인</Link>
+          </div>
+        )}
+        {loaded && user && !canCall && (
+          <div className="alert alert-warn">
+            {user.name} 님 계정({user.roleName})은 ANDON을 호출할 수 없습니다. 호출은 GAP 리더·감독자만 할 수 있습니다.
+            역할 변경은 관리자에게 요청하세요.
+          </div>
+        )}
+
+        {canCall && metaError && (
           <div className="alert alert-error">
             기준정보를 불러오지 못했습니다: {metaError}{" "}
             <button className="btn" onClick={loadMeta}>다시 시도</button>
           </div>
         )}
-        {!meta && !metaError && <p className="muted">불러오는 중…</p>}
+        {canCall && !meta && !metaError && <p className="muted">불러오는 중…</p>}
 
-        {meta && (
+        {canCall && meta && (
           <>
             <div className="field">
               <span className="field-label">라인<span className="en">Line</span></span>
@@ -267,6 +353,24 @@ export default function OperatorPage() {
               </div>
             )}
 
+            {situationGroups.length > 0 && (
+              <div className="field">
+                <span className="field-label">상황<span className="en">Situation · 여러 개 선택 가능 → 호출 부서 자동 선택</span></span>
+                {situationGroups.map((g) => (
+                  <div key={g.target} className="line-group">
+                    <div className="line-group-title">{g.label}</div>
+                    <div className="choices sit-choices">
+                      {g.items.map((s) => (
+                        <button key={s.code} type="button" className="choice" aria-pressed={situations.includes(s.code)} onClick={() => toggleSituation(s.code)}>
+                          {s.nameKo}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="field">
               <span className="field-label">이상 유형<span className="en">Issue category</span></span>
               <div className="choices">
@@ -276,7 +380,7 @@ export default function OperatorPage() {
                     type="button"
                     className="choice"
                     aria-pressed={categoryCode === c.code}
-                    onClick={() => setCategoryCode(c.code)}
+                    onClick={() => chooseCategory(c.code)}
                   >
                     {c.nameKo}
                     <small>{c.nameEn}</small>
@@ -286,6 +390,54 @@ export default function OperatorPage() {
             </div>
 
             <div className="field">
+              <span className="field-label">조치부서<span className="en">Departments · 여러 개 선택 가능</span></span>
+              {targetsError && (
+                <div className="alert alert-error">
+                  부서·담당자 목록을 불러오지 못했습니다: {targetsError} <button className="btn" onClick={loadTargets}>다시 시도</button>
+                </div>
+              )}
+              <MultiSelect
+                label="조치부서"
+                testId="call-departments"
+                placeholder="조치부서 선택"
+                options={(targets ?? []).map((t) => ({ value: t.code, label: t.label, hint: `${t.members.length}명` }))}
+                selected={deps}
+                onChange={(v) => chooseDeps((targets ?? []).map((t) => t.code).filter((c) => v.includes(c)))}
+              />
+            </div>
+
+            {deps.length > 0 && (
+              <div className="field">
+                <span className="field-label">받는 사람<span className="en">Recipients · 부서별 여러 명 선택</span></span>
+                {deps.map((d) => {
+                  const t = targets?.find((x) => x.code === d);
+                  return (
+                    <div key={d} className="call-dept">
+                      <div className="call-dept-title">
+                        <span>{t?.label ?? d}</span>
+                        <span className="muted">{people[d]?.length ?? 0} / {t?.members.length ?? 0}명</span>
+                      </div>
+                      <MultiSelect
+                        label={`${t?.label ?? d} 받는 사람`}
+                        testId={`call-people-${d}`}
+                        placeholder="받는 사람 선택"
+                        emptyText="이 부서에 가입한 담당자가 아직 없습니다"
+                        options={(t?.members ?? []).map((m) => ({ value: String(m.id), label: m.name, hint: m.roleName }))}
+                        selected={people[d] ?? []}
+                        onChange={(v) => setPeople({ ...people, [d]: v })}
+                      />
+                    </div>
+                  );
+                })}
+                {recipientCount === 0 && (
+                  <div className="alert alert-warn" style={{ marginTop: 8 }}>
+                    선택한 사람이 없습니다. 호출은 등록되지만 카카오톡 메시지는 아무에게도 가지 않습니다.
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="field">
               <label htmlFor="desc">
                 이상 내용<span className="en" style={{ fontWeight: 500, color: "var(--ink-3)", fontSize: 14, marginLeft: 6 }}>Description</span>
               </label>
@@ -293,7 +445,7 @@ export default function OperatorPage() {
                 id="desc"
                 className="textarea"
                 maxLength={500}
-                placeholder="예) Stay Bracket 체결 이상 발견"
+                placeholder={situations.length ? "추가 설명 (선택) — 비워두면 선택한 상황이 내용이 됩니다" : "예) Stay Bracket 체결 이상 발견"}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
               />
@@ -325,18 +477,6 @@ export default function OperatorPage() {
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={photoUrl} alt="첨부 사진 미리보기" style={{ marginTop: 10, maxWidth: "100%", maxHeight: 240, borderRadius: 10 }} />
               )}
-            </div>
-
-            <div className="field">
-              <label htmlFor="op">작업자<span className="en" style={{ fontWeight: 500, color: "var(--ink-3)", fontSize: 14, marginLeft: 6 }}>Operator (선택)</span></label>
-              <input
-                id="op"
-                className="input"
-                maxLength={40}
-                placeholder="이름 또는 사번"
-                value={operator}
-                onChange={(e) => setOperator(e.target.value)}
-              />
             </div>
 
             {validation && <div className="alert alert-warn">{validation}</div>}

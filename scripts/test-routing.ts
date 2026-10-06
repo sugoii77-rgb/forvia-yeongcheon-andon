@@ -139,7 +139,7 @@ async function apiTests() {
   );
   check(bd.status === 200 && bd.body.transitions.at(-1).deviceId === null, "invalid device id header is not stored");
   const create0: Transition = (await detail(q.id)).body.transitions[0];
-  check(create0.action === "CREATE" && !!create0.deviceId && create0.userId === null, "CREATE row has device id (operator has no account → user id null)");
+  check(create0.action === "CREATE" && !!create0.deviceId && create0.userId !== null && create0.userRole === "GAP_LEADER", "CREATE row has device id and the calling GAP leader's account (GAP leader calls since 2026-10-06)");
 
   // -- server-side inbox filter (incl. events routed before the department change)
   const inbox = await qc.client.request("GET", "/api/andons?scope=active&mine=1");

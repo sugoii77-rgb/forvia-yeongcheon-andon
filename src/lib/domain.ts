@@ -67,7 +67,7 @@ export type RoleCode = (typeof ROLE_CODES)[number];
  * routing maps Line + Process + Category → Department (see src/lib/routing.ts).
  * Codes are stable identifiers; `displayCode` is what users see ("PC&L" for code PCL).
  */
-export const DEPARTMENT_CODES = ["ME", "MT", "UAP", "QC", "PCL"] as const;
+export const DEPARTMENT_CODES = ["ME", "MT", "UAP", "QC", "PCL", "SQA"] as const;
 
 /** Roles a person may self-register with. Everything else is assigned by an administrator. */
 export const SELF_REGISTRATION_ROLE: RoleCode = "RESPONDER";
@@ -89,7 +89,7 @@ export interface PublicUser {
 }
 
 /** How the responsible department of an event was determined (see src/lib/routing.ts). */
-export type RoutingMatch = "LINE_PROCESS_CATEGORY" | "LINE_CATEGORY" | "CATEGORY_DEFAULT";
+export type RoutingMatch = "LINE_PROCESS_CATEGORY" | "LINE_CATEGORY" | "CATEGORY_DEFAULT" | "GAP_LEADER_CALL";
 
 // ---- Shapes returned by the API ----
 
@@ -104,8 +104,13 @@ export interface AndonEvent {
   categoryName: string;
   departmentCode: string;
   departmentName: string;
-  /** "QC · 품질"; for events routed before the department change: the old code, e.g. "QUALITY · 품질" */
+  /** "QC · 품질" — all departments of the call joined ("QC · 품질, MT · 보전"); for events routed before
+   *  the department change: the old code, e.g. "QUALITY · 품질" */
   departmentLabel: string;
+  /** Responsible departments chosen at the call (v9; older events: their single department). First = departmentCode. */
+  departments: { code: string; label: string }[];
+  /** Situations picked at the call (v9, plant table "상황 → 호출"), as names. */
+  situations: string[];
   description: string;
   photoFile: string | null;
   status: AndonStatus;
@@ -185,6 +190,29 @@ export interface MasterData {
   departments: { code: string; displayCode: string; label: string; nameKo: string; nameEn: string }[];
   roles: { code: RoleCode; nameKo: string; nameEn: string; canRespond: boolean; escalationLevel: number | null }[];
 }
+
+/** Roles that may CALL an ANDON (plant decision 2026-10-06: the GAP leader decides and calls the departments). */
+export const CALL_ROLES: readonly RoleCode[] = ["GAP_LEADER", "SUPERVISOR", "PLANT_MANAGER"];
+
+/** Departments a GAP leader can call, with the people (names only) who can respond there. */
+export interface CallTargetDepartment {
+  /** Department code, or "SV" = production supervisors (stored as department UAP). */
+  code: string;
+  label: string;
+  members: { id: number; name: string; roleName: string }[];
+  /** Pre-chosen people when the target is added (SV: the supervisor of the chosen line). Default: all. */
+  defaultMemberIds?: number[];
+}
+
+export interface CallSituation {
+  code: string;
+  nameKo: string;
+  target: string;
+  category: string;
+}
+
+/** Label of the SV call target (production supervisors; their department is UAP). */
+export const SV_LABEL = "SV · 생산 감독자";
 
 /** Roles that may see the line ownership master (/admin/lines). Assigned by an administrator only. */
 export const OWNERSHIP_VIEW_ROLES: readonly RoleCode[] = ["GAP_LEADER", "SUPERVISOR", "ENGINEER", "PLANT_MANAGER"];

@@ -527,6 +527,41 @@ async function migrateV8(db: Sql) {
   `);
 }
 
+/**
+ * v9 — GAP-leader call (plant decision 2026-10-06): the GAP leader chooses the responsible departments
+ * (one or more) and, within each, the people who get the message.
+ *  - andon_event_department: departments of an event. andon_event.department_code stays the FIRST one
+ *    (board, statistics, older code keep working); events without rows = their department_code only.
+ *  - andon_call_recipient: people chosen at the call (messages go to them; no rows = department rule).
+ * Both are written once at creation and never changed (append-only triggers). Additive only.
+ */
+async function migrateV9(db: Sql) {
+  await db.exec(`
+    CREATE TABLE andon_event_department (
+      event_id        TEXT NOT NULL REFERENCES andon_event(id),
+      department_code TEXT NOT NULL REFERENCES department(code),
+      sort_order      INTEGER NOT NULL,
+      PRIMARY KEY (event_id, department_code)
+    );
+    CREATE TABLE andon_call_recipient (
+      event_id        TEXT NOT NULL REFERENCES andon_event(id),
+      user_id         INTEGER NOT NULL REFERENCES app_user(id),
+      department_code TEXT NOT NULL REFERENCES department(code),
+      PRIMARY KEY (event_id, user_id)
+    );
+    CREATE INDEX idx_event_department_dept ON andon_event_department(department_code);
+    ALTER TABLE andon_event ADD COLUMN situations TEXT; -- JSON array of CALL_SITUATIONS codes picked at the call
+    CREATE TRIGGER trg_event_department_no_update BEFORE UPDATE ON andon_event_department
+    BEGIN SELECT RAISE(ABORT, 'andon_event_department is append-only'); END;
+    CREATE TRIGGER trg_event_department_no_delete BEFORE DELETE ON andon_event_department
+    BEGIN SELECT RAISE(ABORT, 'andon_event_department is append-only'); END;
+    CREATE TRIGGER trg_call_recipient_no_update BEFORE UPDATE ON andon_call_recipient
+    BEGIN SELECT RAISE(ABORT, 'andon_call_recipient is append-only'); END;
+    CREATE TRIGGER trg_call_recipient_no_delete BEFORE DELETE ON andon_call_recipient
+    BEGIN SELECT RAISE(ABORT, 'andon_call_recipient is append-only'); END;
+  `);
+}
+
 const MIGRATIONS: { version: number; up: (db: Sql) => Promise<void>; foreignKeysOff?: boolean }[] = [
   { version: 1, up: (db) => db.exec(V1_SQL) },
   { version: 2, up: migrateV2 },
@@ -537,6 +572,7 @@ const MIGRATIONS: { version: number; up: (db: Sql) => Promise<void>; foreignKeys
   { version: 6, up: migrateV6 },
   { version: 7, up: migrateV7 },
   { version: 8, up: migrateV8 },
+  { version: 9, up: migrateV9 },
 ];
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
 

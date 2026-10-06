@@ -3,7 +3,7 @@
 // Creates one real test ANDON (description starts with "[TEST]").
 // Since Milestone 2B responder actions need a logged-in user: a throw-away QC responder is registered
 // (scripts/lib/testkit.ts) and deactivated again at the end.
-import { registerAccount, admin } from "./lib/testkit.ts";
+import { registerAccount, admin, callerClient } from "./lib/testkit.ts";
 
 const BASE = (process.env.BASE_URL || "http://localhost:3000").replace(/\/$/, "");
 
@@ -52,7 +52,10 @@ async function main() {
     f.set("photo", new Blob([PNG], { type: "image/png" }), "test.png");
     return f;
   };
-  const createRes = await fetch(`${BASE}/api/andons`, { method: "POST", body: form() });
+  const callerHeaders = (await callerClient()).headers();
+  const anonRes = await fetch(`${BASE}/api/andons`, { method: "POST", body: form() });
+  check(anonRes.status === 401, `ANDON call without login → 401 (GAP leader calls; got ${anonRes.status})`);
+  const createRes = await fetch(`${BASE}/api/andons`, { method: "POST", body: form(), headers: callerHeaders });
   const created = await json(createRes);
   check(createRes.status === 201, `POST /api/andons → 201 (got ${createRes.status})`);
   const id: string = created?.event?.id;
@@ -61,7 +64,7 @@ async function main() {
   check(created?.event?.departmentCode === "QC", "QUALITY issue routed to QC department");
 
   console.log("2) Duplicate submission is idempotent");
-  const dupRes = await fetch(`${BASE}/api/andons`, { method: "POST", body: form() });
+  const dupRes = await fetch(`${BASE}/api/andons`, { method: "POST", body: form(), headers: callerHeaders });
   const dup = await json(dupRes);
   check(dupRes.status === 200 && dup?.duplicate === true && dup?.event?.id === id, "same clientRequestId returns same event");
 
@@ -71,7 +74,7 @@ async function main() {
   bad.set("processId", String(proc.id));
   bad.set("categoryCode", "QUALITY");
   bad.set("description", "   ");
-  const badRes = await fetch(`${BASE}/api/andons`, { method: "POST", body: bad });
+  const badRes = await fetch(`${BASE}/api/andons`, { method: "POST", body: bad, headers: callerHeaders });
   check(badRes.status === 400, `empty description rejected with 400 (got ${badRes.status})`);
 
   console.log("4) Dashboard shows the event as RED");

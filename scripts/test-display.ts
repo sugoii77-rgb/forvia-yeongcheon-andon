@@ -64,7 +64,7 @@ function ev(lineCode: string, status: AndonStatus, createdAt: string, closedAt: 
   seq++;
   return {
     id: `AND-TEST-${seq}`, plant: "Yeongcheon", lineCode, lineName: lineCode, processId: 1, processName: "p", categoryCode: "QUALITY", categoryName: "품질",
-    departmentCode: "QC", departmentName: "품질", departmentLabel: "QC · 품질", description: "test", photoFile: null, status, createdBy: "op",
+    departmentCode: "QC", departmentName: "품질", departmentLabel: "QC · 품질", departments: [{ code: "QC", label: "QC · 품질" }], situations: [], description: "test", photoFile: null, status, createdBy: "op",
     createdAt, acknowledgedAt: null, acknowledgedBy: null, closedAt, closedBy: null, correctiveAction: null, updatedAt: createdAt,
   };
 }

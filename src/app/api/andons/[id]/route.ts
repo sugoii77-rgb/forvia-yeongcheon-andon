@@ -9,7 +9,7 @@ export async function GET(req: Request, ctx: RouteContext<"/api/andons/[id]">) {
     const event = await getEvent(id);
     if (!event) throw new AndonError(404, "ANDON을 찾을 수 없습니다.", "NOT_FOUND");
     const responsibility = await eventResponsibility(id);
-    const eligible = await eligibleResponders(event.departmentCode);
+    const eligible = await eligibleResponders(event.departments.map((d) => d.code));
     const viewer = await getSessionUser(req);
     return Response.json({
       event,

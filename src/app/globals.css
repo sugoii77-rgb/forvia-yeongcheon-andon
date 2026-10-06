@@ -474,3 +474,35 @@ table.table { width: 100%; border-collapse: collapse; background: #fff; font-siz
   .fc, .floor-clock { font-size: 15px; }
   .floor-title { font-size: 18px; }
 }
+
+/* ---- multi-select drop-down (GAP leader call: departments, people) ---- */
+.ms { position: relative; }
+.ms-btn {
+  width: 100%; min-height: 56px; display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border: 2px solid var(--line); border-radius: 10px; background: #fff;
+  font: inherit; font-size: 18px; font-weight: 600; text-align: left; cursor: pointer; color: var(--ink);
+}
+.ms-btn[aria-expanded="true"] { border-color: var(--brand); }
+.ms-btn.ms-empty .ms-sum { color: var(--ink-3); font-weight: 500; }
+.ms-sum { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-count { background: var(--brand); color: #fff; border-radius: 999px; font-size: 14px; padding: 2px 9px; }
+.ms-caret { color: var(--ink-3); }
+.ms-panel {
+  position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px);
+  background: #fff; border: 2px solid var(--brand); border-radius: 10px; box-shadow: 0 8px 24px rgba(11, 45, 91, 0.18);
+  max-height: min(60vh, 420px); overflow-y: auto; padding: 6px;
+}
+.ms-opt { display: flex; align-items: center; gap: 12px; min-height: 50px; padding: 6px 10px; border-radius: 8px; font-size: 18px; cursor: pointer; }
+.ms-opt:hover { background: #eef3fb; }
+.ms-opt input { width: 22px; height: 22px; accent-color: var(--brand); flex: none; }
+.ms-opt span { flex: 1; min-width: 0; }
+.ms-opt small { color: var(--ink-3); font-size: 14px; }
+.ms-all, .ms-done { width: 100%; min-height: 44px; border: 0; border-radius: 8px; font: inherit; font-weight: 700; cursor: pointer; }
+.ms-all { background: #eef3fb; color: var(--brand); margin-bottom: 4px; }
+.ms-done { background: var(--brand); color: #fff; margin-top: 6px; position: sticky; bottom: 0; }
+.ms-none { padding: 14px; color: var(--ink-3); }
+.sit-choices { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+.sit-choices .choice { min-height: 50px; font-size: 16px; }
+.call-dept { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: #fafbfd; }
+.call-dept + .call-dept { margin-top: 8px; }
+.call-dept-title { font-weight: 700; margin-bottom: 6px; display: flex; justify-content: space-between; gap: 8px; }

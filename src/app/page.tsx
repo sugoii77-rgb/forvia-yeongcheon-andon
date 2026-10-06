@@ -9,7 +9,7 @@ export default function Home() {
         <h1>Digital ANDON · 영천공장</h1>
         <div className="tiles">
           <Link href="/operator" className="tile tile-andon">
-            <strong>ANDON 호출</strong>작업자 · Operator call
+            <strong>ANDON 호출</strong>GAP 리더 · Leader call
           </Link>
           <Link href="/dashboard" className="tile">
             <strong>실시간 현황판</strong>Live dashboard (대형 모니터)

@@ -3,7 +3,8 @@ import { notifyAndonCreated } from "@/lib/server/notifications";
 import { deletePhoto, savePhoto } from "@/lib/server/photos";
 import { after } from "next/server";
 import { handle, requestAudit } from "@/lib/server/http";
-import { getSessionUser } from "@/lib/server/auth";
+import { assertSameOrigin, getSessionUser } from "@/lib/server/auth";
+import { CALL_ROLES } from "@/lib/domain";
 import { publicShift } from "@/lib/server/shiftService";
 
 export async function GET(req: Request) {
@@ -30,9 +31,17 @@ export async function GET(req: Request) {
   });
 }
 
-// multipart/form-data: lineCode, processId, categoryCode, description, createdBy, clientRequestId, photo?
+// multipart/form-data: lineCode, processId, categoryCode, description, clientRequestId, photo?,
+// departments (repeated; the responsible departments), recipients (repeated user ids; who gets the message).
+// Caller = the logged-in GAP leader / supervisor (plant decision 2026-10-06: the GAP leader calls the ANDON).
+// Without `departments` the routing rule decides one department and the department rule the recipients.
 export async function POST(req: Request) {
   return handle("POST /api/andons", async () => {
+    assertSameOrigin(req);
+    const caller = await getSessionUser(req);
+    if (!caller) throw new AndonError(401, "ANDON 호출은 로그인한 GAP 리더만 할 수 있습니다.", "AUTH_REQUIRED");
+    if (!caller.active) throw new AndonError(403, "비활성(사용 중지)된 계정입니다.", "ACCOUNT_INACTIVE");
+    if (!CALL_ROLES.includes(caller.role)) throw new AndonError(403, "ANDON 호출은 GAP 리더·감독자만 할 수 있습니다.", "ROLE_NOT_ALLOWED");
     let form: FormData;
     try {
       form = await req.formData();
@@ -65,7 +74,10 @@ export async function POST(req: Request) {
         processId: Number(str("processId")),
         categoryCode: str("categoryCode"),
         description: str("description"),
-        createdBy: str("createdBy"),
+        caller: { id: caller.id, name: caller.name, departmentCode: caller.departmentCode, role: caller.role },
+        departments: form.getAll("departments").length ? form.getAll("departments").map(String) : undefined,
+        recipientIds: form.getAll("recipients").map((v) => Number(v)),
+        situations: form.getAll("situations").map(String),
         clientRequestId: str("clientRequestId") || undefined,
         photoFile,
         audit: requestAudit(req),

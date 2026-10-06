@@ -61,7 +61,7 @@ export default function LoginPage() {
           계정이 없으신가요? <Link href="/register" onClick={(e) => { e.preventDefault(); router.push(`/register${window.location.search}`); }}>회원가입</Link>
         </p>
         <p className="muted" style={{ fontSize: 14 }}>
-          ANDON 호출(작업자)은 로그인 없이 가능합니다. 조치(접수·조치·완료)는 로그인한 담당자만 할 수 있습니다.
+          ANDON 호출은 로그인한 GAP 리더가, 조치(접수·조치·완료)는 로그인한 조치부서 담당자가 합니다.
         </p>
       </main>
     </>

@@ -292,7 +292,7 @@ try {
     await (await link(bob, "9000001")).done;
     assert.equal((await db.get("SELECT user_id FROM kakao_link WHERE kakao_user_id = '9000001'"))!.user_id, bob.id);
   });
-  await check("recipients: HSE / ME / MT / QC notify every member that may respond (team leader incl.); UAP / PC&L only RESPONDERs", async () => {
+  await check("recipients: HSE / ME / MT / QC / PC&L notify every member that may respond (team leader incl.); UAP only RESPONDERs", async () => {
     const mk2 = async (dept: string, role: string) =>
       Number((await db.run("INSERT INTO app_user (name, department_code, role, active, source, created_at) VALUES (?, ?, ?, 1, 'ADMIN', ?)", `[TEST] ${dept} ${role}`, dept, role, nowIso())).lastInsertRowid);
     const ids = { qcEng: await mk2("QC", "ENGINEER"), mtGap: await mk2("MT", "GAP_LEADER"), meSup: await mk2("ME", "SUPERVISOR"), qcOp: await mk2("QC", "OPERATOR"), uapGap: await mk2("UAP", "GAP_LEADER"), pclEng: await mk2("PCL", "ENGINEER") };
@@ -302,7 +302,7 @@ try {
     assert.equal(await has("ME", ids.meSup), true);
     assert.equal(await has("QC", ids.qcOp), false, "operators never");
     assert.equal(await has("UAP", ids.uapGap), false);
-    assert.equal(await has("PCL", ids.pclEng), false);
+    assert.equal(await has("PCL", ids.pclEng), true);
     await db.run(`UPDATE app_user SET active = 0 WHERE id IN (${Object.values(ids).join(",")})`);
   });
   await check("not configured → 503 and status configured=false", async () => {
