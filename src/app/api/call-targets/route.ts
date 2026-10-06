@@ -18,7 +18,17 @@ export async function GET(req: Request) {
     for (const c of await db.all("SELECT code, default_department FROM category WHERE active = 1")) {
       categoryDefaults[c.code as string] = await effectiveDepartment(c.default_department as string);
     }
+    // The caller's own lines (active Supervisor / GAP leader assignment) — shown first on the call screen.
+    const myLines = (
+      await db.all(
+        `SELECT DISTINCT a.line_code, l.sort_order FROM line_assignment a JOIN line l ON l.code = a.line_code
+         WHERE a.user_id = ? AND a.active = 1 AND l.active = 1 AND (a.effective_to IS NULL OR a.effective_to > ?)
+         ORDER BY l.sort_order`,
+        user.id,
+        new Date().toISOString(),
+      )
+    ).map((r) => r.line_code as string);
     const line = new URL(req.url).searchParams.get("line") ?? undefined;
-    return Response.json({ departments: await callTargets(line), categoryDefaults, situations: CALL_SITUATIONS }, { headers: { "Cache-Control": "no-store" } });
+    return Response.json({ departments: await callTargets(line), categoryDefaults, situations: CALL_SITUATIONS, myLines }, { headers: { "Cache-Control": "no-store" } });
   });
 }

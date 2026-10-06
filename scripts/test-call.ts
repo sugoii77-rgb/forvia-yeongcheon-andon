@@ -3,7 +3,7 @@
 // Runs against a test server (BASE_URL) whose DATABASE_PATH is given too (append-only check, admin CLI).
 //   BASE_URL=http://localhost:3101 DATABASE_PATH=work/<copy>.db npm run test:call
 import path from "node:path";
-import { BASE, Client, callerClient, check, createAndon, detail, finish, registerAccount, transition } from "./lib/testkit.ts";
+import { BASE, Client, admin, callerClient, check, createAndon, detail, finish, registerAccount, transition } from "./lib/testkit.ts";
 
 if (!process.env.DATABASE_PATH || !path.resolve(process.env.DATABASE_PATH).startsWith(path.resolve("work") + path.sep)) {
   throw new Error("test:call requires an isolated DATABASE_PATH under C:\\andon\\work (same as the test server)");
@@ -122,6 +122,14 @@ async function main() {
   f3.append("recipients", String(gapId));
   const rs = await gap.request("POST", "/api/andons", f3);
   check(rs.status === 400 && rs.body.code === "INVALID_RECIPIENT", `SV call to a GAP leader (not a supervisor) → 400 (${rs.body.code})`);
+
+  console.log("MY LINES");
+  check(((await gap.request("GET", "/api/call-targets")).body.myLines as string[]).length === 0, "a GAP leader without line assignment: no 'my lines' (all lines shown)");
+  const me = (await gap.request("GET", "/api/auth/me")).body.user.id as number;
+  admin("assign", "add", "AP1-FRT", "GAP_LEADER", "B", String(me));
+  admin("assign", "add", "AP1-MAIN1", "GAP_LEADER", "A", String(me));
+  const ml = (await gap.request("GET", "/api/call-targets")).body.myLines as string[];
+  check(ml.join() === "AP1-MAIN1,AP1-FRT", `the GAP leader's assigned lines come back, in line order (${ml.join()})`);
 
   console.log("APPEND-ONLY");
   const { db } = await import("../src/lib/server/db.ts");

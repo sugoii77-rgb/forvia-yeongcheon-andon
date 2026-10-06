@@ -22,6 +22,9 @@ export default function OperatorPage() {
   const [categoryDefaults, setCategoryDefaults] = useState<Record<string, string>>({});
   const [situationList, setSituationList] = useState<CallSituation[]>([]);
   const [situations, setSituations] = useState<string[]>([]);
+  // The GAP leader's own lines (line ownership) come first; all other lines are folded away.
+  const [myLines, setMyLines] = useState<string[] | null>(null);
+  const [showAllLines, setShowAllLines] = useState(false);
   const [targetsError, setTargetsError] = useState<string | null>(null);
   const [deps, setDeps] = useState<string[]>([]);
   const [people, setPeople] = useState<Record<string, string[]>>({});
@@ -60,13 +63,14 @@ export default function OperatorPage() {
   useEffect(loadMeta, [loadMeta]);
   const loadTargets = useCallback(() => {
     // with the line: the line's supervisor is pre-chosen when SV is called
-    api<{ departments: CallTargetDepartment[]; categoryDefaults: Record<string, string>; situations: CallSituation[] }>(
+    api<{ departments: CallTargetDepartment[]; categoryDefaults: Record<string, string>; situations: CallSituation[]; myLines: string[] }>(
       `/api/call-targets${lineCode ? `?line=${encodeURIComponent(lineCode)}` : ""}`,
     ).then(
       (r) => {
         setTargets(r.departments);
         setCategoryDefaults(r.categoryDefaults ?? {});
         setSituationList(r.situations ?? []);
+        setMyLines(r.myLines ?? []);
         setTargetsError(null);
       },
       (e: Error) => setTargetsError(e.message),
@@ -168,6 +172,28 @@ export default function OperatorPage() {
         .map((g) => ({ ...g, lines: meta.lines.filter((l) => (l.uapAreaCode ?? "") === g.key) }))
         .filter((g) => g.lines.length > 0)
     : [];
+
+  const mine = (myLines ?? []).map((c) => meta?.lines.find((l) => l.code === c)).filter((l): l is NonNullable<typeof l> => !!l);
+  // a remembered line outside "my lines" keeps the full list open, so the choice stays visible
+  const allOpen = mine.length === 0 || showAllLines || (!!lineCode && !mine.some((l) => l.code === lineCode));
+  useEffect(() => {
+    // exactly one own line and nothing chosen yet: choose it
+    if (!lineCode && mine.length === 1) setLineCode(mine[0].code);
+  }, [lineCode, mine, setLineCode]);
+  const lineButton = (l: { code: string; name: string }) => (
+    <button
+      key={l.code}
+      type="button"
+      className="choice"
+      aria-pressed={lineCode === l.code}
+      onClick={() => {
+        setLineCode(l.code);
+        setProcessId("");
+      }}
+    >
+      {l.name}
+    </button>
+  );
 
   async function submit() {
     if (state.kind === "sending") return; // guard against double taps
@@ -304,27 +330,28 @@ export default function OperatorPage() {
           <>
             <div className="field">
               <span className="field-label">라인<span className="en">Line</span></span>
-              {lineGroups.map((g) => (
-                <div key={g.key || "prototype"} className="line-group">
-                  {lineGroups.length > 1 && <div className="line-group-title">{g.title}</div>}
-                  <div className="choices">
-                    {g.lines.map((l) => (
-                      <button
-                        key={l.code}
-                        type="button"
-                        className="choice"
-                        aria-pressed={lineCode === l.code}
-                        onClick={() => {
-                          setLineCode(l.code);
-                          setProcessId("");
-                        }}
-                      >
-                        {l.name}
-                      </button>
-                    ))}
-                  </div>
+              {mine.length > 0 && (
+                <div className="line-group my-lines" data-testid="my-lines">
+                  <div className="line-group-title">내 담당 라인 · My lines</div>
+                  <div className="choices">{mine.map(lineButton)}</div>
                 </div>
-              ))}
+              )}
+              {mine.length > 0 && (
+                <button type="button" className="btn other-lines" aria-expanded={allOpen} onClick={() => setShowAllLines(!allOpen)}>
+                  {allOpen ? "다른 라인 접기" : "다른 라인 보기 (전체)"}
+                </button>
+              )}
+              {allOpen &&
+                lineGroups.map((g) => {
+                  const lines = g.lines.filter((l) => !mine.some((m) => m.code === l.code));
+                  if (lines.length === 0) return null;
+                  return (
+                    <div key={g.key || "prototype"} className="line-group">
+                      {lineGroups.length > 1 && <div className="line-group-title">{g.title}</div>}
+                      <div className="choices">{lines.map(lineButton)}</div>
+                    </div>
+                  );
+                })}
             </div>
 
             {lineCode && onlyPlaceholder && (

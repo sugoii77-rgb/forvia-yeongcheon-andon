@@ -501,6 +501,9 @@ table.table { width: 100%; border-collapse: collapse; background: #fff; font-siz
 .ms-all { background: #eef3fb; color: var(--brand); margin-bottom: 4px; }
 .ms-done { background: var(--brand); color: #fff; margin-top: 6px; position: sticky; bottom: 0; }
 .ms-none { padding: 14px; color: var(--ink-3); }
+.my-lines { background: #e7eef9; border: 2px solid var(--brand); border-radius: 12px; padding: 10px; }
+.my-lines .line-group-title { color: var(--brand); }
+.other-lines { margin: 10px 0 4px; width: 100%; }
 .sit-choices { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
 .sit-choices .choice { min-height: 50px; font-size: 16px; }
 .call-dept { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: #fafbfd; }
