@@ -33,7 +33,9 @@
     "test:display": "node scripts/test-display.ts",
     "test:kakao": "node scripts/test-kakao.ts",
     "verify:roster": "node scripts/verify-roster.ts",
-    "test:call": "node scripts/test-call.ts"
+    "test:call": "node scripts/test-call.ts",
+    "import:accounts": "node scripts/import-accounts.ts",
+    "test:accounts": "node scripts/test-accounts.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",

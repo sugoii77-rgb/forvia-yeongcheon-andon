@@ -144,7 +144,7 @@ try {
   else if (cmd === "user" && sub === "set-login" && args.length === 2) {
     const id = await userId(args[0]);
     const email = normalizeEmail(args[1]);
-    if (!/^[^s@]+@[^s@]+.[^s@]+$/.test(email)) throw new Error("invalid e-mail");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("invalid e-mail");
     const temp = `Andon-${crypto.randomBytes(6).toString("base64url")}1`;
     const hash = await hashPassword(temp);
     await db.transaction(async () => {
