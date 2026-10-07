@@ -25,6 +25,7 @@ export default function OperatorPage() {
   // The GAP leader's own lines (line ownership) come first; all other lines are folded away.
   const [myLines, setMyLines] = useState<string[] | null>(null);
   const [showAllLines, setShowAllLines] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [targetsError, setTargetsError] = useState<string | null>(null);
   const [deps, setDeps] = useState<string[]>([]);
   const [people, setPeople] = useState<Record<string, string[]>>({});
@@ -116,6 +117,11 @@ export default function OperatorPage() {
     items: situationList.filter((s) => s.target === target),
   }));
   const recipientCount = deps.reduce((n, d) => n + (people[d]?.length ?? 0), 0);
+  // "QC 3명 · MT 1명" — shown in the call bar and on the folded details
+  const recipientSummary = deps
+    .map((d) => `${targets?.find((t) => t.code === d)?.label.split(" · ")[0] ?? d} ${people[d]?.length ?? 0}명`)
+    .join(" · ");
+  const situationText = situationList.filter((s) => situations.includes(s.code)).map((s) => s.nameKo).join(", ");
 
   useEffect(() => {
     return () => {
@@ -194,6 +200,9 @@ export default function OperatorPage() {
       {l.name}
     </button>
   );
+
+  // everything the call needs — normally after 2–3 taps (line, situation)
+  const ready = !!lineCode && validProcess && !!categoryCode && deps.length > 0 && (situations.length > 0 || !!description.trim());
 
   async function submit() {
     if (state.kind === "sending") return; // guard against double taps
@@ -398,6 +407,18 @@ export default function OperatorPage() {
               </div>
             )}
 
+            {/* Everything below is filled in by the situation: folded away so the GL needs only 2–3 taps
+                (line → situation → ANDON CALL). Open it to change category, departments, people or add text / photo. */}
+            <details className="call-more" open={moreOpen} onToggle={(e) => setMoreOpen((e.target as HTMLDetailsElement).open)}>
+              <summary>
+                <span className="call-more-t">세부 설정 <span className="muted">(선택)</span></span>
+                <span className="call-more-sum">
+                  {[meta.categories.find((c) => c.code === categoryCode)?.nameKo, recipientSummary || null, description.trim() ? "내용 입력됨" : null, photo ? "사진" : null]
+                    .filter(Boolean)
+                    .join(" · ") || "이상 유형 · 조치부서 · 받는 사람 · 내용 · 사진"}
+                </span>
+              </summary>
+
             <div className="field">
               <span className="field-label">이상 유형<span className="en">Issue category</span></span>
               <div className="choices">
@@ -505,6 +526,7 @@ export default function OperatorPage() {
                 <img src={photoUrl} alt="첨부 사진 미리보기" style={{ marginTop: 10, maxWidth: "100%", maxHeight: 240, borderRadius: 10 }} />
               )}
             </div>
+            </details>
 
             {validation && <div className="alert alert-warn">{validation}</div>}
             {state.kind === "error" && (
@@ -516,10 +538,23 @@ export default function OperatorPage() {
               </div>
             )}
 
-            <button className="btn-andon" onClick={submit} disabled={sending} aria-busy={sending}>
-              {sending ? "전송 중…" : "ANDON CALL"}
-              <small>{sending ? "Sending — 잠시 기다리세요" : state.kind === "error" ? "다시 시도 · Retry" : "호출하기"}</small>
-            </button>
+            {/* Always-visible call bar: the last tap, without scrolling. */}
+            <div className="call-bar">
+              <div className="call-bar-sum" data-testid="call-summary">
+                {ready ? (
+                  <>
+                    <b>{meta.lines.find((l) => l.code === lineCode)?.name}</b> · {situationText || meta.categories.find((c) => c.code === categoryCode)?.nameKo}
+                    <br />→ {recipientSummary || "받는 사람 없음"}
+                  </>
+                ) : (
+                  <span className="muted">{!lineCode ? "① 라인을 선택하세요" : "② 상황을 선택하세요"}</span>
+                )}
+              </div>
+              <button className="btn-andon" onClick={submit} disabled={sending || !ready} aria-busy={sending}>
+                {sending ? "전송 중…" : "ANDON CALL"}
+                <small>{sending ? "Sending — 잠시 기다리세요" : state.kind === "error" ? "다시 시도 · Retry" : "호출하기"}</small>
+              </button>
+            </div>
           </>
         )}
       </main>
