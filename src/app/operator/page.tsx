@@ -1,16 +1,15 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { TopBar } from "@/components/TopBar";
 import { api, fmtTime, newRequestId, useMe, useStoredState } from "@/lib/client";
-import { preparePhoto } from "@/lib/photoPrep";
 import { CALL_ROLES, type AndonEvent, type CallSituation, type CallTargetDepartment, type MasterData } from "@/lib/domain";
 import { MultiSelect } from "@/components/MultiSelect";
 
 type SubmitState =
   | { kind: "idle" }
   | { kind: "sending" }
-  | { kind: "ok"; event: AndonEvent; duplicate: boolean; photoWarning: string | null }
+  | { kind: "ok"; event: AndonEvent; duplicate: boolean }
   | { kind: "error"; message: string };
 
 // ANDON call by the GAP leader (plant decision 2026-10-06): the GAP leader judges the situation and calls
@@ -37,20 +36,12 @@ export default function OperatorPage() {
   const [chosenProcessId, setProcessId] = useStoredState("andon.operator.process", "");
   const [categoryCode, setCategoryCode] = useState("");
   const [description, setDescription] = useState("");
-  // `photo` is the already-resized JPEG. Resizing starts as soon as a photo is picked.
-  const [photo, setPhoto] = useState<File | null>(null);
-  const [photoBusy, setPhotoBusy] = useState(false);
-  const [photoNote, setPhotoNote] = useState<string | null>(null);
-  const pendingPhoto = useRef<Promise<File | null> | null>(null);
-  const photoToken = useRef(0);
-  const photoUrl = useMemo(() => (photo ? URL.createObjectURL(photo) : null), [photo]);
   const [state, setState] = useState<SubmitState>({ kind: "idle" });
   const [validation, setValidation] = useState<string | null>(null);
 
   // Idempotency key for this form. Kept across retries so a retry after a timeout
   // cannot create a second ANDON; renewed only after a confirmed success.
   const requestId = useRef(newRequestId());
-  const fileInput = useRef<HTMLInputElement>(null);
 
   const loadMeta = useCallback(() => {
     api<MasterData>("/api/meta").then(
@@ -110,6 +101,7 @@ export default function OperatorPage() {
     const on = !situations.includes(code);
     setSituations(on ? [...situations, code] : situations.filter((c) => c !== code));
     if (!on) return;
+    if (code === "MT_PREVENTIVE") setMoreOpen(true); // the planned-work text is asked for
     const sit = situationList.find((s) => s.code === code);
     if (!sit) return;
     if (!categoryCode) setCategoryCode(sit.category);
@@ -128,50 +120,6 @@ export default function OperatorPage() {
     .map((d) => `${targets?.find((t) => t.code === d)?.label.split(" · ")[0] ?? d} ${people[d]?.length ?? 0}명`)
     .join(" · ");
   const situationText = situationList.filter((s) => situations.includes(s.code)).map((s) => s.nameKo).join(", ");
-
-  useEffect(() => {
-    return () => {
-      if (photoUrl) URL.revokeObjectURL(photoUrl);
-    };
-  }, [photoUrl]);
-
-  function pickPhoto(file: File | null) {
-    const token = ++photoToken.current;
-    setPhoto(null);
-    setPhotoNote(null);
-    if (!file) {
-      pendingPhoto.current = null;
-      setPhotoBusy(false);
-      return;
-    }
-    setPhotoBusy(true);
-    const job = preparePhoto(file).then(
-      (prepared) => {
-        if (token === photoToken.current) setPhoto(prepared);
-        return prepared;
-      },
-      (err) => {
-        console.warn("photo could not be prepared", err);
-        if (token === photoToken.current) {
-          setPhotoNote("이 사진은 사용할 수 없습니다 (형식 미지원). 사진 없이 호출할 수 있습니다.");
-          if (fileInput.current) fileInput.current.value = "";
-        }
-        return null;
-      },
-    );
-    pendingPhoto.current = job;
-    job.finally(() => {
-      if (token === photoToken.current) {
-        setPhotoBusy(false);
-        pendingPhoto.current = null;
-      }
-    });
-  }
-
-  function clearPhoto() {
-    pickPhoto(null);
-    if (fileInput.current) fileInput.current.value = "";
-  }
 
   const processes = meta?.processes.filter((p) => p.lineCode === lineCode) ?? [];
   // A real line without a process master has exactly one placeholder process: chosen automatically.
@@ -226,17 +174,6 @@ export default function OperatorPage() {
     setValidation(null);
     setState({ kind: "sending" });
 
-    // Never let photo processing delay the call for long: wait at most 5 s, then send without it.
-    let photoToSend = photo;
-    let localPhotoNote: string | null = null;
-    if (pendingPhoto.current) {
-      photoToSend = await Promise.race([
-        pendingPhoto.current,
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
-      ]);
-      if (!photoToSend) localPhotoNote = "사진 처리가 지연되어 사진 없이 호출했습니다.";
-    }
-
     const form = new FormData();
     form.set("lineCode", lineCode);
     form.set("processId", processId);
@@ -248,10 +185,9 @@ export default function OperatorPage() {
     for (const d of deps) form.append("departments", d);
     for (const d of deps) for (const id of people[d] ?? []) form.append("recipients", id);
     form.set("clientRequestId", requestId.current);
-    if (photoToSend) form.set("photo", photoToSend);
 
     try {
-      const res = await api<{ event: AndonEvent; duplicate: boolean; photoWarning?: string | null }>(
+      const res = await api<{ event: AndonEvent; duplicate: boolean }>(
         "/api/andons",
         { method: "POST", body: form },
         20000,
@@ -260,7 +196,6 @@ export default function OperatorPage() {
         kind: "ok",
         event: res.event,
         duplicate: res.duplicate,
-        photoWarning: res.photoWarning ?? localPhotoNote,
       });
     } catch (e) {
       setState({ kind: "error", message: (e as Error).message });
@@ -273,7 +208,6 @@ export default function OperatorPage() {
     setSituations([]);
     chooseDeps([]);
     setDescription("");
-    clearPhoto();
     setState({ kind: "idle" });
   }
 
@@ -293,11 +227,6 @@ export default function OperatorPage() {
               {state.duplicate && <><br />(이미 접수된 호출입니다 · already registered)</>}
             </div>
           </div>
-          {state.photoWarning && (
-            <div className="alert alert-warn" role="status">
-              ⚠ 사진은 첨부되지 않았습니다 (photo not attached): {state.photoWarning}
-            </div>
-          )}
           <div className="row">
             <button className="btn btn-primary btn-big" onClick={reset}>
               새 ANDON 호출
@@ -414,14 +343,14 @@ export default function OperatorPage() {
             )}
 
             {/* Everything below is filled in by the situation: folded away so the GL needs only 2–3 taps
-                (line → situation → ANDON CALL). Open it to change category, departments, people or add text / photo. */}
+                (line → situation → ANDON CALL). Open it to change category, departments, people or add text. No photos (plant decision 2026-10-08). */}
             <details className="call-more" open={moreOpen} onToggle={(e) => setMoreOpen((e.target as HTMLDetailsElement).open)}>
               <summary>
                 <span className="call-more-t">세부 설정 <span className="muted">(선택)</span></span>
                 <span className="call-more-sum">
-                  {[meta.categories.find((c) => c.code === categoryCode)?.nameKo, recipientSummary || null, description.trim() ? "내용 입력됨" : null, photo ? "사진" : null]
+                  {[meta.categories.find((c) => c.code === categoryCode)?.nameKo, recipientSummary || null, description.trim() ? "내용 입력됨" : null]
                     .filter(Boolean)
-                    .join(" · ") || "이상 유형 · 조치부서 · 받는 사람 · 내용 · 사진"}
+                    .join(" · ") || "이상 유형 · 조치부서 · 받는 사람 · 내용"}
                 </span>
               </summary>
 
@@ -498,40 +427,19 @@ export default function OperatorPage() {
               <textarea
                 id="desc"
                 className="textarea"
-                maxLength={500}
-                placeholder={situations.length ? "추가 설명 (선택) — 비워두면 선택한 상황이 내용이 됩니다" : "예) Stay Bracket 체결 이상 발견"}
+                maxLength={situations.includes("MT_PREVENTIVE") ? 100 : 500}
+                placeholder={
+                  situations.includes("MT_PREVENTIVE")
+                    ? "예방보전 안내 (100자 이내) — 예) 3번 로봇 정기 점검, 14:00~16:00 라인 정지"
+                    : situations.length
+                      ? "추가 설명 (선택) — 비워두면 선택한 상황이 내용이 됩니다"
+                      : "예) Stay Bracket 체결 이상 발견"
+                }
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
               />
             </div>
 
-            <div className="field">
-              <span className="field-label">사진<span className="en">Photo (선택)</span></span>
-              <div className="row">
-                <label className="btn">
-                  📷 사진 촬영/선택
-                  <input
-                    ref={fileInput}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    hidden
-                    onChange={(e) => pickPhoto(e.target.files?.[0] ?? null)}
-                  />
-                </label>
-                {(photo || photoBusy) && (
-                  <button type="button" className="btn" onClick={clearPhoto}>
-                    사진 삭제
-                  </button>
-                )}
-                {photoBusy && <span className="muted">사진 처리 중…</span>}
-              </div>
-              {photoNote && <div className="alert alert-warn">{photoNote}</div>}
-              {photoUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={photoUrl} alt="첨부 사진 미리보기" style={{ marginTop: 10, maxWidth: "100%", maxHeight: 240, borderRadius: 10 }} />
-              )}
-            </div>
             </details>
 
             {validation && <div className="alert alert-warn">{validation}</div>}

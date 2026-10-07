@@ -67,7 +67,7 @@ export type RoleCode = (typeof ROLE_CODES)[number];
  * routing maps Line + Process + Category → Department (see src/lib/routing.ts).
  * Codes are stable identifiers; `displayCode` is what users see ("PC&L" for code PCL).
  */
-export const DEPARTMENT_CODES = ["ME", "MT", "UAP", "QC", "PCL", "SQA"] as const;
+export const DEPARTMENT_CODES = ["ME", "MT", "UAP", "QC", "PCL"] as const;
 
 /** Roles a person may self-register with. Everything else is assigned by an administrator. */
 export const SELF_REGISTRATION_ROLE: RoleCode = "RESPONDER";

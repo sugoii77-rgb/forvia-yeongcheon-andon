@@ -36,7 +36,7 @@ export function departmentOf(text: string): string | null {
   if (/^(UAP|생산|AP-?\d|AQ-?\d|BENDING|RESO)/.test(t)) return "UAP";
   if (/^(MT|보전|MAINT)/.test(t)) return "MT";
   if (/^(PC&L|PCL|PC&L|물류|LOGIS)/.test(t)) return "PCL";
-  if (/^(SQA|외주품질)/.test(t)) return "SQA";
+  if (/^(SQA|외주품질)/.test(t)) return "QC"; // SQA is part of QC (2026-10-08)
   if (/^(QC|품질|QUAL)/.test(t)) return "QC";
   if (/^(ME|생산기술)/.test(t)) return "ME";
   return null;

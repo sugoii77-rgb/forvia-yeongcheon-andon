@@ -35,8 +35,6 @@ export const DEPARTMENTS = [
   { code: "UAP", displayCode: "UAP", nameKo: "생산", nameEn: "Production", sortOrder: 3 },
   { code: "QC", displayCode: "QC", nameKo: "품질", nameEn: "Quality", sortOrder: 4 },
   { code: "PCL", displayCode: "PC&L", nameKo: "물류", nameEn: "Production Control & Logistics", sortOrder: 5 },
-  // plant table 2026-10-06: 단품불량 → SQA (supplier quality, part of the quality team, called separately)
-  { code: "SQA", displayCode: "SQA", nameKo: "외주품질", nameEn: "Supplier Quality Assurance", sortOrder: 6 },
 ];
 
 /**
@@ -56,17 +54,23 @@ export const CALL_SITUATIONS: { code: string; nameKo: string; target: string; ca
   { code: "QC_LEAK_NG", nameKo: "Leak NG", target: "QC", category: "QUALITY" },
   { code: "QC_STANDARD", nameKo: "검사기준 불명확", target: "QC", category: "QUALITY" },
   { code: "QC_GAUGE", nameKo: "검사구 문제", target: "QC", category: "QUALITY" },
-  { code: "SQA_PART", nameKo: "단품불량", target: "SQA", category: "QUALITY" },
+  // SQA is part of QC (2026-10-08): 단품불량 (supplier part) calls QC
+  { code: "SQA_PART", nameKo: "단품불량 (협력사)", target: "QC", category: "QUALITY" },
   { code: "MT_STOP", nameKo: "설비 정지", target: "MT", category: "MAINTENANCE" },
   { code: "MT_ROBOT", nameKo: "Robot Fault", target: "MT", category: "MAINTENANCE" },
   { code: "MT_NUTRUNNER", nameKo: "Nutrunner Fault", target: "MT", category: "MAINTENANCE" },
   { code: "MT_LEAK_TESTER", nameKo: "Leak Tester NG", target: "MT", category: "MAINTENANCE" },
   { code: "MT_SENSOR", nameKo: "Sensor Fault", target: "MT", category: "MAINTENANCE" },
-  { code: "ME_CONDITION", nameKo: "공정조건 이상", target: "ME", category: "PRODUCTION" },
-  { code: "ME_CYCLE_TIME", nameKo: "싸이클타임 불량", target: "ME", category: "PRODUCTION" },
-  { code: "ME_TOOLING", nameKo: "치공구 문제", target: "ME", category: "PRODUCTION" },
-  { code: "ME_NEW_ISSUE", nameKo: "신규 문제 원인 미확정", target: "ME", category: "PRODUCTION" },
-  { code: "PCL_SHORTAGE", nameKo: "자재 부족", target: "PCL", category: "MATERIAL" },
+  // registered by UAP, yellow at once (planned work), text only, never escalated (2026-10-08)
+  { code: "MT_PREVENTIVE", nameKo: "예방보전", target: "MT", category: "MAINTENANCE" },
+  // ME (IPL) is not called directly (2026-10-08): production handles these, ME is told at the 2-hour escalation
+  { code: "ME_CONDITION", nameKo: "공정조건 이상", target: "UAP", category: "PRODUCTION" },
+  { code: "ME_CYCLE_TIME", nameKo: "싸이클타임 불량", target: "UAP", category: "PRODUCTION" },
+  { code: "ME_TOOLING", nameKo: "치공구 문제", target: "UAP", category: "PRODUCTION" },
+  { code: "ME_NEW_ISSUE", nameKo: "신규 문제 원인 미확정", target: "UAP", category: "PRODUCTION" },
+  // 자재 결품: in-house part (자작품) or purchased part (외주품) — decides who is told at completion
+  { code: "PCL_SHORTAGE_INHOUSE", nameKo: "자재 결품 (자작품)", target: "PCL", category: "MATERIAL" },
+  { code: "PCL_SHORTAGE_PURCHASED", nameKo: "자재 결품 (외주품)", target: "PCL", category: "MATERIAL" },
   { code: "PCL_WRONG_INPUT", nameKo: "잘못 투입", target: "PCL", category: "MATERIAL" },
   { code: "PCL_FIFO", nameKo: "FIFO 문제", target: "PCL", category: "MATERIAL" },
   { code: "SV_MANPOWER", nameKo: "인원 부족", target: "UAP", category: "PRODUCTION" },

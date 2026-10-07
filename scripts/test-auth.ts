@@ -185,7 +185,7 @@ async function main() {
     const d = (await detail(id)).body;
     const c = closers[d.responsibility.effectiveDepartmentCode];
     if (d.event.status === "OPEN") await transition(c, id, "ACKNOWLEDGE");
-    await transition(d.responsibility.effectiveDepartmentCode === "QC" ? uapCloser : c, id, "CLOSE", "[TEST] auth test cleanup");
+    await transition(["QC", "PCL"].includes(d.responsibility.effectiveDepartmentCode) ? uapCloser : c, id, "CLOSE", "[TEST] auth test cleanup");
   }
   const open = (await fetch(`${BASE}/api/andons?scope=active`).then((r) => r.json())).events.filter((e: { id: string }) => created.includes(e.id));
   check(open.length === 0, `test events closed again (${created.length})`);

@@ -2,6 +2,8 @@ import { transitionEvent, getTransitions, AndonError } from "@/lib/server/andonS
 import { assertSameOrigin, getSessionUser } from "@/lib/server/auth";
 import { TRANSITION_ACTIONS, type TransitionAction } from "@/lib/domain";
 import { handle, requestAudit } from "@/lib/server/http";
+import { notifyAndonClosed } from "@/lib/server/notifications";
+import { after } from "next/server";
 
 // JSON body: { action: "ACKNOWLEDGE" | "ACTION" | "CLOSE", comment? }
 // The responder is ALWAYS the logged-in user (session cookie). Identity in the body is never trusted:
@@ -30,6 +32,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/andons/[id]/tra
       comment: body.comment == null ? undefined : String(body.comment),
       audit,
     });
+    if (event.status === "CLOSED") after(() => notifyAndonClosed(event)); // completion notice (자재 결품)
     console.info(`[andon] ${id} ${body.action} by user #${user.id} (${user.departmentCode}) device ${audit.deviceId ?? "-"} ${audit.clientIp ?? ""} -> ${event.status}`);
     return Response.json({ event, transitions: await getTransitions(id) });
   });

@@ -169,7 +169,7 @@ export async function eligibleResponders(eventDepartmentCode: string | string[])
  * included, any role that may respond (plant decision 2026-10-06: HSE, ME, MT, QC, PC&L). Other departments
  * (UAP) notify their RESPONDER accounts only.
  */
-export const ALL_MEMBER_NOTIFY_DEPARTMENTS: readonly string[] = ["HSE", "ME", "MT", "QC", "PCL", "SQA"];
+export const ALL_MEMBER_NOTIFY_DEPARTMENTS: readonly string[] = ["HSE", "ME", "MT", "QC", "PCL"];
 
 /**
  * Receivers of the initial notification of a department (escalation comes later, with Reaction Rules):

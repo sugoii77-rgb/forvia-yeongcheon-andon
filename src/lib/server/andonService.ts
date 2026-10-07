@@ -105,8 +105,9 @@ async function withDepartments(events: AndonEvent[]): Promise<AndonEvent[]> {
 export async function actionDepartmentCodes(eventId: string, fallback: string, action: TransitionAction): Promise<string[]> {
   const deps = await eventDepartmentCodes(eventId, fallback);
   if (action === "CLOSE") {
+    // QC and PC&L events are closed by UAP (2026-10-07 / 08); MT closes its own repair
     const effective = await Promise.all(deps.map((d) => effectiveDepartment(d)));
-    if (effective.includes("QC")) return ["UAP"];
+    if (effective.includes("QC") || effective.includes("PCL")) return ["UAP"];
   }
   return deps;
 }
@@ -297,9 +298,10 @@ export interface CreateAndonInput {
   situations?: string[];
 }
 
-/** Departments a GAP leader can call: every active operational department except production itself. */
+/** Departments a GAP leader calls (plant meeting 2026-10-07/08: QC, MT, PC&L — plus UAP, added separately). */
+export const CALLABLE_DEPARTMENTS = ["QC", "MT", "PCL"];
 export async function callableDepartments(): Promise<{ code: string; label: string }[]> {
-  return (await db.all("SELECT code, COALESCE(display_code, code) AS display, name_ko FROM department WHERE active = 1 AND code <> 'UAP' ORDER BY sort_order"))
+  return (await db.all(`SELECT code, COALESCE(display_code, code) AS display, name_ko FROM department WHERE active = 1 AND code IN (${CALLABLE_DEPARTMENTS.map(() => "?").join(",")}) ORDER BY sort_order`, ...CALLABLE_DEPARTMENTS))
     .map((r) => ({ code: r.code as string, label: `${r.display as string} · ${r.name_ko as string}` }));
 }
 
@@ -309,6 +311,23 @@ export async function callableDepartments(): Promise<{ code: string; label: stri
  * UAP by default — the line's supervisor, the line's GAP leader (the team on shift; both while the shift
  * is unresolved) and the UAP default recipients (app_user.call_default: UAP team leader, UAP 책임).
  */
+/** The line's UAP owners now: its supervisor and its GAP leader (team on shift; both while unresolved). */
+export async function lineUapPeople(lineCode: string): Promise<number[]> {
+  const shift = await shiftSnapshotForLine(lineCode, nowIso());
+  const rows = await db.all(
+    `SELECT a.user_id, a.assignment_role, a.id FROM line_assignment a JOIN app_user u ON u.id = a.user_id
+     WHERE a.line_code = ? AND a.active = 1 AND u.active = 1 AND (a.effective_to IS NULL OR a.effective_to > ?)`,
+    lineCode,
+    nowIso(),
+  );
+  const out = new Set<number>();
+  for (const r of rows) {
+    const gapOnShift = shift.gapLeaderAssignmentId == null || r.id === shift.gapLeaderAssignmentId;
+    if (r.assignment_role === "SUPERVISOR" || (r.assignment_role === "GAP_LEADER" && gapOnShift)) out.add(r.user_id as number);
+  }
+  return [...out];
+}
+
 export async function callTargets(lineCode?: string): Promise<CallTargetDepartment[]> {
   const deps = await callableDepartments();
   const people = await db.all(
@@ -317,19 +336,7 @@ export async function callTargets(lineCode?: string): Promise<CallTargetDepartme
   );
   const member = (p: Record<string, unknown>) => ({ id: p.id as number, name: p.name as string, roleName: p.role_name as string });
   const uapDefaults = new Set<number>(people.filter((p) => p.department_code === "UAP" && p.call_default === 1).map((p) => p.id as number));
-  if (lineCode) {
-    const shift = await shiftSnapshotForLine(lineCode, nowIso());
-    const rows = await db.all(
-      `SELECT user_id, assignment_role, shift_code, id FROM line_assignment
-       WHERE line_code = ? AND active = 1 AND (effective_to IS NULL OR effective_to > ?)`,
-      lineCode,
-      nowIso(),
-    );
-    for (const r of rows) {
-      const gapOnShift = shift.gapLeaderAssignmentId == null || r.id === shift.gapLeaderAssignmentId;
-      if (r.assignment_role === "SUPERVISOR" || (r.assignment_role === "GAP_LEADER" && gapOnShift)) uapDefaults.add(r.user_id as number);
-    }
-  }
+  if (lineCode) for (const id of await lineUapPeople(lineCode)) uapDefaults.add(id);
   const uapMembers = people.filter((p) => p.department_code === "UAP");
   return [
     ...deps.map((d) => ({ ...d, members: people.filter((p) => p.department_code === d.code).map(member) })),
@@ -392,6 +399,10 @@ export async function createEvent(input: CreateAndonInput): Promise<{ event: And
   const call = input.departments ? await validateCall(input.departments, input.recipientIds ?? []) : null;
   const situations = [...new Set((input.situations ?? []).map(String))];
   if (situations.some((c) => !CALL_SITUATIONS.some((s) => s.code === c))) throw new AndonError(400, "상황 선택이 올바르지 않습니다.", "INVALID_SITUATION");
+  // 예방보전 (preventive maintenance): planned MT work registered by UAP — yellow at once, short text only
+  const preventive = situations.includes("MT_PREVENTIVE");
+  if (preventive && description.length > 100) throw new AndonError(400, "예방보전 안내는 100자 이내로 입력하세요.", "DESCRIPTION_TOO_LONG");
+  const startStatus: AndonStatus = preventive ? "ACKNOWLEDGED" : "OPEN";
 
   const plant = (await db.get("SELECT p.name FROM line l JOIN plant p ON p.code = l.plant_code WHERE l.code = ?", input.lineCode)) as { name: string } | undefined;
   const createdAt = input.createdAt ?? nowIso();
@@ -412,7 +423,7 @@ export async function createEvent(input: CreateAndonInput): Promise<{ event: And
          description, photo_file, status, created_by, created_at, updated_at, client_request_id,
          shift_status, shift_unresolved_reason, shift_team, shift_type, shift_operational_date, shift_start_at,
          gap_leader_assignment_id, supervisor_assignment_id, situations)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, newId,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, newId,
       plant?.name ?? "",
       input.lineCode,
       input.processId,
@@ -421,6 +432,7 @@ export async function createEvent(input: CreateAndonInput): Promise<{ event: And
       resp.routingRuleId,
       description,
       input.photoFile ?? null,
+      startStatus,
       createdBy,
       createdAt,
       createdAt,
@@ -447,7 +459,7 @@ export async function createEvent(input: CreateAndonInput): Promise<{ event: And
     const c = input.caller;
     await insertTransition(
       newId,
-      { action: "CREATE", from: null, to: "OPEN", userName: createdBy, userId: c?.id ?? null, userDepartment: c?.departmentCode ?? null, userRole: c?.role ?? null, comment: description, at: createdAt },
+      { action: "CREATE", from: null, to: startStatus, userName: createdBy, userId: c?.id ?? null, userDepartment: c?.departmentCode ?? null, userRole: c?.role ?? null, comment: description, at: createdAt },
       input.audit ?? NO_AUDIT,
     );
     return newId;

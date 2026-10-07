@@ -531,3 +531,5 @@ table.table { width: 100%; border-collapse: collapse; background: #fff; font-siz
 .call-bar .btn-andon:disabled { opacity: 0.45; }
 .call-bar .btn-andon { min-height: 74px; font-size: 30px; border-radius: 14px; box-shadow: 0 5px 0 var(--red-dark); }
 .call-bar .btn-andon small { font-size: 13px; }
+.csv-card { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.btn.disabled { opacity: 0.5; pointer-events: none; }

@@ -177,7 +177,8 @@ async function apiTests() {
     if (!closers.has(dept)) closers.set(dept, (await registerAccount(dept, `routing-${dept}`)).client);
     const c = closers.get(dept)!;
     if (d.event.status === "OPEN") await transition(dept === "QC" ? qc.client : c, id, "ACKNOWLEDGE");
-    await transition(c, id, "CLOSE", "[TEST] routing test cleanup");
+    // QC and PC&L events are closed by UAP (plant meetings 2026-10-07 / 08)
+    await transition(dept === "PCL" ? closers.get("QC")! : c, id, "CLOSE", "[TEST] routing test cleanup");
   }
   const final = (await detail(q.id)).body.transitions as Transition[];
   console.log(

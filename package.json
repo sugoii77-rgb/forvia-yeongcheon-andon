@@ -35,7 +35,9 @@
     "verify:roster": "node scripts/verify-roster.ts",
     "test:call": "node scripts/test-call.ts",
     "import:accounts": "node scripts/import-accounts.ts",
-    "test:accounts": "node scripts/test-accounts.ts"
+    "test:accounts": "node scripts/test-accounts.ts",
+    "purge:history": "node scripts/purge-history.ts",
+    "test:retention": "node scripts/test-retention.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",

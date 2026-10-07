@@ -197,3 +197,49 @@ export async function sendToRecipients(eventId: string, recipients: Notification
   }
   return sent;
 }
+
+/**
+ * Completion notice (plant meeting 2026-10-08) for material shortages:
+ *  - 자작품 (in-house part): the line's UAP (SV + GL) and all of PC&L (incl. the PC&L SV);
+ *  - 외주품 (purchased part): the line's UAP (SV + GL) only.
+ * Other completions send nothing (yet). Never throws.
+ */
+export async function notifyAndonClosed(event: AndonEvent): Promise<void> {
+  try {
+    const row = await db.get("SELECT situations FROM andon_event WHERE id = ?", event.id);
+    let sits: string[] = [];
+    try {
+      sits = JSON.parse((row?.situations as string) || "[]");
+    } catch {
+      /* none */
+    }
+    const inhouse = sits.includes("PCL_SHORTAGE_INHOUSE");
+    if (!inhouse && !sits.includes("PCL_SHORTAGE_PURCHASED")) return;
+    const { lineUapPeople } = await import("../andonService.ts");
+    const ids = new Set(await lineUapPeople(event.lineCode));
+    if (inhouse) {
+      for (const r of await db.all("SELECT u.id FROM app_user u JOIN role r ON r.code = u.role WHERE u.active = 1 AND r.can_respond = 1 AND u.department_code = 'PCL'")) ids.add(r.id as number);
+    }
+    const people = ids.size
+      ? await db.all(
+          `SELECT u.id, u.name, u.department_code,
+                  (SELECT c.recipient_id FROM user_notification_channel c
+                   WHERE c.user_id = u.id AND c.provider = 'KAKAO' AND c.verified = 1 AND c.active = 1 ORDER BY c.id LIMIT 1) AS kakao
+           FROM app_user u WHERE u.active = 1 AND u.id IN (${[...ids].map(() => "?").join(",")}) ORDER BY u.id`,
+          ...ids,
+        )
+      : [];
+    const base = (process.env.APP_BASE_URL || "http://localhost:3000").replace(/\/$/, "");
+    await sendToRecipients(
+      event.id,
+      people.map((u) => ({ userId: u.id as number, name: u.name as string, departmentCode: u.department_code as string, address: (u.kakao as string | null) ?? null })),
+      {
+        title: `[ANDON 완료] ${event.lineName} · ${event.situations.join(", ") || event.categoryName}`,
+        body: `${event.id} · 조치: ${event.correctiveAction ?? "-"}`,
+        link: `${base}/respond/${encodeURIComponent(event.id)}`,
+      },
+    );
+  } catch (err) {
+    console.error("[notify] completion notice failed", err);
+  }
+}

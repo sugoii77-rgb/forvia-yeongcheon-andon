@@ -1,6 +1,7 @@
 // 2-hour escalation (plant meeting 2026-10-07): an ANDON not COMPLETED 2 hours after the call → one
 // separate KakaoTalk message to the plant manager (role PLANT_MANAGER) and the team leaders
-// (app_user.team_leader) of PC&L, QC, MT and UAP. Preventive maintenance is excluded.
+// (app_user.team_leader) of PC&L, QC, MT and UAP, and to ME (IPL) — all its members (2026-10-08).
+// Preventive maintenance is excluded.
 // Only GAP-leader calls (v9: andon_event_department rows) escalate — older / demo events never do.
 // Exactly once per event (andon_escalation primary key, append-only), also with several server instances.
 import type { AndonEvent } from "../domain.ts";
@@ -19,7 +20,8 @@ export async function escalationRecipients(): Promise<NotificationRecipient[]> {
             (SELECT c.recipient_id FROM user_notification_channel c
              WHERE c.user_id = u.id AND c.provider = 'KAKAO' AND c.verified = 1 AND c.active = 1 ORDER BY c.id LIMIT 1) AS kakao
      FROM app_user u
-     WHERE u.active = 1 AND (u.role = 'PLANT_MANAGER' OR (u.team_leader = 1 AND u.department_code IN (${ESCALATION_DEPARTMENTS.map(() => "?").join(",")})))
+     WHERE u.active = 1 AND (u.role = 'PLANT_MANAGER' OR u.department_code = 'ME'
+            OR (u.team_leader = 1 AND u.department_code IN (${ESCALATION_DEPARTMENTS.map(() => "?").join(",")})))
      ORDER BY u.id`,
     ...ESCALATION_DEPARTMENTS,
   );

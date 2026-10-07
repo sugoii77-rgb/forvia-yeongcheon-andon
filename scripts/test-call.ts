@@ -98,10 +98,11 @@ async function main() {
   console.log("SITUATIONS / SQA / SV");
   const t2 = (await gap.request("GET", "/api/call-targets?line=AP1-MAIN1")).body;
   const sv = (t2.departments as { code: string; members: { id: number; roleName: string }[]; defaultMemberIds?: number[] }[]).find((d) => d.code === "UAP");
-  check(t2.departments.some((d: { code: string }) => d.code === "SQA"), "SQA (외주품질) is a callable department");
+  check((t2.departments as { code: string }[]).map((d) => d.code).join() === "MT,QC,PCL,UAP", `call targets: MT, QC, PC&L, UAP — no ME / SQA / HSE (${(t2.departments as { code: string }[]).map((d) => d.code).join()})`);
   const lineSv = Number((await db.get("SELECT user_id FROM line_assignment WHERE line_code = 'AP1-MAIN1' AND assignment_role = 'SUPERVISOR' AND active = 1"))!.user_id);
   check(!!sv && sv.members.length > 0 && sv.defaultMemberIds!.includes(lineSv), "UAP target: production people, the line's supervisor pre-chosen");
-  check((t2.situations as { code: string; target: string }[]).length === 21 && t2.situations.some((x: { code: string; target: string }) => x.code === "MT_ROBOT" && x.target === "MT"), "21 plant situations with their call target");
+  const sitTarget = (code: string) => (t2.situations as { code: string; target: string }[]).find((x) => x.code === code)?.target;
+  check((t2.situations as unknown[]).length === 23 && sitTarget("MT_ROBOT") === "MT" && sitTarget("SQA_PART") === "QC" && sitTarget("ME_TOOLING") === "UAP" && sitTarget("MT_PREVENTIVE") === "MT", "23 situations: SQA → QC, ME situations → UAP, 예방보전 → MT");
   const sit = await (async () => {
     const f = new FormData();
     f.set("lineCode", "AP1-MAIN1");
@@ -184,6 +185,57 @@ async function main() {
   check(Number((await db.get("SELECT COUNT(*) n FROM andon_escalation WHERE event_id = ?", late.body.event.id))!.n) === 1, "escalated only once");
   const cron = await fetch(`${BASE}/api/escalations`);
   check(cron.status === 401, "escalation endpoint needs the scheduler secret");
+
+  console.log("PREVENTIVE / PC&L CLOSE / COMPLETION NOTICE / ME ESCALATION");
+  const callWith = async (category: string, deps: string[], recipients: number[], situations: string[], text = "") => {
+    const f = new FormData();
+    for (const [k, v] of Object.entries({ lineCode: "AP1-FRT", processId: String(processFrt), categoryCode: category, description: text, clientRequestId: `call-x-${Date.now()}-${Math.random()}` })) f.set(k, v);
+    for (const d of deps) f.append("departments", d);
+    for (const r of recipients) f.append("recipients", String(r));
+    for (const x of situations) f.append("situations", x);
+    return gap.request("POST", "/api/andons", f);
+  };
+  const processFrt = (await fetch(`${BASE}/api/meta`).then((r) => r.json())).processes.find((x: { lineCode: string }) => x.lineCode === "AP1-FRT").id;
+  const pv = await callWith("MAINTENANCE", ["MT"], [mt.id], ["MT_PREVENTIVE"], "[TEST] 3번 로봇 정기 점검");
+  check(pv.status === 201 && pv.body.event.status === "ACKNOWLEDGED", `예방보전: registered by UAP, yellow at once (${pv.body.event?.status})`);
+  const pvLong = await callWith("MAINTENANCE", ["MT"], [mt.id], ["MT_PREVENTIVE"], "x".repeat(101));
+  check(pvLong.status === 400 && pvLong.body.code === "DESCRIPTION_TOO_LONG", "예방보전 text is limited to 100 characters");
+  await db.run("UPDATE andon_event SET created_at = ? WHERE id = ?", new Date(Date.now() - 3 * 3600_000).toISOString(), pv.body.event.id);
+  const me1 = await registerAccount("ME", "call-me");
+  const late2 = await callWith("MATERIAL", ["PCL"], [pcl.id], ["PCL_SHORTAGE_PURCHASED"], "[TEST] escalation with ME");
+  await db.run("UPDATE andon_event SET created_at = ? WHERE id = ?", new Date(Date.now() - 3 * 3600_000).toISOString(), late2.body.event.id);
+  await fetch(`${BASE}/api/andons?scope=board`);
+  let escRows: Record<string, unknown>[] = [];
+  for (let i = 0; i < 20 && escRows.length === 0; i++) {
+    await sleep(250);
+    escRows = await db.all("SELECT event_id FROM andon_escalation WHERE event_id IN (?, ?)", pv.body.event.id, late2.body.event.id);
+  }
+  check(escRows.length === 1 && escRows[0].event_id === late2.body.event.id, "예방보전 is never escalated; the overdue PC&L call is");
+  await sleep(500);
+  const esc2 = ((await detail(late2.body.event.id)).body.notifications as { recipient: string; message: string }[]).filter((n) => n.message.startsWith("[ANDON 에스컬레이션]")).map((n) => n.recipient);
+  check(esc2.includes(me1.name) && esc2.includes(pm.name), "ME (IPL) members get the 2-hour escalation too");
+
+  // PC&L: closed by UAP; completion notice 자작품 → line UAP + all PC&L, 외주품 → line UAP only
+  const frtSv = Number((await db.get("SELECT user_id FROM line_assignment WHERE line_code = 'AP1-FRT' AND assignment_role = 'SUPERVISOR' AND active = 1"))!.user_id);
+  const frtSvName = (await db.get("SELECT name FROM app_user WHERE id = ?", frtSv))!.name as string;
+  const pcl2 = await registerAccount("PCL", "call-pcl2");
+  const closeNames = async (sit: string) => {
+    const c = await callWith("MATERIAL", ["PCL"], [pcl.id], [sit], `[TEST] ${sit}`);
+    await transition(pcl.client, c.body.event.id, "ACKNOWLEDGE");
+    const byPcl = await transition(pcl.client, c.body.event.id, "CLOSE", "[TEST] by PC&L");
+    const byUap = await transition(gap, c.body.event.id, "CLOSE", "[TEST] 입고 완료");
+    let notes: string[] = [];
+    for (let i = 0; i < 20 && notes.length === 0; i++) {
+      await sleep(250);
+      notes = ((await detail(c.body.event.id)).body.notifications as { recipient: string; message: string }[]).filter((n) => n.message.startsWith("[ANDON 완료]")).map((n) => n.recipient);
+    }
+    return { byPcl: byPcl.status, byUap: byUap.status, notes };
+  };
+  const inh = await closeNames("PCL_SHORTAGE_INHOUSE");
+  check(inh.byPcl === 403 && inh.byUap === 200, `PC&L event: PC&L cannot close, UAP closes (${inh.byPcl}/${inh.byUap})`);
+  check(inh.notes.includes(frtSvName) && inh.notes.includes(pcl.name) && inh.notes.includes(pcl2.name), `자작품 completion → line UAP (SV / GL) + all PC&L (${inh.notes.length})`);
+  const pur = await closeNames("PCL_SHORTAGE_PURCHASED");
+  check(pur.notes.includes(frtSvName) && !pur.notes.includes(pcl.name) && !pur.notes.includes(pcl2.name), `외주품 completion → line UAP only, PC&L not told (${pur.notes.length})`);
 
   console.log("APPEND-ONLY");
   let blocked = 0;
