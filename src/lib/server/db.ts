@@ -551,6 +551,20 @@ async function migrateV9(db: Sql) {
     );
     CREATE INDEX idx_event_department_dept ON andon_event_department(department_code);
     ALTER TABLE andon_event ADD COLUMN situations TEXT; -- JSON array of CALL_SITUATIONS codes picked at the call
+    -- plant meeting 2026-10-07: team leaders (팀장) get the 2-hour escalation; call_default = always messaged
+    -- on calls to QC / MT (UAP 팀장, UAP 책임). Set by the administrator (masterdata / import:accounts).
+    ALTER TABLE app_user ADD COLUMN team_leader INTEGER NOT NULL DEFAULT 0 CHECK (team_leader IN (0, 1));
+    ALTER TABLE app_user ADD COLUMN call_default INTEGER NOT NULL DEFAULT 0 CHECK (call_default IN (0, 1));
+    -- one escalation per event: not completed 2 hours after the call → plant manager + team leaders
+    CREATE TABLE andon_escalation (
+      event_id     TEXT PRIMARY KEY REFERENCES andon_event(id),
+      escalated_at TEXT NOT NULL,
+      recipients   INTEGER NOT NULL
+    );
+    CREATE TRIGGER trg_escalation_no_update BEFORE UPDATE ON andon_escalation
+    BEGIN SELECT RAISE(ABORT, 'andon_escalation is append-only'); END;
+    CREATE TRIGGER trg_escalation_no_delete BEFORE DELETE ON andon_escalation
+    BEGIN SELECT RAISE(ABORT, 'andon_escalation is append-only'); END;
     CREATE TRIGGER trg_event_department_no_update BEFORE UPDATE ON andon_event_department
     BEGIN SELECT RAISE(ABORT, 'andon_event_department is append-only'); END;
     CREATE TRIGGER trg_event_department_no_delete BEFORE DELETE ON andon_event_department

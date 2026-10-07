@@ -27,7 +27,7 @@ await applyOrgImport([{ lineName: "Main #1", uapAreaCode: "AP-1", supervisor: "�
 await db.run("INSERT INTO app_user (name, department_code, role, active, source, created_at) VALUES ('물류-T', 'PCL', 'RESPONDER', 1, 'ADMIN', ?)", nowIso());
 
 const csv = [
-  "이름,부서,직급,연락처,Kakao Talk ID,로그인 이메일",
+  "이름,부서,직급,연락처,Kakao Talk ID,로그인 이메일,기본알림",
   "리더-TA(A),UAP,GL,010-0000-0000,kakao-x,gl-a@andon.test",
   "감독자-T,AP-1,SV,,,sv@andon.test",
   "리더-없음,UAP,GL,,,nobody@andon.test",
@@ -37,17 +37,25 @@ const csv = [
   "중복-T,QC,책임,,,mt1@andon.test",
   "잘못-T,QC,책임,,,not-an-email",
   "부서-T,총무,책임,,,x@andon.test",
+  "생산팀장-T,UAP,팀장,,,uap-lead@andon.test",
+  "생산책임-T,UAP,책임,,,uap-staff@andon.test,Y",
+  "공장장-T,,PM,,,pm@andon.test",
 ].join("\n");
 const file = path.join(DIR, "accounts.csv");
 fs.writeFileSync(file, "﻿" + csv);
 
 console.log("Account import (isolated DB)");
 const rows = await acc.readAccountFile(file);
-check(rows.length === 9 && rows[0].name === "리더-TA", `reads 9 rows, "(A)" removed from names (${rows.length})`);
+check(rows.length === 12 && rows[0].name === "리더-TA", `reads 12 rows, "(A)" removed from names (${rows.length})`);
 check(!JSON.stringify(rows).includes("010-0000-0000") && !JSON.stringify(rows).includes("kakao-x"), "phone / KakaoTalk columns are not read");
 
 const res = await acc.importAccounts(rows);
-check(res.loginAdded === 3 && res.created === 2, `GL + SV + existing PC&L get a login, 2 MT accounts created (added ${res.loginAdded}, created ${res.created})`);
+check(res.loginAdded === 3 && res.created === 5, `GL + SV + existing PC&L get a login; 2 MT, UAP 팀장, UAP 책임, PM created (added ${res.loginAdded}, created ${res.created})`);
+const flag = async (n: string) => (await db.get("SELECT role, department_code d, team_leader t, call_default c FROM app_user WHERE name = ?", n))!;
+check((await flag("보전팀장-T")).t === 1 && (await flag("보전팀장-T")).c === 0, "MT 팀장 → team leader (escalation), not a default recipient");
+check((await flag("생산팀장-T")).t === 1 && (await flag("생산팀장-T")).c === 1, "UAP 팀장 → team leader + default recipient of QC / MT calls");
+check((await flag("생산책임-T")).t === 0 && (await flag("생산책임-T")).c === 1, "기본알림 Y → default recipient");
+check((await flag("공장장-T")).role === "PLANT_MANAGER" && (await flag("공장장-T")).d === "UAP", "PM without department → PLANT_MANAGER in UAP");
 const gl = await db.get("SELECT u.id, u.role, i.subject FROM app_user u JOIN user_identity i ON i.user_id = u.id WHERE u.name = '리더-TA'");
 check(gl?.role === "GAP_LEADER" && gl?.subject === "gl-a@andon.test", "GAP leader login is on the line-ownership employee (no duplicate person)");
 check(Number((await db.get("SELECT COUNT(*) n FROM app_user WHERE name = '리더-TA'"))!.n) === 1, "still one record for the GAP leader");
@@ -63,11 +71,11 @@ const login = await authenticate("gl-a@andon.test", res.credentials.find((c) => 
 check(login.role === "GAP_LEADER", "the temporary password works for login");
 
 const again = await acc.importAccounts(rows);
-check(again.created === 0 && again.loginAdded === 0 && again.unchanged === 5, `repeat import changes nothing (unchanged ${again.unchanged})`);
+check(again.created === 0 && again.loginAdded === 0 && again.unchanged === 8, `repeat import changes nothing (unchanged ${again.unchanged})`);
 
 const out = acc.writeCredentials(DIR, res.credentials);
 const text = fs.readFileSync(out, "utf8");
-check(text.split("\r\n").length === 6 && text.includes("임시 비밀번호"), "credentials file: header + 5 rows");
+check(text.split("\r\n").length === 9 && text.includes("임시 비밀번호"), "credentials file: header + 8 rows");
 const stored = JSON.stringify(await db.all("SELECT * FROM app_user")) + JSON.stringify(await db.all("SELECT * FROM user_identity"));
 check(!res.credentials.some((c) => stored.includes(c.temporaryPassword)), "temporary passwords are not stored in plain text");
 

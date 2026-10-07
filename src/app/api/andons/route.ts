@@ -6,6 +6,7 @@ import { handle, requestAudit } from "@/lib/server/http";
 import { assertSameOrigin, getSessionUser } from "@/lib/server/auth";
 import { CALL_ROLES } from "@/lib/domain";
 import { publicShift } from "@/lib/server/shiftService";
+import { maybeRunEscalations } from "@/lib/server/escalation";
 
 export async function GET(req: Request) {
   return handle("GET /api/andons", async () => {
@@ -27,6 +28,8 @@ export async function GET(req: Request) {
     // serverTime lets clients correct for clock skew when showing elapsed time. The board (shop-floor
     // display) also gets the shift on duty — team + DAY/NIGHT only, or UNRESOLVED; never the anchor.
     const shift = scope === "board" ? await publicShift() : undefined;
+    // The shop-floor board polls every few seconds: it also drives the 2-hour escalation check (≤ 1/min).
+    if (scope === "board") after(() => maybeRunEscalations());
     return Response.json({ events, counts: await getBoardCounts(), serverTime: new Date().toISOString(), ...(shift ? { shift } : {}) });
   });
 }

@@ -69,8 +69,8 @@ export const CALL_SITUATIONS: { code: string; nameKo: string; target: string; ca
   { code: "PCL_SHORTAGE", nameKo: "자재 부족", target: "PCL", category: "MATERIAL" },
   { code: "PCL_WRONG_INPUT", nameKo: "잘못 투입", target: "PCL", category: "MATERIAL" },
   { code: "PCL_FIFO", nameKo: "FIFO 문제", target: "PCL", category: "MATERIAL" },
-  { code: "SV_MANPOWER", nameKo: "인원 부족", target: "SV", category: "PRODUCTION" },
-  { code: "SV_METHOD", nameKo: "작업방법 문제", target: "SV", category: "PRODUCTION" },
+  { code: "SV_MANPOWER", nameKo: "인원 부족", target: "UAP", category: "PRODUCTION" },
+  { code: "SV_METHOD", nameKo: "작업방법 문제", target: "UAP", category: "PRODUCTION" },
 ];
 
 export const LEGACY_DEPARTMENT_SUCCESSORS: Record<string, string> = {

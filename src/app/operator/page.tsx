@@ -82,7 +82,13 @@ export default function OperatorPage() {
   }, [canCall, loadTargets]);
 
   /** Departments changed: a newly added department starts with ALL its people chosen (the department rule). */
-  function chooseDeps(next: string[]) {
+  function chooseDeps(chosen: string[]) {
+    // Plant meeting 2026-10-07: calling any department except PC&L also messages UAP (line SV, line GL,
+    // UAP team leader / 책임) — added automatically when such a department is ADDED (removable).
+    const added = chosen.filter((d) => !deps.includes(d));
+    const order = (targets ?? []).map((t) => t.code);
+    const withUap = added.some((d) => d !== "PCL" && d !== "UAP") && !chosen.includes("UAP") && order.includes("UAP") ? [...chosen, "UAP"] : chosen;
+    const next = order.filter((c) => withUap.includes(c));
     setDeps(next);
     setPeople((cur) => {
       const out: Record<string, string[]> = {};

@@ -94,10 +94,12 @@ async function main() {
   check(detail0.notifications.length >= 1 && detail0.notifications.every((n: { status: string }) => n.status === "SENT"), `notification logged (${detail0.notifications.length} recipient(s))`);
 
   const qc = await registerAccount("QC", "golden");
+  // QC acknowledges and acts; a QC event is CLOSED by UAP (plant meeting 2026-10-07) — the calling GAP leader
+  const uap = await callerClient();
   const transition = (action: string, _who: string, comment?: string) =>
     fetch(`${BASE}/api/andons/${id}/transition`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...qc.client.headers() },
+      headers: { "Content-Type": "application/json", ...(action === "CLOSE" ? uap : qc.client).headers() },
       body: JSON.stringify({ action, comment }),
     });
 
@@ -119,7 +121,13 @@ async function main() {
   const act = await transition("ACTION", "품질 담당 A", "체결 토크 확인 중");
   check(act.status === 200 && (await json(act)).event.status === "IN_PROGRESS", "status IN_PROGRESS");
 
-  console.log("9) CLOSE → GREEN");
+  console.log("9) CLOSE → GREEN (by UAP)");
+  const qcClose = await fetch(`${BASE}/api/andons/${id}/transition`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...qc.client.headers() },
+    body: JSON.stringify({ action: "CLOSE", comment: "x" }),
+  });
+  check(qcClose.status === 403, `QC cannot close a QC event — UAP confirms (got ${qcClose.status})`);
   const close = await transition("CLOSE", "품질 담당 A", "[TEST] 볼트 재체결 및 전수검사 OK");
   const closed = await json(close);
   check(close.status === 200 && closed.event.status === "CLOSED", "status CLOSED");

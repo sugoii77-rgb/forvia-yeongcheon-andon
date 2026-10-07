@@ -196,7 +196,7 @@ export const CALL_ROLES: readonly RoleCode[] = ["GAP_LEADER", "SUPERVISOR", "PLA
 
 /** Departments a GAP leader can call, with the people (names only) who can respond there. */
 export interface CallTargetDepartment {
-  /** Department code, or "SV" = production supervisors (stored as department UAP). */
+  /** Department code; "UAP" = production (SV, GL, team leader …), added by default to every non-PC&L call. */
   code: string;
   label: string;
   members: { id: number; name: string; roleName: string }[];
@@ -212,7 +212,7 @@ export interface CallSituation {
 }
 
 /** Label of the SV call target (production supervisors; their department is UAP). */
-export const SV_LABEL = "SV · 생산 감독자";
+export const UAP_LABEL = "UAP · 생산";
 
 /** Roles that may see the line ownership master (/admin/lines). Assigned by an administrator only. */
 export const OWNERSHIP_VIEW_ROLES: readonly RoleCode[] = ["GAP_LEADER", "SUPERVISOR", "ENGINEER", "PLANT_MANAGER"];

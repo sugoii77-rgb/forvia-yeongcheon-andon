@@ -171,3 +171,29 @@ export async function notifyAndonCreated(event: AndonEvent): Promise<void> {
     console.error("[notify] notification step failed", err);
   }
 }
+
+/**
+ * Sends one message per recipient and logs every attempt (shared by the escalation). Never throws.
+ * Recipients without a linked KakaoTalk are logged as FAILED by the provider.
+ */
+export async function sendToRecipients(eventId: string, recipients: NotificationRecipient[], message: NotificationMessage): Promise<number> {
+  const p = getProvider();
+  const text = `${message.title}\n${message.body}\n${message.link}`;
+  if (recipients.length === 0) {
+    await logAttempt(eventId, p.name, "(escalation)", "FAILED", text, "수신자 없음 (no plant manager / team leader configured)");
+    return 0;
+  }
+  let sent = 0;
+  for (const r of recipients) {
+    try {
+      await p.send(r, message);
+      await logAttempt(eventId, p.name, r.name, "SENT", text, null);
+      sent++;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[notify] ${p.name} → ${r.name} failed: ${msg}`);
+      await logAttempt(eventId, p.name, r.name, "FAILED", text, msg);
+    }
+  }
+  return sent;
+}

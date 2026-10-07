@@ -7,7 +7,7 @@ import Link from "next/link";
 import { fmtTime, usePolling, useServerNow } from "@/lib/client";
 import { MAP_LANDMARKS, MAP_ZONES } from "@/config/plantLayout";
 import { STATUS_LABEL, type AndonEvent, type MasterData } from "@/lib/domain";
-import { CATEGORY_LEGEND, categoryKey, displayLines, stationState, elapsedSeconds, formatElapsed, lineStates, placeLines, shiftLabel, sortActive, type LineState, type MapLine } from "@/lib/plantMap";
+import { CATEGORY_LEGEND, categoryKey, displayLines, stationState, elapsedSeconds, formatElapsed, lineStates, placeLines, shiftLabel, sortActive, sortDone, type LineState, type MapLine } from "@/lib/plantMap";
 
 type PublicShift = { status: "RESOLVED"; team: "A" | "B"; type: "DAY" | "NIGHT"; operationalDate: string; shiftEnd: string } | { status: "UNRESOLVED"; reason: string };
 interface BoardResponse {
@@ -45,6 +45,15 @@ function LineTile({ line, st, now, compact, sub, tone }: { line: MapLine; st: Li
     );
   }
   const e = st.lead!;
+  if (st.state === "DONE") {
+    // completed within 24 h: green, compact — name + completion time
+    return (
+      <Link href={`/respond/${encodeURIComponent(e.id)}`} className={`pm-line pm-done${compact ? " pm-chip" : ""}`} data-line={line.code} data-state="DONE" title={`${line.name} · 완료 ${fmtTime(e.closedAt!)}`}>
+        <span className="pm-name">{line.name}</span>
+        <span className="pm-state">✔ 완료 {fmtTime(e.closedAt!)}</span>
+      </Link>
+    );
+  }
   return (
     <Link
       href={`/respond/${encodeURIComponent(e.id)}`}
@@ -87,7 +96,8 @@ export default function PlantMapPage() {
   ];
   const openLines = shownStates.filter((x) => x?.state === "OPEN").length;
   const actionLines = shownStates.filter((x) => x?.state === "ACTION").length;
-  const normalLines = shownStates.filter((x) => !x).length;
+  const normalLines = shownStates.filter((x) => !x || x.state === "DONE").length;
+  const doneEvents = sortDone(events);
 
   return (
     <main className="floor">
@@ -98,6 +108,7 @@ export default function PlantMapPage() {
         <span className="fc fc-open" data-testid="count-open">● OPEN {meta ? openLines : "-"}</span>
         <span className="fc fc-action" data-testid="count-action">● IN ACTION {meta ? actionLines : "-"}</span>
         <span className="fc fc-normal" data-testid="count-normal">● NORMAL {meta ? normalLines : "-"}</span>
+        <span className="fc fc-done" data-testid="count-done">✔ 완료 24h {data ? doneEvents.length : "-"}</span>
         <span className="spacer" />
         <span className={`fc fc-shift${data?.shift?.status === "RESOLVED" ? "" : " fc-unresolved"}`} data-testid="shift">
           {data ? shiftLabel(data.shift) : "SHIFT: -"}
@@ -167,6 +178,25 @@ export default function PlantMapPage() {
               </li>
             ))}
           </ol>
+          {doneEvents.length > 0 && (
+            <div className="fs-done">
+              <h3>완료 · 24시간 표시 ({doneEvents.length})</h3>
+              <ol className="fs-list">
+                {doneEvents.map((e) => (
+                  <li key={e.id}>
+                    <Link href={`/respond/${encodeURIComponent(e.id)}`} className="fs-item fs-doneitem">
+                      <span className="fs-line">{e.lineName}</span>
+                      <span className="fs-meta">
+                        <i className={`fs-dot pm-c-${categoryKey(e.categoryCode)}`} />
+                        {e.categoryName} · 완료 {fmtTime(e.closedAt!)}
+                      </span>
+                      <span className="fs-time">{formatElapsed(elapsedSeconds(e, now))}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
           {unplaced.length > 0 && (
             <div className="fs-tray">
               <h3>배치 위치 확인 필요 · Position to confirm ({unplaced.length})</h3>

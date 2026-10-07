@@ -22,6 +22,8 @@ export interface AccountRow {
   department: string; // raw text from the sheet
   position: string; // raw text (SV, GL, 팀장, 책임, …)
   email: string;
+  /** optional column "기본알림" (Y / O / 1): always messaged on QC / MT calls (UAP 팀장, UAP 책임) */
+  callDefault?: boolean;
 }
 
 const norm = (s: string) => s.replace(/\s+/g, " ").trim();
@@ -40,9 +42,10 @@ export function departmentOf(text: string): string | null {
   return null;
 }
 
-/** Position text → role. SV → SUPERVISOR, GL → GAP_LEADER, everybody else (팀장, 책임, 매니저, …) → RESPONDER. */
-export function roleOf(position: string): "SUPERVISOR" | "GAP_LEADER" | "RESPONDER" {
+/** Position text → role. SV → SUPERVISOR, GL → GAP_LEADER, PM / 공장장 → PLANT_MANAGER, everybody else (팀장, 책임, …) → RESPONDER. */
+export function roleOf(position: string): "SUPERVISOR" | "GAP_LEADER" | "PLANT_MANAGER" | "RESPONDER" {
   const t = norm(position).toUpperCase().replace(/[\s/.]/g, "");
+  if (t === "PM" || t.includes("PLANTMANAGER") || t.includes("공장장")) return "PLANT_MANAGER";
   if (t === "SV" || t.includes("SUPERVISOR") || t.includes("감독")) return "SUPERVISOR";
   if (t === "GL" || t.includes("GAP") || t.includes("그룹장")) return "GAP_LEADER";
   return "RESPONDER";
@@ -65,6 +68,7 @@ const HEAD = {
   department: /^(부서-?1|부서|department|dept)$/i,
   position: /^(직급|직책|역할|position|role)$/i,
   email: /(로그인|login|계정|e-?mail|이메일|메일)/i,
+  callDefault: /(기본\s*알림|default)/i,
 };
 
 /**
@@ -95,7 +99,7 @@ export async function readAccountFile(file: string): Promise<AccountRow[]> {
   const h = table.findIndex((row) => row.some((x) => HEAD.name.test(x)) && row.some((x) => HEAD.email.test(x)));
   if (h < 0) throw new Error("header row with 이름 and 로그인/E-mail columns not found");
   const col = (re: RegExp) => table[h].findIndex((x) => re.test(x));
-  const c = { name: col(HEAD.name), department: col(HEAD.department), position: col(HEAD.position), email: col(HEAD.email) };
+  const c = { name: col(HEAD.name), department: col(HEAD.department), position: col(HEAD.position), email: col(HEAD.email), callDefault: col(HEAD.callDefault) };
   if (c.department < 0) throw new Error("column 부서 not found");
   const out: AccountRow[] = [];
   let lastDept = "";
@@ -106,7 +110,7 @@ export async function readAccountFile(file: string): Promise<AccountRow[]> {
     if (row[c.department]) lastDept = row[c.department];
     const email = row[c.email] ?? "";
     if (!name || !email) continue;
-    out.push({ line: r + 1, name, department: dept, position: c.position >= 0 ? (row[c.position] ?? "") : "", email });
+    out.push({ line: r + 1, name, department: dept, position: c.position >= 0 ? (row[c.position] ?? "") : "", email, callDefault: c.callDefault >= 0 && /^(Y|YES|O|1|V|✔|예)$/i.test(row[c.callDefault] ?? "") });
   }
   return out;
 }
@@ -126,7 +130,8 @@ export async function importAccounts(rows: AccountRow[]): Promise<ImportResult> 
   const prepared: (AccountRow & { dept: string; role: ReturnType<typeof roleOf>; mail: string; temp: string; hash: string })[] = [];
   const seen = new Set<string>();
   for (const r of rows) {
-    const dept = departmentOf(r.department);
+    // the plant manager may be listed without a department: he belongs to production (UAP)
+    const dept = departmentOf(r.department) ?? (roleOf(r.position) === "PLANT_MANAGER" ? "UAP" : null);
     const mail = normalizeEmail(r.email);
     if (!dept) {
       res.problems.push(`row ${r.line} (${r.name}): unknown department "${r.department}"`);
@@ -144,10 +149,20 @@ export async function importAccounts(rows: AccountRow[]): Promise<ImportResult> 
     const temp = `Andon-${crypto.randomBytes(6).toString("base64url")}1`;
     prepared.push({ ...r, dept, role: roleOf(r.position), mail, temp, hash: await hashPassword(temp) }); // hashing outside the transaction
   }
+  // 팀장 → team_leader (2-hour escalation); 기본알림 column or UAP 팀장 → call_default (plant meeting 2026-10-07)
+  const flags = async (id: number, p: (typeof prepared)[number]) => {
+    const leader = /팀장/.test(p.position);
+    await db.run(
+      "UPDATE app_user SET team_leader = MAX(team_leader, ?), call_default = MAX(call_default, ?) WHERE id = ?",
+      leader ? 1 : 0,
+      p.callDefault || (leader && p.dept === "UAP") ? 1 : 0,
+      id,
+    );
+  };
   await db.transaction(async () => {
     for (const p of prepared) {
       let userId: number | null = null;
-      if (p.dept === "UAP" && p.role !== "RESPONDER") {
+      if (p.dept === "UAP" && (p.role === "SUPERVISOR" || p.role === "GAP_LEADER")) {
         const u = await db.get("SELECT id, role, active FROM app_user WHERE import_key = ?", importKey(p.name));
         if (!u) {
           res.problems.push(`row ${p.line} (${p.name}): not in the line-ownership list (SV / GL) — not created; check the name`);
@@ -169,6 +184,7 @@ export async function importAccounts(rows: AccountRow[]): Promise<ImportResult> 
         const has = await db.get("SELECT subject FROM user_identity WHERE user_id = ? AND provider = 'LOCAL'", userId);
         if (has) {
           if (has.subject !== p.mail) res.problems.push(`row ${p.line} (${p.name}): already has a different login — not changed`);
+          await flags(userId, p);
           res.unchanged++;
           continue;
         }
@@ -189,6 +205,7 @@ export async function importAccounts(rows: AccountRow[]): Promise<ImportResult> 
         res.loginAdded++;
       }
       await db.run("INSERT INTO user_identity (user_id, provider, subject, password_hash, created_at) VALUES (?, 'LOCAL', ?, ?, ?)", userId, p.mail, p.hash, nowIso());
+      await flags(userId, p);
       res.credentials.push({ name: p.name, department: p.dept, email: p.mail, temporaryPassword: p.temp });
     }
   });

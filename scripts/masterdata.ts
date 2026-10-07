@@ -9,6 +9,8 @@
 //   user role <user> <ROLE>                      only administrators change roles (GAP_LEADER, …)
 //   user dept <user> <DEPARTMENT>
 //   user reset-password <user>                   prints a new temporary password once
+//   user team-leader <user> on|off              팀장: receives the 2-hour escalation (PC&L / QC / MT / UAP)
+//   user call-default <user> on|off             always messaged on QC / MT calls (UAP 팀장, UAP 책임)
 //   user employee-id <user> <EMPLOYEE_ID>        assign the permanent employee ID (cannot be changed later);
 //                                                pre-assigning prevents a newcomer from claiming that ID
 //   user unlink-google <user>                    remove the Google login (e.g. lost Google account); ends sessions
@@ -206,6 +208,12 @@ try {
     // Existing sessions of this user are ended.
     (await db.run("UPDATE user_session SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL", nowIso(), id));
     console.log(`Temporary password (shown once): ${temp}`);
+  } else if (cmd === "user" && (sub === "team-leader" || sub === "call-default") && args.length === 2 && ["on", "off"].includes(args[1])) {
+    // team-leader: gets the 2-hour escalation (PC&L / QC / MT / UAP); call-default: always messaged on
+    // calls to departments other than PC&L (UAP team leader, UAP 책임) — plant meeting 2026-10-07
+    const id = await userId(args[0]);
+    const col = sub === "team-leader" ? "team_leader" : "call_default";
+    changed(await db.run(`UPDATE app_user SET ${col} = ? WHERE id = ?`, args[1] === "on" ? 1 : 0, id), `user #${id} ${sub} = ${args[1]}`);
   } else if (cmd === "user" && sub === "employee-id" && args.length === 2) {
     const id = await userId(args[0]);
     const emp = args[1].trim().toUpperCase();

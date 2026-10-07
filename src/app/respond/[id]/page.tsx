@@ -24,7 +24,7 @@ interface Detail {
   responsibility: Responsibility | null;
   eligibleResponders: ResponderSummary[];
   /** Logged-in user and whether the SERVER allows them to act on this event. */
-  viewer: { user: PublicUser; canRespond: boolean } | null;
+  viewer: { user: PublicUser; canRespond: boolean; actions?: TransitionAction[] } | null;
   serverTime: string;
 }
 
@@ -114,7 +114,9 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
   }
 
   const e = data.event;
-  const actions = allowedActions(e.status);
+  // the server decides per action (a QC event is closed by UAP); older servers: by status only
+  const actions = data.viewer?.actions ?? allowedActions(e.status);
+  const closeByUap = allowedActions(e.status).includes("CLOSE") && !actions.includes("CLOSE") && e.departments.some((d) => d.code === "QC");
   const end = e.closedAt ? new Date(e.closedAt).getTime() : now;
   const elapsed = (end - new Date(e.createdAt).getTime()) / 1000;
   const eligible = data.eligibleResponders;
@@ -214,6 +216,9 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
                     ? "이 역할은 조치 권한이 없습니다."
                     : `이 ANDON은 ${responsibleLabel} 부서 담당입니다 (내 부서: ${viewer.user.departmentLabel}).`}
               </div>
+            )}
+            {viewer?.canRespond && closeByUap && (
+              <div className="alert alert-warn">품질(QC) 건의 최종 완료(Close)는 생산(UAP)이 확인 후 처리합니다. 조치 내용을 입력해 주세요.</div>
             )}
             {eligible.length === 0 && <div className="alert alert-error">이 부서에 등록된 담당자가 없습니다 (기준정보 확인 필요).</div>}
 

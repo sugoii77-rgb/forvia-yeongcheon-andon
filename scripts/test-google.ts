@@ -264,7 +264,7 @@ try {
 
   // ---- existing HTTP transition endpoint: a Google session follows exactly the LOCAL routing policy
   globalThis.fetch = realFetch;
-  const { Client, createAndon, transition, admin } = await import("./lib/testkit.ts");
+  const { Client, callerClient, createAndon, transition, admin } = await import("./lib/testkit.ts");
   const client = new Client("google-session");
   client.cookie = newSession;
   const q = await createAndon("TGDI1", "WCC Final Inspection", "QUALITY", "[TEST] Google identity QC");
@@ -302,7 +302,8 @@ try {
   });
   await check("Google session ACTION and CLOSE preserve state machine", async () => {
     assert.equal((await transition(client, q.body.event.id, "ACTION", "[TEST] inspect")).status, 200);
-    assert.equal((await transition(client, q.body.event.id, "CLOSE", "[TEST] complete")).body.event.status, "CLOSED");
+    assert.equal((await transition(client, q.body.event.id, "CLOSE", "[TEST] complete")).status, 403, "QC event: CLOSE belongs to UAP");
+    assert.equal((await transition(await callerClient(), q.body.event.id, "CLOSE", "[TEST] complete")).body.event.status, "CLOSED");
   });
   const mtClient = new Client("google-mt");
   mtClient.cookie = cookieOf(linked, "andon_session");

@@ -378,6 +378,11 @@ table.table { width: 100%; border-collapse: collapse; background: #fff; font-siz
    ANDON is active, so the eye goes straight to the abnormal location */
 .pm-open { background: var(--red); color: #fff; border: 2px solid #ffb3b9; box-shadow: 0 0 0 3px rgba(255, 70, 85, 0.95), 0 0 26px 8px rgba(229, 32, 46, 0.6); animation: pm-pulse 2.4s ease-in-out infinite; z-index: 3; }
 .pm-action { background: var(--yellow); color: #231a00; border: 2px solid #fff0b3; box-shadow: 0 0 0 3px rgba(255, 205, 40, 0.9), 0 0 20px 5px rgba(245, 184, 0, 0.45); z-index: 2; }
+.pm-done { background: #12452b; color: #e3ffef; border: 2px solid #3ccf7f; box-shadow: 0 0 0 2px rgba(60, 207, 127, 0.55); z-index: 1; justify-content: center; }
+.pm-done .pm-state { color: #b8f5d2; }
+.fc-done { color: #7fd3a2; }
+.fs-done h3 { margin: 6px 0; font-size: 15px; color: #7fd3a2; letter-spacing: 0.04em; }
+.fs-doneitem { border-left-color: #3ccf7f !important; opacity: 0.85; }
 .pm-has-alarm .pm-normal, .pm-has-alarm .pm-unlinked, .pm-has-alarm .pm-zone-title, .pm-has-alarm .pm-landmark { opacity: 0.45; transition: opacity 0.4s; }
 .pm-cat { font-size: clamp(10px, calc(var(--pmu) * 0.8), 15px); font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; }
 .pm-desc { font-size: clamp(9px, calc(var(--pmu) * 0.72), 14px); line-height: 1.2; opacity: 0.95; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

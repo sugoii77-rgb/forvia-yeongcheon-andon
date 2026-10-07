@@ -4,7 +4,7 @@
 //         logged-in throw-away accounts (scripts/lib/testkit.ts). Creates "[TEST] routing" ANDONs and
 //         closes them again; test accounts are deactivated at the end.
 import { resolveDepartment, responderProblem, type RoutingRule } from "../src/lib/routing.ts";
-import { BASE, Client, admin, check, createAndon, detail, finish, registerAccount, transition } from "./lib/testkit.ts";
+import { BASE, Client, admin, callerClient, check, createAndon, detail, finish, registerAccount, transition } from "./lib/testkit.ts";
 
 // ---------------------------------------------------------------- Part A: unit
 
@@ -168,7 +168,7 @@ async function apiTests() {
 
   // -- close everything we created, with a registered responder of each event's department
   const closers = new Map<string, Client>([
-    ["QC", qc.client],
+    ["QC", await callerClient()], // a QC event is closed by UAP (the GAP leader)
     ["MT", mt.client],
   ]);
   for (const id of created) {
@@ -176,7 +176,7 @@ async function apiTests() {
     const dept = d.responsibility.effectiveDepartmentCode as string;
     if (!closers.has(dept)) closers.set(dept, (await registerAccount(dept, `routing-${dept}`)).client);
     const c = closers.get(dept)!;
-    if (d.event.status === "OPEN") await transition(c, id, "ACKNOWLEDGE");
+    if (d.event.status === "OPEN") await transition(dept === "QC" ? qc.client : c, id, "ACKNOWLEDGE");
     await transition(c, id, "CLOSE", "[TEST] routing test cleanup");
   }
   const final = (await detail(q.id)).body.transitions as Transition[];

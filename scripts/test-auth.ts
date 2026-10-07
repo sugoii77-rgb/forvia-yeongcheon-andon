@@ -3,7 +3,7 @@
 // steps use the masterdata CLI on the local database. Creates throw-away *@andon.test accounts and
 // "[TEST] auth" ANDONs; closes the events and deactivates the accounts at the end.
 import crypto from "node:crypto";
-import { BASE, Client, admin, check, createAndon, detail, finish, registerAccount, transition } from "./lib/testkit.ts";
+import { BASE, Client, admin, callerClient, check, createAndon, detail, finish, registerAccount, transition } from "./lib/testkit.ts";
 
 const RUN = crypto.randomBytes(3).toString("hex");
 const email = (k: string) => `a-${RUN}-${k}@andon.test`;
@@ -180,11 +180,12 @@ async function main() {
 
   // ------------------------------------------------------------ cleanup: close the events
   const closers: Record<string, Client> = { QC: qc.client, MT: mt.client, PCL: pcl.client };
+  const uapCloser = await callerClient(); // a QC event is closed by UAP (plant meeting 2026-10-07)
   for (const id of created) {
     const d = (await detail(id)).body;
     const c = closers[d.responsibility.effectiveDepartmentCode];
     if (d.event.status === "OPEN") await transition(c, id, "ACKNOWLEDGE");
-    await transition(c, id, "CLOSE", "[TEST] auth test cleanup");
+    await transition(d.responsibility.effectiveDepartmentCode === "QC" ? uapCloser : c, id, "CLOSE", "[TEST] auth test cleanup");
   }
   const open = (await fetch(`${BASE}/api/andons?scope=active`).then((r) => r.json())).events.filter((e: { id: string }) => created.includes(e.id));
   check(open.length === 0, `test events closed again (${created.length})`);
