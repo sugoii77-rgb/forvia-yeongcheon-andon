@@ -28,7 +28,7 @@ try {
   const rows = await readAccountFile(file);
   const info = await db.info();
   console.log(`database : ${info.label} (${info.kind})${dryRun ? "  — DRY RUN, nothing is saved" : ""}`);
-  console.log(`file     : ${path.basename(file)} → ${rows.length} rows with a login e-mail`);
+  console.log(`file     : ${path.basename(file)} → ${rows.length} people`);
   let result: Awaited<ReturnType<typeof importAccounts>> | undefined;
   await db
     .transaction(async () => {

@@ -43,8 +43,8 @@ export default function LoginPage() {
         <h2 style={{fontSize:18}}>기존 로컬 계정</h2>
         <form className="card" onSubmit={submit}>
           <div className="field">
-            <label htmlFor="email">이메일</label>
-            <input id="email" className="input" type="email" autoComplete="username" inputMode="email"
+            <label htmlFor="email">사번 또는 이메일</label>
+            <input id="email" className="input" type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} placeholder="예) 12345678"
               value={email} onChange={(e) => setEmail(e.target.value)} required />
           </div>
           <div className="field">

@@ -67,7 +67,7 @@ check(!(await db.get("SELECT 1 FROM app_user WHERE name = '리더-없음'")), "�
 check(res.problems.some((p) => p.includes("중복-T")), "duplicate login e-mail in the file → reported");
 check(res.problems.some((p) => p.includes("잘못-T")), "invalid e-mail → reported");
 check(res.problems.some((p) => p.includes("부서-T") && p.includes("unknown department")), "unknown department → reported");
-const login = await authenticate("gl-a@andon.test", res.credentials.find((c) => c.email === "gl-a@andon.test")!.temporaryPassword, audit);
+const login = await authenticate("gl-a@andon.test", res.credentials.find((c) => c.loginId === "gl-a@andon.test")!.temporaryPassword, audit);
 check(login.role === "GAP_LEADER", "the temporary password works for login");
 
 const again = await acc.importAccounts(rows);
@@ -78,6 +78,21 @@ const text = fs.readFileSync(out, "utf8");
 check(text.split("\r\n").length === 9 && text.includes("임시 비밀번호"), "credentials file: header + 8 rows");
 const stored = JSON.stringify(await db.all("SELECT * FROM app_user")) + JSON.stringify(await db.all("SELECT * FROM user_identity"));
 check(!res.credentials.some((c) => stored.includes(c.temporaryPassword)), "temporary passwords are not stored in plain text");
+
+console.log("Login by 사번 (employee number)");
+const csv2 = ["이름,부서,부서-1,직급,사번,Google ID,Kakao Talk ID,연락처,FORVIA E-mail", "리더-TB(B),,AP-1,GL,10002002,g-x,k-x,010-1111-2222,", "보전2-T,Mt,Mt,책임,10003003,,,,mt2@forvia.test", "선임-T,PC&L,PC&L,선임,,g-y,k-y,,"].join("\n");
+const file2 = path.join(DIR, "accounts2.csv");
+fs.writeFileSync(file2, "﻿" + csv2);
+const rows2 = await acc.readAccountFile(file2);
+check(!JSON.stringify(rows2).includes("010-1111-2222") && !JSON.stringify(rows2).includes("g-x") && !JSON.stringify(rows2).includes("k-x"), "phone / Google ID / KakaoTalk ID columns are not read");
+const res2 = await acc.importAccounts(rows2);
+const glB = await db.get("SELECT u.employee_id, u.email, i.subject FROM app_user u JOIN user_identity i ON i.user_id = u.id WHERE u.name = '리더-TB'");
+check(glB?.subject === "10002002" && glB?.employee_id === "10002002" && glB?.email === null, "GL without e-mail: login ID = 사번 (on the line-ownership record)");
+const mt2 = await db.get("SELECT u.employee_id, u.email, i.subject FROM app_user u JOIN user_identity i ON i.user_id = u.id WHERE u.name = '보전2-T'");
+check(mt2?.subject === "10003003" && mt2?.email === null, "사번 and e-mail present: login = 사번, the e-mail is not stored");
+check(res2.problems.some((p) => p.includes("선임-T") && p.includes("no 사번")), "no 사번 and no e-mail → reported, no login");
+const byEmp = await authenticate("10002002", res2.credentials.find((c) => c.loginId === "10002002")!.temporaryPassword, audit);
+check(byEmp.role === "GAP_LEADER", "login with 사번 + temporary password works");
 
 console.log(failures ? `\n${failures} CHECK(S) FAILED` : "\nALL CHECKS PASSED");
 process.exit(failures ? 1 : 0);

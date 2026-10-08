@@ -183,25 +183,39 @@ async function clearFailures(key: string) {
 }
 
 /** Verifies e-mail + password. Returns the user or throws (same message for unknown e-mail and wrong password). */
+/**
+ * Login ID = e-mail or employee number (사번, plant decision 2026-10-08: GAP leaders have no company e-mail).
+ * A 사번 matches the LOCAL login whose subject is that number, or the LOCAL login of the employee with
+ * that employee_id.
+ */
 export async function authenticate(emailInput: unknown, passwordInput: unknown, audit: AuditInfo): Promise<PublicUser> {
   const email = normalizeEmail(emailInput);
   const password = typeof passwordInput === "string" ? passwordInput : "";
   const key = throttleKey(email, audit.clientIp);
   await assertNotLocked(key);
 
-  const row = (await db.get("SELECT user_id, password_hash FROM user_identity WHERE provider = 'LOCAL' AND subject = ?", email)) as { user_id: number; password_hash: string | null } | undefined;
+  let row = (await db.get("SELECT user_id, password_hash, subject FROM user_identity WHERE provider = 'LOCAL' AND subject = ?", email)) as
+    | { user_id: number; password_hash: string | null; subject: string }
+    | undefined;
+  if (!row && email && !email.includes("@") && email.length <= 40) {
+    row = (await db.get(
+      `SELECT i.user_id, i.password_hash, i.subject FROM user_identity i JOIN app_user u ON u.id = i.user_id
+       WHERE i.provider = 'LOCAL' AND u.employee_id = ?`,
+      email.toUpperCase(),
+    )) as typeof row;
+  }
   const ok = row?.password_hash
     ? await verifyPassword(password, row.password_hash)
     : (await verifyPassword(password, await getDummyHash()), false);
   if (!row || !ok) {
     await recordFailure(key);
-    throw new AndonError(401, "이메일 또는 비밀번호가 올바르지 않습니다.", "INVALID_CREDENTIALS");
+    throw new AndonError(401, "아이디(사번·이메일) 또는 비밀번호가 올바르지 않습니다.", "INVALID_CREDENTIALS");
   }
   await clearFailures(key);
   const user = await getPublicUser(row.user_id);
-  if (!user) throw new AndonError(401, "이메일 또는 비밀번호가 올바르지 않습니다.", "INVALID_CREDENTIALS");
+  if (!user) throw new AndonError(401, "아이디(사번·이메일) 또는 비밀번호가 올바르지 않습니다.", "INVALID_CREDENTIALS");
   if (!user.active) throw new AndonError(403, "비활성(사용 중지)된 계정입니다. 관리자에게 문의하세요.", "ACCOUNT_INACTIVE");
-  (await db.run("UPDATE user_identity SET last_login_at = ? WHERE provider = 'LOCAL' AND subject = ?", nowIso(), email));
+  (await db.run("UPDATE user_identity SET last_login_at = ? WHERE provider = 'LOCAL' AND subject = ?", nowIso(), row.subject));
   return user;
 }
 

@@ -1,6 +1,8 @@
 // Bulk login accounts from the plant's list (GAP leaders, SV, MT, PC&L, …): one row per person with name,
-// department, position and LOGIN e-mail. Contact columns (phone, KakaoTalk ID, employee number, Google ID)
-// are never read. The login e-mail is stored because it IS the login (user_identity / app_user.email).
+// department, position, employee number (사번) and company e-mail. Login ID (plant decision 2026-10-08):
+// the 사번 when there is one (GAP leaders have no company e-mail), otherwise the e-mail. Only the login ID
+// is stored (app_user.employee_id / user_identity.subject; the e-mail only when it is the login). Phone,
+// KakaoTalk ID and Google ID columns are never read.
 //
 // Matching — never a duplicate person:
 //  - UAP SV / GL: the employee created by the line-ownership import (import_key) gets the login, so the
@@ -22,6 +24,8 @@ export interface AccountRow {
   department: string; // raw text from the sheet
   position: string; // raw text (SV, GL, 팀장, 책임, …)
   email: string;
+  /** 사번 — the login ID when present */
+  employeeId: string;
   /** optional column "기본알림" (Y / O / 1): always messaged on QC / MT calls (UAP 팀장, UAP 책임) */
   callDefault?: boolean;
 }
@@ -65,9 +69,11 @@ function cellText(cell: ExcelJS.Cell): string {
 
 const HEAD = {
   name: /^(이름|성명|name)$/i,
-  department: /^(부서-?1|부서|department|dept)$/i,
+  department: /^(부서|department|dept)$/i,
+  department1: /^부서-?1$/i,
   position: /^(직급|직책|역할|position|role)$/i,
   email: /(로그인|login|계정|e-?mail|이메일|메일)/i,
+  employeeId: /^(사번|employee\s*(id|no))$/i,
   callDefault: /(기본\s*알림|default)/i,
 };
 
@@ -99,18 +105,21 @@ export async function readAccountFile(file: string): Promise<AccountRow[]> {
   const h = table.findIndex((row) => row.some((x) => HEAD.name.test(x)) && row.some((x) => HEAD.email.test(x)));
   if (h < 0) throw new Error("header row with 이름 and 로그인/E-mail columns not found");
   const col = (re: RegExp) => table[h].findIndex((x) => re.test(x));
-  const c = { name: col(HEAD.name), department: col(HEAD.department), position: col(HEAD.position), email: col(HEAD.email), callDefault: col(HEAD.callDefault) };
-  if (c.department < 0) throw new Error("column 부서 not found");
+  const c = { name: col(HEAD.name), department: col(HEAD.department), department1: col(HEAD.department1), position: col(HEAD.position), email: col(HEAD.email), employeeId: col(HEAD.employeeId), callDefault: col(HEAD.callDefault) };
+  if (c.department < 0 && c.department1 < 0) throw new Error("column 부서 not found");
   const out: AccountRow[] = [];
   let lastDept = "";
   for (let r = h + 1; r < table.length; r++) {
     const row = table[r];
     const name = (row[c.name] ?? "").replace(/\((A|B)\)$/, "").trim();
-    const dept = row[c.department] || lastDept; // merged / blank department = the one above
-    if (row[c.department]) lastDept = row[c.department];
-    const email = row[c.email] ?? "";
-    if (!name || !email) continue;
-    out.push({ line: r + 1, name, department: dept, position: c.position >= 0 ? (row[c.position] ?? "") : "", email, callDefault: c.callDefault >= 0 && /^(Y|YES|O|1|V|✔|예)$/i.test(row[c.callDefault] ?? "") });
+    // 부서-1 (UAP area AP-1 …, Mt, PC&L) first, then 부서; blank = the department of the rows above
+    const own = (c.department1 >= 0 ? row[c.department1] : "") || (c.department >= 0 ? row[c.department] : "");
+    const dept = own || lastDept;
+    if (own) lastDept = own;
+    const email = /@/.test(row[c.email] ?? "") ? row[c.email] : "";
+    const employeeId = c.employeeId >= 0 ? (row[c.employeeId] ?? "").replace(/\s/g, "").toUpperCase() : "";
+    if (!name || name === "-") continue;
+    out.push({ line: r + 1, name, department: dept, position: c.position >= 0 ? (row[c.position] ?? "") : "", email, employeeId, callDefault: c.callDefault >= 0 && /^(Y|YES|O|1|V|✔|예)$/i.test(row[c.callDefault] ?? "") });
   }
   return out;
 }
@@ -121,33 +130,38 @@ export interface ImportResult {
   unchanged: number;
   problems: string[];
   /** For the administrator only — written to a file, never printed. */
-  credentials: { name: string; department: string; email: string; temporaryPassword: string }[];
+  credentials: { name: string; department: string; loginId: string; temporaryPassword: string }[];
 }
 
 /** Applies the rows in ONE transaction (all or nothing for the database). */
 export async function importAccounts(rows: AccountRow[]): Promise<ImportResult> {
   const res: ImportResult = { created: 0, loginAdded: 0, unchanged: 0, problems: [], credentials: [] };
-  const prepared: (AccountRow & { dept: string; role: ReturnType<typeof roleOf>; mail: string; temp: string; hash: string })[] = [];
+  const prepared: (AccountRow & { dept: string; role: ReturnType<typeof roleOf>; mail: string; login: string; temp: string; hash: string })[] = [];
   const seen = new Set<string>();
   for (const r of rows) {
     // the plant manager may be listed without a department: he belongs to production (UAP)
     const dept = departmentOf(r.department) ?? (roleOf(r.position) === "PLANT_MANAGER" ? "UAP" : null);
-    const mail = normalizeEmail(r.email);
+    const mail = r.email ? normalizeEmail(r.email) : "";
     if (!dept) {
       res.problems.push(`row ${r.line} (${r.name}): unknown department "${r.department}"`);
       continue;
     }
-    if (!EMAIL.test(mail)) {
-      res.problems.push(`row ${r.line} (${r.name}): login e-mail is not valid`);
+    if (r.employeeId && !/^[A-Z0-9][A-Z0-9_-]{1,39}$/.test(r.employeeId)) {
+      res.problems.push(`row ${r.line} (${r.name}): 사번 is not valid`);
       continue;
     }
-    if (seen.has(mail)) {
-      res.problems.push(`row ${r.line} (${r.name}): the same login e-mail appears twice in the file`);
+    if (!r.employeeId && !EMAIL.test(mail)) {
+      res.problems.push(`row ${r.line} (${r.name}): no 사번 and no valid e-mail — no login created`);
       continue;
     }
-    seen.add(mail);
+    const login = r.employeeId || mail;
+    if (seen.has(login)) {
+      res.problems.push(`row ${r.line} (${r.name}): the same login ID appears twice in the file`);
+      continue;
+    }
+    seen.add(login);
     const temp = `Andon-${crypto.randomBytes(6).toString("base64url")}1`;
-    prepared.push({ ...r, dept, role: roleOf(r.position), mail, temp, hash: await hashPassword(temp) }); // hashing outside the transaction
+    prepared.push({ ...r, dept, role: roleOf(r.position), mail, login, temp, hash: await hashPassword(temp) }); // hashing outside the transaction
   }
   // 팀장 → team_leader (2-hour escalation); 기본알림 column or UAP 팀장 → call_default (plant meeting 2026-10-07)
   const flags = async (id: number, p: (typeof prepared)[number]) => {
@@ -178,35 +192,44 @@ export async function importAccounts(rows: AccountRow[]): Promise<ImportResult> 
         }
         userId = same.length ? Number(same[0].id) : null;
       }
-      const owner = await db.get("SELECT id FROM app_user WHERE email = ?", p.mail);
-      const ident = await db.get("SELECT user_id FROM user_identity WHERE provider = 'LOCAL' AND subject = ?", p.mail);
+      // the e-mail is stored only when it is the login ID (no 사번)
+      const storedMail = p.employeeId ? null : p.mail;
+      const empOwner = p.employeeId ? await db.get("SELECT id FROM app_user WHERE employee_id = ?", p.employeeId) : undefined;
+      const mailOwner = storedMail ? await db.get("SELECT id FROM app_user WHERE email = ?", storedMail) : undefined;
+      const ident = await db.get("SELECT user_id FROM user_identity WHERE provider = 'LOCAL' AND subject = ?", p.login);
       if (userId !== null) {
         const has = await db.get("SELECT subject FROM user_identity WHERE user_id = ? AND provider = 'LOCAL'", userId);
         if (has) {
-          if (has.subject !== p.mail) res.problems.push(`row ${p.line} (${p.name}): already has a different login — not changed`);
+          if (has.subject !== p.login) res.problems.push(`row ${p.line} (${p.name}): already has a different login — not changed`);
           await flags(userId, p);
           res.unchanged++;
           continue;
         }
+        const cur = await db.get("SELECT employee_id FROM app_user WHERE id = ?", userId);
+        if (p.employeeId && cur?.employee_id && cur.employee_id !== p.employeeId) {
+          res.problems.push(`row ${p.line} (${p.name}): a different 사번 is already recorded — skipped`);
+          continue;
+        }
       }
-      if ((owner && Number(owner.id) !== userId) || ident) {
-        res.problems.push(`row ${p.line} (${p.name}): login e-mail already used by another account — skipped`);
+      if ((empOwner && Number(empOwner.id) !== userId) || (mailOwner && Number(mailOwner.id) !== userId) || ident) {
+        res.problems.push(`row ${p.line} (${p.name}): login ID already used by another account — skipped`);
         continue;
       }
       if (userId === null) {
         const r = await db.run(
-          "INSERT INTO app_user (name, email, department_code, role, active, source, created_at) VALUES (?, ?, ?, ?, 1, 'ADMIN', ?)",
-          p.name, p.mail, p.dept, p.role, nowIso(),
+          "INSERT INTO app_user (name, email, employee_id, department_code, role, active, source, created_at) VALUES (?, ?, ?, ?, ?, 1, 'ADMIN', ?)",
+          p.name, storedMail, p.employeeId || null, p.dept, p.role, nowIso(),
         );
         userId = Number(r.lastInsertRowid);
         res.created++;
       } else {
-        await db.run("UPDATE app_user SET email = ? WHERE id = ?", p.mail, userId);
+        if (storedMail) await db.run("UPDATE app_user SET email = ? WHERE id = ?", storedMail, userId);
+        if (p.employeeId) await db.run("UPDATE app_user SET employee_id = ? WHERE id = ? AND employee_id IS NULL", p.employeeId, userId);
         res.loginAdded++;
       }
-      await db.run("INSERT INTO user_identity (user_id, provider, subject, password_hash, created_at) VALUES (?, 'LOCAL', ?, ?, ?)", userId, p.mail, p.hash, nowIso());
+      await db.run("INSERT INTO user_identity (user_id, provider, subject, password_hash, created_at) VALUES (?, 'LOCAL', ?, ?, ?)", userId, p.login, p.hash, nowIso());
       await flags(userId, p);
-      res.credentials.push({ name: p.name, department: p.dept, email: p.mail, temporaryPassword: p.temp });
+      res.credentials.push({ name: p.name, department: p.dept, loginId: p.login, temporaryPassword: p.temp });
     }
   });
   return res;
@@ -217,6 +240,6 @@ export function writeCredentials(dir: string, creds: ImportResult["credentials"]
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `temp-passwords-${new Date().toISOString().replace(/[:.]/g, "-")}.csv`);
   const q = (s: string) => `"${s.replace(/"/g, '""')}"`;
-  fs.writeFileSync(file, "﻿" + ["이름,부서,로그인 이메일,임시 비밀번호", ...creds.map((c) => [c.name, c.department, c.email, c.temporaryPassword].map(q).join(","))].join("\r\n"));
+  fs.writeFileSync(file, "﻿" + ["이름,부서,로그인 아이디 (사번 또는 이메일),임시 비밀번호", ...creds.map((c) => [c.name, c.department, c.loginId, c.temporaryPassword].map(q).join(","))].join("\r\n"));
   return file;
 }
