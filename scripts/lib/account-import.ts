@@ -51,7 +51,8 @@ export function departmentOf(text: string): string | null {
 /** Position text → role. SV → SUPERVISOR, GL → GAP_LEADER, PM / 공장장 → PLANT_MANAGER, everybody else (팀장, 책임, …) → RESPONDER. */
 export function roleOf(position: string): "SUPERVISOR" | "GAP_LEADER" | "PLANT_MANAGER" | "RESPONDER" {
   const t = norm(position).toUpperCase().replace(/[\s/.]/g, "");
-  if (t === "PM" || t.includes("PLANTMANAGER") || t.includes("공장장")) return "PLANT_MANAGER";
+  // PM / DPM (부공장장): plant management — they receive the 2-hour escalation
+  if (t === "PM" || t === "DPM" || t.includes("PLANTMANAGER") || t.includes("공장장")) return "PLANT_MANAGER";
   if (t === "SV" || t.includes("SUPERVISOR") || t.includes("감독")) return "SUPERVISOR";
   if (t === "GL" || t.includes("GAP") || t.includes("그룹장")) return "GAP_LEADER";
   return "RESPONDER";
