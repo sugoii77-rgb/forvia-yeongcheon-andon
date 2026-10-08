@@ -118,6 +118,15 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line)
 code.mono { font-family: var(--font-mono); font-size: 14px; background: var(--navy-soft); padding: 1px 6px; border-radius: 4px; word-break: break-all; }
 </style>
 
+<style>
+  .video { display: flex; align-items: center; gap: 14px; margin: 14px 0 6px; padding: 14px 18px; border-radius: 12px;
+           background: #0b2d5b; color: #fff; text-decoration: none; line-height: 1.45; }
+  .video:hover { filter: brightness(1.12); }
+  .video .play { flex: none; width: 44px; height: 44px; border-radius: 50%; background: #e5202e; display: grid;
+                 place-items: center; font-size: 18px; padding-left: 3px; }
+  .video span:last-child { font-size: 14px; opacity: 0.95; }
+  .video strong { font-size: 17px; }
+</style>
 </head>
 <body>
 <main class="sheet">
@@ -137,6 +146,11 @@ code.mono { font-family: var(--font-mono); font-size: 14px; background: var(--na
     <code id="u">https://forvia-yeongcheon-andon.vercel.app</code>
     <button type="button" id="copy">주소 복사</button>
   </div>
+
+  <a class="video" href="https://youtu.be/lJul2MJDQ3w" target="_blank" rel="noopener">
+    <span class="play" aria-hidden="true">▶</span>
+    <span><strong>동영상으로 보기 (1분 50초)</strong><br>설치 · 로그인 · 호출 · 조치 · 현황판을 한 번에 — YouTube</span>
+  </a>
 
   <nav aria-label="역할별 바로가기">
     <div class="roles">
