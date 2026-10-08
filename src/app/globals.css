@@ -343,6 +343,8 @@ table.table { width: 100%; border-collapse: collapse; background: #fff; font-siz
 .pm { position: relative; width: 100%; height: 100%; --pmu: 1cqw; }
 .pm > * { position: absolute; box-sizing: border-box; }
 .pm-zone { border-radius: 10px; }
+/* building outline: one rectangle around all production zones */
+.pm-frame { border: 2px solid #3a4352; border-radius: 14px; background: #0e1219; }
 /* zone colours follow the plant drawing (AQ pink, AP blue, sub-assembly yellow) but muted, so that the
    saturated red / amber of an ANDON always dominates */
 .pm-zone-AQ { background: #1b1419; border: 1px solid #3a2531; }
@@ -351,12 +353,12 @@ table.table { width: 100%; border-collapse: collapse; background: #fff; font-siz
 .pm-normal.pm-tone-AQ { background: #2a1a24; border-color: #4c2e3e; border-left-color: #c46a86; }
 .pm-normal.pm-tone-AP { background: #142538; border-color: #24425f; border-left-color: #3f97cf; }
 .pm-normal.pm-tone-SUB { background: #25230f; border-color: #48431d; border-left-color: #bfae4f; }
-.pm-normal.pm-tone-AQ .pm-name { color: #e2b9c8; }
-.pm-normal.pm-tone-AP .pm-name { color: #b5d4ee; }
-.pm-normal.pm-tone-SUB .pm-name { color: #e0d6a0; }
-.pm-normal.pm-tone-AQ .pm-sub { color: #a9808f; }
-.pm-normal.pm-tone-AP .pm-sub { color: #7f9ab2; }
-.pm-normal.pm-tone-SUB .pm-sub { color: #a69d6c; }
+.pm-normal.pm-tone-AQ .pm-name { color: #ffe3ee; }
+.pm-normal.pm-tone-AP .pm-name { color: #e2f1ff; }
+.pm-normal.pm-tone-SUB .pm-name { color: #fff6c9; }
+.pm-normal.pm-tone-AQ .pm-sub { color: #d6a9ba; }
+.pm-normal.pm-tone-AP .pm-sub { color: #a9c6e0; }
+.pm-normal.pm-tone-SUB .pm-sub { color: #d2c78f; }
 .pm-unlinked.pm-tone-AQ { border-color: #4a2f3d; color: #7d5a69; }
 .pm-unlinked.pm-tone-AP { border-color: #274660; color: #557590; }
 .pm-unlinked.pm-tone-SUB { border-color: #48431f; color: #7c7448; }
@@ -371,9 +373,9 @@ table.table { width: 100%; border-collapse: collapse; background: #fff; font-siz
 .pm-line { width: 100%; height: 100%; border-radius: 7px; display: flex; flex-direction: column; overflow: hidden; text-decoration: none; color: inherit; position: relative; padding: calc(var(--pmu) * 0.35) calc(var(--pmu) * 0.45); gap: 2px; }
 .pm-normal { background: #151b23; border: 1px solid #263040; border-left: 4px solid #1f5c3a; justify-content: center; }
 .pm-normal .pm-name { color: #a7b2c3; }
-.pm-sub { font-size: clamp(9px, calc(var(--pmu) * 0.68), 13px); font-weight: 600; color: #7d889a; line-height: 1.2; word-break: keep-all; }
+.pm-sub { font-size: clamp(9px, calc(var(--pmu) * 0.72), 14px); font-weight: 700; color: #7d889a; line-height: 1.2; word-break: keep-all; }
 .pm-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 4px; }
-.pm-name { font-weight: 900; font-size: clamp(11px, calc(var(--pmu) * 1.05), 20px); line-height: 1.1; word-break: keep-all; overflow-wrap: break-word; min-width: 0; }
+.pm-name { font-weight: 900; font-size: clamp(12px, calc(var(--pmu) * 1.25), 24px); line-height: 1.1; letter-spacing: 0.01em; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); word-break: keep-all; overflow-wrap: break-word; min-width: 0; }
 /* abnormal lines are HIGHLIGHTED in place: solid colour + bright ring + glow; normal tiles dim while any
    ANDON is active, so the eye goes straight to the abnormal location */
 .pm-open { background: var(--red); color: #fff; border: 2px solid #ffb3b9; box-shadow: 0 0 0 3px rgba(255, 70, 85, 0.95), 0 0 26px 8px rgba(229, 32, 46, 0.6); animation: pm-pulse 2.4s ease-in-out infinite; z-index: 3; }
@@ -383,7 +385,9 @@ table.table { width: 100%; border-collapse: collapse; background: #fff; font-siz
 .fc-done { color: #7fd3a2; }
 .fs-done h3 { margin: 6px 0; font-size: 15px; color: #7fd3a2; letter-spacing: 0.04em; }
 .fs-doneitem { border-left-color: #3ccf7f !important; opacity: 0.85; }
-.pm-has-alarm .pm-normal, .pm-has-alarm .pm-unlinked, .pm-has-alarm .pm-zone-title, .pm-has-alarm .pm-landmark { opacity: 0.45; transition: opacity 0.4s; }
+/* an active ANDON dims the background only a little — line names must stay readable */
+.pm-has-alarm .pm-normal { opacity: 0.8; transition: opacity 0.4s; }
+.pm-has-alarm .pm-unlinked, .pm-has-alarm .pm-zone-title, .pm-has-alarm .pm-landmark { opacity: 0.45; transition: opacity 0.4s; }
 .pm-cat { font-size: clamp(10px, calc(var(--pmu) * 0.8), 15px); font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; }
 .pm-desc { font-size: clamp(9px, calc(var(--pmu) * 0.72), 14px); line-height: 1.2; opacity: 0.95; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .pm-time { font-size: clamp(14px, calc(var(--pmu) * 1.45), 30px); font-weight: 900; font-variant-numeric: tabular-nums; line-height: 1; margin-top: auto; }
@@ -447,7 +451,7 @@ table.table { width: 100%; border-collapse: collapse; background: #fff; font-siz
 @container (max-width: 100px) {
   .pm-line { padding: 4px 4px 4px 5px; }
   .pm-normal { border-left-width: 3px; }
-  .pm-name { font-size: clamp(10px, calc(var(--pmu) * 0.86), 16px); letter-spacing: -0.01em; }
+  .pm-name { font-size: clamp(10px, calc(var(--pmu) * 0.92), 18px); letter-spacing: -0.01em; overflow-wrap: normal; }
   .pm-time { font-size: clamp(13px, calc(var(--pmu) * 1.3), 26px); }
 }
 

@@ -6,7 +6,7 @@
 // person who acknowledged / completed it. Never contact data.
 import Link from "next/link";
 import { fmtTime, usePolling, useServerNow } from "@/lib/client";
-import { MAP_LANDMARKS, MAP_ZONES } from "@/config/plantLayout";
+import { MAP_FRAME, MAP_LANDMARKS, MAP_ZONES } from "@/config/plantLayout";
 import { STATUS_LABEL, type AndonEvent, type MasterData } from "@/lib/domain";
 import { CATEGORY_LEGEND, categoryKey, displayLines, stationState, elapsedSeconds, formatElapsed, lineStates, placeLines, shiftLabel, sortActive, sortDone, type LineState, type MapLine } from "@/lib/plantMap";
 
@@ -131,6 +131,7 @@ export default function PlantMapPage() {
       <div className="floor-body">
         <section className="pm-wrap" aria-label="Plant map">
           <div className={`pm${active.length > 0 ? " pm-has-alarm" : ""}`}>
+            <div className="pm-frame" style={pct(MAP_FRAME)} aria-hidden />
             {MAP_ZONES.map((z) => (
               <div key={z.id} className={`pm-zone pm-zone-${z.tone}`} style={pct(z)} />
             ))}

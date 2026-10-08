@@ -100,29 +100,55 @@ export const STATION_CELLS: StationCell[] = [
   { id: "CTR-RESO", layoutLabel: "CTR RESO", row: 3, slot: "full", x: 87.5, w: 10.6, tone: "SUB", lineCode: "RESO-CTR", match: "EXACT_NAME" }, // 86.1–95.7
 ];
 
-/** Zone backgrounds and titles as on page 2 (titles only where the drawing has them). */
+/**
+ * Display frame (plant request 2026-10-08: "레이아웃이 직사각형 안에 들어오게"). The drawing's zones have ragged
+ * edges; on the display they are squared into one rectangle: two columns (AQ / west, AP / east) with shared
+ * left / right edges, rows unchanged. Station x values above stay in DRAWING units (traceable to the slide)
+ * and are mapped linearly from their drawing zone into the display column by fitBox().
+ */
+const COL = { W: { x: 13.6, w: 41.6 }, E: { x: 56.6, w: 42.6 } } as const;
+const DRAWING_ZONES = {
+  AQ: { x: 13.6, w: 41.0 }, // rows 1–2 west
+  AP: { x: 57.1, w: 36.0 }, // rows 1–2 east
+  "SUB-W": { x: 8.2, w: 45.4 }, // row 3 west
+  "SUB-E": { x: 58.0, w: 40.6 }, // row 3 east
+} as const;
+/** The rectangle that encloses all production zones (drawn as the building outline). */
+export const MAP_FRAME = { x: COL.W.x - 0.6, y: 7.3, w: COL.E.x + COL.E.w - COL.W.x + 1.2, h: 86.4 };
+
+/** Zone backgrounds and titles as on page 2 (titles only where the drawing has them), squared to the frame. */
 export const MAP_ZONES: { id: string; title: string | null; tone: MapTone; x: number; y: number; w: number; h: number; titleY?: number }[] = [
-  { id: "AQ", title: "AQ ASSEMBLY", tone: "AQ", x: 13.6, y: 7.9, w: 41.0, h: 63.6, titleY: 38.4 },
-  { id: "AP", title: "AP ASSEMBLY", tone: "AP", x: 57.1, y: 7.9, w: 36.0, h: 63.6, titleY: 38.4 },
-  { id: "SUB-W", title: null, tone: "SUB", x: 8.2, y: 73.9, w: 45.4, h: 19.2 },
-  { id: "SUB-E", title: null, tone: "SUB", x: 58.0, y: 73.9, w: 40.6, h: 19.2 },
+  { id: "AQ", title: "AQ ASSEMBLY", tone: "AQ", ...COL.W, y: 7.9, h: 63.6, titleY: 38.4 },
+  { id: "AP", title: "AP ASSEMBLY", tone: "AP", ...COL.E, y: 7.9, h: 63.6, titleY: 38.4 },
+  { id: "SUB-W", title: null, tone: "SUB", ...COL.W, y: 73.9, h: 19.2 },
+  { id: "SUB-E", title: null, tone: "SUB", ...COL.E, y: 73.9, h: 19.2 },
 ];
 
-/** Orientation landmarks only — never ANDON entities. */
+/** Orientation landmarks only — never ANDON entities. Aligned with the frame rows. */
 export const MAP_LANDMARKS: { id: string; label: string; x: number; y: number; w: number; h: number; vertical?: boolean }[] = [
-  { id: "FG-WH", label: "FINISHED GOODS WAREHOUSE", x: 37.0, y: 1.6, w: 26.6, h: 5.4 },
-  { id: "BOP-WH", label: "BOP WAREHOUSE", x: 0.6, y: 8.4, w: 12.4, h: 62.6, vertical: true },
-  { id: "CATALYST-WH", label: "CATALYST WAREHOUSE", x: 0.6, y: 74.4, w: 7.2, h: 18.2, vertical: true },
-  { id: "QC-LAB", label: "QC LAB", x: 0.6, y: 94.4, w: 10.0, h: 5.0 },
-  { id: "MAINTENANCE", label: "MAINTENANCE", x: 78.1, y: 94.4, w: 13.9, h: 5.0 },
+  { id: "FG-WH", label: "FINISHED GOODS WAREHOUSE", x: 37.0, y: 1.0, w: 26.6, h: 5.2 },
+  { id: "BOP-WH", label: "BOP WAREHOUSE", x: 0.4, y: 7.9, w: 11.8, h: 63.6, vertical: true },
+  { id: "CATALYST-WH", label: "CATALYST WAREHOUSE", x: 0.4, y: 73.9, w: 11.8, h: 19.2, vertical: true },
+  { id: "QC-LAB", label: "QC LAB", x: 0.4, y: 94.6, w: 11.8, h: 4.8 },
+  { id: "MAINTENANCE", label: "MAINTENANCE", x: 78.1, y: 94.6, w: 13.9, h: 4.8 },
 ];
+
+/** Drawing x → display x: linear map from the station's drawing zone into its display column. */
+function fitX(c: StationCell, x: number): number {
+  const east = c.x >= 56;
+  const from = DRAWING_ZONES[c.row === 3 ? (east ? "SUB-E" : "SUB-W") : east ? "AP" : "AQ"];
+  const to = east ? COL.E : COL.W;
+  return to.x + ((x - from.x) / from.w) * to.w;
+}
 
 /** Box of a station in map units. */
 export function stationBox(c: StationCell, gap = 0.6): { x: number; y: number; w: number; h: number } {
   const r = MAP_ROWS[c.row];
-  if (c.slot === "full") return { x: c.x, y: r.y, w: c.w, h: r.h };
+  const x = fitX(c, c.x);
+  const w = fitX(c, c.x + c.w) - x;
+  if (c.slot === "full") return { x, y: r.y, w, h: r.h };
   const half = (r.h - gap) / 2;
-  return { x: c.x, y: c.slot === "top" ? r.y : r.y + half + gap, w: c.w, h: half };
+  return { x, y: c.slot === "top" ? r.y : r.y + half + gap, w, h: half };
 }
 
 /**
