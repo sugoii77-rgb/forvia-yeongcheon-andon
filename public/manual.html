@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<link rel="icon" href="/favicon.ico">
+<title>Digital ANDON 사용 매뉴얼</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: one reading column — cover with QR, role picker (jump links), numbered procedures per role, reference tables, FAQ */
+:root {
+  --bg: #f3f5f8; --paper: #ffffff; --ink: #14213a; --muted: #5a6478; --line: #d9dee7;
+  --navy: #0d2e5c; --navy-soft: #e6ecf5; --red: #e5202e; --red-soft: #fde8ea; --amber: #f5b800; --amber-soft: #fff4d6;
+  --green: #1f9d55; --green-soft: #e3f3e9; --kakao: #fee500; --kakao-ink: #191600; --chat: #b2c7da;
+  --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e141f; --paper: #161e2c; --ink: #e7ecf4; --muted: #9aa6ba; --line: #2b3648; --navy: #9cc0ff; --navy-soft: #1d2a40;
+    --red: #ff6b74; --red-soft: #3a1a1e; --amber: #ffd04d; --amber-soft: #3a2e12; --green: #6fd39a; --green-soft: #163324; --chat: #2c3e52; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e141f; --paper: #161e2c; --ink: #e7ecf4; --muted: #9aa6ba; --line: #2b3648; --navy: #9cc0ff; --navy-soft: #1d2a40;
+  --red: #ff6b74; --red-soft: #3a1a1e; --amber: #ffd04d; --amber-soft: #3a2e12; --green: #6fd39a; --green-soft: #163324; --chat: #2c3e52; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 16px; line-height: 1.65; padding-block: 28px 64px; padding-inline: 16px; }
+.sheet { max-width: 780px; margin: 0 auto; display: flex; flex-direction: column; gap: 44px; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.3; margin: 0; }
+h1 { font-size: 30px; }
+h2 { font-size: 22px; }
+h3 { font-size: 17px; }
+p { margin: 0; }
+a { color: var(--navy); }
+a:focus-visible, button:focus-visible { outline: 3px solid var(--navy); outline-offset: 2px; border-radius: 4px; }
+.eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+.muted { color: var(--muted); }
+section { display: flex; flex-direction: column; gap: 16px; scroll-margin-top: 16px; }
+.sec-head { display: flex; flex-direction: column; gap: 4px; border-top: 2px solid var(--ink); padding-top: 14px; }
+.sec-head .who { font-size: 13px; font-weight: 700; color: var(--navy); }
+
+header.cover { display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: start; }
+header.cover > div { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.lead { color: var(--muted); max-width: 54ch; }
+.qr { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; align-items: center; gap: 6px; width: 156px; }
+#qrbox { width: 130px; height: 130px; background: #fff; padding: 6px; border-radius: 4px; }
+#qrbox img, #qrbox canvas { width: 118px !important; height: 118px !important; display: block; }
+.qr span { font-size: 12px; color: var(--muted); text-align: center; line-height: 1.4; }
+.url { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.url code { font-family: var(--font-mono); font-size: 15px; word-break: break-all; min-width: 0; flex: 1 1 260px; }
+.url button { font: inherit; font-size: 14px; font-weight: 500; border: 1px solid var(--line); background: var(--navy-soft); color: var(--navy); padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+
+.roles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.role { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); text-decoration: none; color: var(--ink); min-width: 0; }
+.role strong { font-size: 16px; }
+.role span { font-size: 14px; color: var(--muted); }
+.role:hover { border-color: var(--navy); }
+
+ol.steps { list-style: none; margin: 0 0 0 15px; padding: 0; border-left: 2px solid var(--line); counter-reset: s; display: flex; flex-direction: column; }
+ol.steps li { position: relative; padding: 0 0 20px 30px; counter-increment: s; }
+ol.steps li:last-child { padding-bottom: 0; }
+ol.steps li::before { content: counter(s); position: absolute; left: -17px; top: 0; width: 32px; height: 32px; border-radius: 50%; background: var(--navy); color: var(--paper); font-weight: 700; display: grid; place-items: center; font-size: 15px; }
+ol.steps li.red::before { background: var(--red); color: #fff; }
+ol.steps li.kakao::before { background: var(--kakao); color: var(--kakao-ink); }
+.t { font-weight: 700; font-size: 17px; }
+.d { color: var(--muted); margin-top: 2px; }
+.btnlike { display: inline-block; font-size: 14px; font-weight: 700; padding: 1px 10px; border-radius: 5px; background: var(--navy); color: var(--paper); white-space: nowrap; }
+.btnlike.o { background: transparent; color: var(--ink); border: 1px solid var(--line); font-weight: 500; }
+.btnlike.red { background: var(--red); color: #fff; }
+.btnlike.k { background: var(--kakao); color: var(--kakao-ink); }
+
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.panel { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.panel ol { margin: 0; padding-left: 20px; }
+
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); }
+table { border-collapse: collapse; width: 100%; min-width: 520px; font-size: 15px; }
+th, td { text-align: left; vertical-align: top; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+tr:last-child td { border-bottom: 0; }
+th { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 500; background: var(--navy-soft); }
+td.tgt { font-weight: 700; white-space: nowrap; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 10px; }
+.chip { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 8px; font-weight: 600; font-size: 15px; border: 1px solid var(--line); background: var(--paper); }
+.sw { width: 18px; height: 18px; border-radius: 4px; flex: none; }
+.state { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.state div { border-radius: 10px; padding: 12px 14px; font-weight: 600; }
+.s-open { background: var(--red-soft); border-left: 6px solid var(--red); }
+.s-act { background: var(--amber-soft); border-left: 6px solid var(--amber); }
+.s-ok { background: var(--green-soft); border-left: 6px solid var(--green); }
+.state small { display: block; font-weight: 400; color: var(--muted); margin-top: 2px; }
+
+.flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-weight: 500; }
+.flow .arrow { color: var(--muted); }
+.note { border-radius: 10px; padding: 12px 16px; background: var(--amber-soft); font-size: 15px; }
+.note strong { color: var(--ink); }
+.chat { background: var(--chat); border-radius: 12px; padding: 16px; display: flex; justify-content: flex-end; }
+.bubble { background: #fff; color: #1b1b1b; border-radius: 10px; max-width: 320px; width: 100%; font-size: 14px; line-height: 1.55; overflow: hidden; }
+.bubble .body { padding: 12px 14px; white-space: pre-line; word-break: break-all; }
+.bubble .btn { border-top: 1px solid #e5e5e5; text-align: center; padding: 9px; font-weight: 500; }
+.faq { display: flex; flex-direction: column; gap: 8px; }
+details { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; }
+summary { cursor: pointer; font-weight: 600; }
+details p { margin-top: 8px; color: var(--muted); }
+footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 14px; }
+
+@media (max-width: 560px) {
+  header.cover { grid-template-columns: 1fr; }
+  .qr { width: 100%; flex-direction: row; justify-content: flex-start; }
+  .qr span { text-align: left; }
+  h1 { font-size: 25px; }
+}
+</style>
+
+</head>
+<body>
+<main class="sheet">
+  <header class="cover">
+    <div>
+      <span class="eyebrow"><a href="/">← Digital ANDON</a> · FORVIA 영천공장</span>
+      <h1>Digital ANDON 사용 매뉴얼</h1>
+      <p class="lead">라인에서 문제가 생기면 GAP 리더가 휴대폰으로 ANDON을 호출하고, 호출받은 부서 담당자는 카카오톡 알림을 받아 접수·조치·완료합니다. 현황판에서는 공장 배치도 위에 문제 라인이 바로 표시됩니다.</p>
+    </div>
+    <div class="qr" aria-label="Digital ANDON 접속 QR 코드">
+      <div id="qrbox"></div>
+      <span>휴대폰 카메라로 찍으면<br>바로 열립니다</span>
+    </div>
+  </header>
+
+  <div class="url">
+    <code id="u">https://forvia-yeongcheon-andon.vercel.app</code>
+    <button type="button" id="copy">주소 복사</button>
+  </div>
+
+  <nav aria-label="역할별 바로가기">
+    <div class="roles">
+      <a class="role" href="#start"><strong>처음 사용하는 분</strong><span>홈 화면 아이콘 · 로그인</span></a>
+      <a class="role" href="#call"><strong>GAP 리더</strong><span>ANDON 호출하기</span></a>
+      <a class="role" href="#respond"><strong>조치부서 담당자</strong><span>QC · MT · PC&amp;L · UAP</span></a>
+      <a class="role" href="#board"><strong>모두</strong><span>현황판 · 이력 · 문제 해결</span></a>
+    </div>
+  </nav>
+
+  <section id="start" aria-labelledby="h-start">
+    <div class="sec-head"><span class="who">처음 사용하는 분</span><h2 id="h-start">1. 휴대폰에 아이콘 만들기</h2></div>
+    <p>앱을 설치하지 않고, 홈 화면에 아이콘을 추가해서 앱처럼 씁니다. 아이콘은 남색 바탕에 빨강·노랑·초록 신호등과 &ldquo;ANDON&rdquo; 글자입니다.</p>
+    <div class="cols">
+      <div class="panel">
+        <h3>안드로이드 (삼성 등) · Chrome</h3>
+        <ol>
+          <li>위 주소(또는 QR)를 <b>Chrome</b>으로 엽니다.</li>
+          <li>오른쪽 위 <b>⋮</b> 메뉴 → <b>홈 화면에 추가</b> (또는 <b>앱 설치</b>).</li>
+          <li><b>추가</b>를 누르면 홈 화면에 ANDON 아이콘이 생깁니다.</li>
+        </ol>
+      </div>
+      <div class="panel">
+        <h3>아이폰 · Safari</h3>
+        <ol>
+          <li>위 주소(또는 QR)를 <b>Safari</b>로 엽니다.</li>
+          <li>아래쪽 <b>공유 버튼(□↑)</b> → <b>홈 화면에 추가</b>.</li>
+          <li>이름이 &ldquo;ANDON&rdquo;인지 확인하고 <b>추가</b>를 누릅니다.</li>
+        </ol>
+      </div>
+    </div>
+
+    <div class="sec-head"><h2>2. 로그인 · 비밀번호</h2></div>
+    <ol class="steps">
+      <li><div class="t">로그인</div><div class="d">아이디 칸에 <b>사번</b>(사번이 없는 분은 회사 이메일), 비밀번호 칸에 관리자에게 받은 <b>임시 비밀번호</b>를 넣습니다. 한 번 로그인하면 일주일 동안 유지됩니다.</div></li>
+      <li><div class="t">비밀번호 바꾸기</div><div class="d">처음 로그인하면 오른쪽 위 내 이름 → &lsquo;내 정보&rsquo; → <span class="btnlike o">비밀번호 변경</span>에서 본인 비밀번호(8자 이상, 영문+숫자)로 바꿔 주세요.</div></li>
+      <li><div class="t">계정이 없는 분</div><div class="d">관리자에게 계정 등록을 요청하세요. 품질팀 등 명단에 없는 분은 <span class="btnlike o">회원가입</span>에서 이름·이메일·비밀번호·<b>내 부서</b>를 넣어 직접 만들 수 있습니다.</div></li>
+      
+    </ol>
+    <div class="note"><strong>역할은 관리자가 정합니다.</strong> 가입하면 모두 &lsquo;담당자&rsquo;로 시작합니다. GAP 리더·감독자(SV)는 관리자가 역할을 바꿔야 ANDON을 호출할 수 있습니다. 비밀번호를 잊으면 관리자에게 재설정을 요청하세요.</div>
+
+    <div class="sec-head"><h2>3. 카카오톡 알림 연결</h2></div>
+    <ol class="steps">
+      <li><div class="t">&lsquo;내 정보&rsquo; 아래 <span class="btnlike">카카오 알림 연결</span></div></li>
+      <li class="kakao"><div class="t">본인 카카오 계정으로 로그인 후 &lsquo;카카오톡 메시지 전송&rsquo;에 체크하고 동의</div></li>
+      <li><div class="t">카카오톡 &lsquo;나와의 채팅&rsquo;에 확인 메시지가 오면 완료</div><div class="d">상태가 &lsquo;✔ 연결됨&rsquo;으로 바뀝니다. <span class="btnlike o">테스트 보내기</span>로 다시 확인할 수 있습니다.</div></li>
+    </ol>
+    <p class="muted">알림은 본인 &lsquo;나와의 채팅&rsquo;으로만 갑니다. 친구 목록·대화 내용은 가져오지 않으며, <span class="btnlike o">연결 해제</span>로 언제든 끌 수 있습니다.</p>
+  </section>
+
+  <section id="call" aria-labelledby="h-call">
+    <div class="sec-head"><span class="who">GAP 리더 · 감독자</span><h2 id="h-call">4. ANDON 호출하기</h2></div>
+    <p>작업자가 해결하지 못한 문제는 GAP 리더를 부르고, GAP 리더가 상황을 보고 조치부서를 호출합니다. 첫 화면 <span class="btnlike">ANDON 호출</span>을 누르세요. <b>보통 2~3번 누르면 끝납니다.</b></p>
+    <ol class="steps">
+      <li><div class="t">라인 누르기 <span class="muted">(담당 라인이 하나면 자동 선택 — 생략)</span></div><div class="d">맨 위 <b>내 담당 라인</b>에서 고릅니다. 다른 라인은 <span class="btnlike o">다른 라인 보기 (전체)</span>.</div></li>
+      <li><div class="t">상황 누르기</div><div class="d">아래 표의 상황 버튼을 누르면 이상 유형, 조치부서, 받는 사람(부서원 전원 · SV는 그 라인 감독자)이 <b>자동으로</b> 정해집니다. 여러 상황을 함께 누를 수도 있습니다.</div></li>
+      <li class="red"><div class="t">화면 아래 <span class="btnlike red">ANDON CALL</span> 누르기</div><div class="d">버튼 위에 &ldquo;FRT · Robot Fault → MT 3명&rdquo;처럼 누구에게 가는지 보입니다. ANDON 번호가 표시되면 완료 — 현황판에 바로 뜨고 선택된 사람에게 카카오톡이 갑니다.</div></li>
+    </ol>
+    <div class="note"><strong>바꾸고 싶을 때만 &lsquo;세부 설정&rsquo;을 펼치세요.</strong> 이상 유형, 조치부서 추가·삭제, 받는 사람 빼기·더하기, 내용 입력을 할 수 있습니다 (사진은 쓰지 않습니다). 상황표에 없는 문제는 세부 설정에서 이상 유형·조치부서를 직접 고르고 내용을 적으면 됩니다.</div>
+
+    <h3>상황별 호출 부서</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>상황</th><th>호출</th></tr></thead>
+        <tbody>
+          <tr><td>누락, 용접불량, 외관불량, Leak NG, 검사기준 불명확, 검사구 문제</td><td class="tgt">QC</td></tr>
+          <tr><td>단품불량 (협력사)</td><td class="tgt">QC (SQA)</td></tr>
+          <tr><td>설비 정지, Robot Fault, Nutrunner Fault, Leak Tester NG, Sensor Fault</td><td class="tgt">MT</td></tr>
+          <tr><td>예방보전 (계획 작업 안내 · 100자 이내 · 바로 노랑)</td><td class="tgt">MT</td></tr>
+          <tr><td>공정조건 이상, 싸이클타임 불량, 치공구 문제, 신규 문제 원인 미확정</td><td class="tgt">UAP (2시간 미완료 시 ME)</td></tr>
+          <tr><td>자재 결품 (자작품)</td><td class="tgt">PC&amp;L SV + UAP 전체</td></tr>
+          <tr><td>자재 결품 (외주품)</td><td class="tgt">PC&amp;L 전체</td></tr>
+          <tr><td>잘못 투입, FIFO 문제</td><td class="tgt">PC&amp;L</td></tr>
+          <tr><td>인원 부족, 작업방법 문제</td><td class="tgt">UAP (SV)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note"><strong>받는 사람이 0명이면</strong> 호출은 등록되지만 카카오톡은 아무에게도 가지 않습니다. 화면에 경고가 나오니 사람을 선택하세요. 받는 사람은 미리 가입하고 카카오를 연결한 사람만 실제로 알림을 받습니다.</div>
+  </section>
+
+  <section id="respond" aria-labelledby="h-respond">
+    <div class="sec-head"><span class="who">조치부서 담당자 (QC · MT · PC&amp;L · UAP)</span><h2 id="h-respond">5. 알림 받고 조치하기</h2></div>
+    <div class="chat">
+      <div class="bubble" role="img" aria-label="ANDON 알림 예시">
+        <div class="body">[ANDON 발생] Main #1 / 공정 미지정
+AND-20261006-001 · 설비 · [Robot Fault] 로봇 정지 (예시)
+https://forvia-yeongcheon-andon.vercel.app/respond/AND-20261006-001</div>
+        <div class="btn">ANDON 보기</div>
+      </div>
+    </div>
+    <ol class="steps">
+      <li><div class="t">카톡 링크를 눌러 처리 화면 열기</div><div class="d">PC 카카오톡에서는 본문 링크를, 휴대폰에서는 <b>ANDON 보기</b>를 누르세요. 첫 화면의 <span class="btnlike o">담당자 조치</span>에서도 볼 수 있습니다.</div></li>
+      <li><div class="t"><span class="btnlike">ACKNOWLEDGE · 접수</span> — 현장으로 가겠다는 표시</div><div class="d">현황판에서 빨강이 노랑으로 바뀝니다.</div></li>
+      <li><div class="t"><span class="btnlike">ACTION · 조치 입력</span> — 진행 상황 기록 (선택)</div></li>
+      <li><div class="t"><span class="btnlike">CLOSE · 완료</span> — 시정 조치 내용 입력 후 완료 저장</div><div class="d">현황판에서 <b>초록</b>으로 바뀌어 24시간 표시된 뒤 사라지고, 이력에 남습니다.</div></li>
+    </ol>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>건</th><th>접수 · 조치</th><th>최종 완료 (Close · 초록)</th></tr></thead>
+        <tbody>
+          <tr><td>품질 (QC)</td><td>QC</td><td class="tgt">UAP (생산 확인 후)</td></tr>
+          <tr><td>설비 (MT)</td><td>MT <span class="btnlike">수리 시작</span> (노랑)</td><td class="tgt">MT <span class="btnlike">수리 완료</span></td></tr>
+          <tr><td>물류 (PC&amp;L)</td><td>PC&amp;L</td><td class="tgt">UAP</td></tr>
+          <tr><td>예방보전 (MT)</td><td>등록 즉시 노랑</td><td class="tgt">MT</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note"><strong>2시간 안에 완료되지 않으면</strong> 공장장(PM), PC&amp;L · QC · MT · UAP 팀장, ME(IPL)에게 별도 카카오톡이 갑니다 (예방보전 제외).</div>
+    <p class="muted"><b>수리 완료 알림:</b> MT 전체와 담당 UAP(SV·GL)에게 갑니다. <b>자재 결품 완료 알림:</b> 자작품은 담당 UAP(SV·GL)와 PC&amp;L 전체에게, 외주품은 담당 UAP(SV·GL)에게만 완료 카카오톡이 갑니다.</p>
+    <p class="muted">물류 건을 제외한 모든 호출은 해당 라인 담당 SV · GL, UAP 팀장 · 책임에게도 기본으로 알림이 갑니다. 호출된 부서의 부서원이면 카카오톡을 받지 않았어도 누구나 접수·조치·완료할 수 있습니다. 다른 부서 ANDON에는 버튼이 나오지 않습니다. 누가 언제 무엇을 했는지는 모두 기록되며 수정·삭제할 수 없습니다.</p>
+  </section>
+
+  <section id="board" aria-labelledby="h-board">
+    <div class="sec-head"><span class="who">모두</span><h2 id="h-board">6. 현황판 보기</h2></div>
+    <p>첫 화면 <span class="btnlike o">실시간 현황판</span> — 공장 배치도에서 문제가 있는 라인이 제자리에서 켜집니다. 사람 이름은 표시하지 않습니다.</p>
+    <div class="state">
+      <div class="s-open">빨강 · 발생<small>아직 아무도 접수하지 않음</small></div>
+      <div class="s-act">노랑 · 접수 / 조치 중<small>담당자가 대응 중</small></div>
+      <div class="s-ok">초록 · 완료<small>완료 후 24시간 표시 후 사라짐</small></div>
+    </div>
+    <p>칸의 <b>테두리 색</b>은 문제 유형입니다.</p>
+    <div class="legend">
+      <span class="chip"><i class="sw" style="background:#c084fc"></i>품질</span>
+      <span class="chip"><i class="sw" style="background:#38bdf8"></i>물류</span>
+      <span class="chip"><i class="sw" style="background:#2dd4bf"></i>설비</span>
+      <span class="chip"><i class="sw" style="background:#ffffff;border:1px solid #888"></i>안전</span>
+      <span class="chip"><i class="sw" style="background:#9ca3af"></i>생산·기타</span>
+    </div>
+    <p>오른쪽 &lsquo;ACTIVE ANDON&rsquo; 목록은 오래된 순서로 경과 시간을 보여줍니다. 칸이나 목록을 누르면 처리 화면이 열립니다. <span class="btnlike o">이력 / 통계</span>에서는 지난 ANDON과 부서별 건수·처리 시간을 볼 수 있습니다.</p>
+    <div class="note"><strong>이력은 1년간 보관 후 삭제됩니다.</strong> &lsquo;이력 / 통계&rsquo; 화면의 <span class="btnlike">CSV 저장</span>에서 기간을 골라 PC에 저장할 수 있습니다 (로그인 필요, 엑셀로 열림).</div>
+  </section>
+
+  <section aria-labelledby="h-faq">
+    <div class="sec-head"><h2 id="h-faq">7. 이럴 땐 이렇게</h2></div>
+    <div class="faq">
+      <details><summary>ANDON 호출 화면에 &ldquo;호출할 수 없습니다&rdquo;가 나와요</summary><p>호출은 GAP 리더·감독자 역할만 할 수 있습니다. 관리자에게 역할 변경을 요청하세요.</p></details>
+      <details><summary>받는 사람 목록에 우리 부서 사람이 없어요</summary><p>아직 가입하지 않은 사람은 목록에 나오지 않습니다. 가입할 때 부서를 정확히 골랐는지도 확인하세요.</p></details>
+      <details><summary>카카오톡 알림이 안 와요</summary><p>&lsquo;내 정보&rsquo;에서 카카오 알림 상태가 &lsquo;✔ 연결됨&rsquo;인지 확인하세요. &lsquo;⚠ 다시 연결 필요&rsquo;면 다시 연결합니다. 호출할 때 내가 받는 사람으로 선택됐는지도 GAP 리더에게 확인하세요.</p></details>
+      <details><summary>처리 화면에 접수 버튼이 없어요</summary><p>로그인했는지, 그리고 그 ANDON이 내 부서로 호출됐는지 확인하세요. 다른 부서 ANDON은 볼 수만 있습니다.</p></details>
+      <details><summary>화면 위에 &ldquo;서버 연결 끊김&rdquo;이 보여요</summary><p>네트워크를 확인하세요. 다시 연결되면 자동으로 최신 상태로 바뀝니다.</p></details>
+      <details><summary>비밀번호를 잊었어요</summary><p>관리자에게 재설정을 요청하면 임시 비밀번호를 받습니다. 로그인 후 &lsquo;내 정보 → 비밀번호 변경&rsquo;에서 바꾸세요.</p></details>
+    </div>
+  </section>
+
+  <footer>Digital ANDON 시범 운영 · 문의: 시스템 담당자 · 개인정보: 현황판에는 사람 이름을 표시하지 않으며, 연락처는 시스템에 저장하지 않습니다.</footer>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+(function () {
+  var url = document.getElementById("u").textContent.trim();
+  try {
+    if (window.QRCode) new QRCode(document.getElementById("qrbox"), { text: url, width: 118, height: 118, colorDark: "#0d2e5c", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M });
+  } catch (e) {}
+  var btn = document.getElementById("copy");
+  btn.addEventListener("click", function () {
+    var done = function () { btn.textContent = "복사됨"; setTimeout(function () { btn.textContent = "주소 복사"; }, 1600); };
+    var fallback = function () {
+      var r = document.createRange(); r.selectNodeContents(document.getElementById("u"));
+      var s = window.getSelection(); s.removeAllRanges(); s.addRange(r); btn.textContent = "선택됨 · Ctrl+C";
+    };
+    try { navigator.clipboard.writeText(url).then(done, fallback); } catch (e) { fallback(); }
+  });
+})();
+</script>
+
+</body>
+</html>

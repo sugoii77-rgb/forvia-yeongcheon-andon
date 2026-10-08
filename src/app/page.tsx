@@ -20,6 +20,9 @@ export default function Home() {
           <Link href="/history" className="tile">
             <strong>이력 / 통계</strong>History &amp; analytics
           </Link>
+          <a href="/manual.html" className="tile">
+            <strong>사용 매뉴얼</strong>Manual · 호출 · 조치 · 카카오 알림
+          </a>
         </div>
       </main>
     </>
