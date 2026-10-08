@@ -105,6 +105,20 @@ export default function OperatorPage() {
     const sit = situationList.find((s) => s.code === code);
     if (!sit) return;
     if (!categoryCode) setCategoryCode(sit.category);
+    // PC&L 자재 결품 (plant decision 2026-10-08): 자작품 → PC&L SV + UAP 전체; 외주품 → PC&L 전체 (no UAP)
+    if (code === "PCL_SHORTAGE_INHOUSE" || code === "PCL_SHORTAGE_PURCHASED") {
+      const pcl = targets?.find((t) => t.code === "PCL");
+      const uap = targets?.find((t) => t.code === "UAP");
+      const inhouse = code === "PCL_SHORTAGE_INHOUSE";
+      const order = (targets ?? []).map((t) => t.code);
+      setDeps(order.filter((c) => deps.includes(c) || c === "PCL" || (inhouse && c === "UAP")));
+      setPeople((cur) => ({
+        ...cur,
+        PCL: (inhouse ? (pcl?.supervisorIds ?? []) : (pcl?.members.map((m) => m.id) ?? [])).map(String),
+        ...(inhouse ? { UAP: (uap?.members.map((m) => m.id) ?? []).map(String) } : {}),
+      }));
+      return;
+    }
     if (!deps.includes(sit.target) && targets?.some((t) => t.code === sit.target)) {
       chooseDeps((targets ?? []).map((t) => t.code).filter((c) => c === sit.target || deps.includes(c)));
     }

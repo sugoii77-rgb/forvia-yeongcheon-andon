@@ -202,6 +202,8 @@ export interface CallTargetDepartment {
   members: { id: number; name: string; roleName: string }[];
   /** Pre-chosen people when the target is added (SV: the supervisor of the chosen line). Default: all. */
   defaultMemberIds?: number[];
+  /** The department's supervisors (SV) — PC&L 자작품 결품 messages the PC&L SV only. */
+  supervisorIds?: number[];
 }
 
 export interface CallSituation {

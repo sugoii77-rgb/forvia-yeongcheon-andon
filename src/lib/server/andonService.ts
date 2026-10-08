@@ -339,7 +339,11 @@ export async function callTargets(lineCode?: string): Promise<CallTargetDepartme
   if (lineCode) for (const id of await lineUapPeople(lineCode)) uapDefaults.add(id);
   const uapMembers = people.filter((p) => p.department_code === "UAP");
   return [
-    ...deps.map((d) => ({ ...d, members: people.filter((p) => p.department_code === d.code).map(member) })),
+    ...deps.map((d) => ({
+      ...d,
+      members: people.filter((p) => p.department_code === d.code).map(member),
+      supervisorIds: people.filter((p) => p.department_code === d.code && p.role === "SUPERVISOR").map((p) => p.id as number),
+    })),
     { code: "UAP", label: UAP_LABEL, members: uapMembers.map(member), defaultMemberIds: uapMembers.map((p) => p.id as number).filter((id) => uapDefaults.has(id)) },
   ];
 }
