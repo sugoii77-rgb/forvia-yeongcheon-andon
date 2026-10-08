@@ -2,6 +2,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { CALL_ROLES } from "@/lib/domain";
 import { TopBar } from "@/components/TopBar";
 import { api, safeNextPath } from "@/lib/client";
 import type { PublicUser } from "@/lib/domain";
@@ -20,13 +21,15 @@ export default function LoginPage() {
     setBusy(true);
     setError(null);
     try {
-      await api<{ user: PublicUser }>("/api/auth/login", {
+      const res = await api<{ user: PublicUser }>("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
-      // Full navigation so every component re-reads the session.
-      window.location.assign(safeNextPath(new URLSearchParams(window.location.search).get("next")));
+      // Full navigation so every component re-reads the session. Without an explicit target, GAP leaders /
+      // supervisors go straight to the call screen (fewer taps), everybody else to their department's ANDONs.
+      const home = CALL_ROLES.includes(res.user.role) ? "/operator" : "/respond";
+      window.location.assign(safeNextPath(new URLSearchParams(window.location.search).get("next"), home));
     } catch (err) {
       setError((err as Error).message);
       setPassword("");
