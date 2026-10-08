@@ -20,6 +20,9 @@ export function proxy(req: NextRequest) {
   return res;
 }
 
+// /api/andons is excluded: a proxy buffers request bodies only up to 10 MB (proxyClientMaxBodySize), which
+// would cut an oversized multipart ANDON call before the route can answer it properly. Pages and the other
+// API calls still refresh the cookie.
 export const config = {
-  matcher: [{ source: "/((?!_next/static|_next/image|favicon.ico|pwa/|manual.html|sw.js).*)", has: [{ type: "cookie", key: "andon_session" }] }],
+  matcher: [{ source: "/((?!_next/static|_next/image|favicon.ico|pwa/|manual.html|sw.js|andon-guide|api/andons).*)", has: [{ type: "cookie", key: "andon_session" }] }],
 };

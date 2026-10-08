@@ -2,7 +2,7 @@ import { transitionEvent, getTransitions, AndonError } from "@/lib/server/andonS
 import { assertSameOrigin, getSessionUser } from "@/lib/server/auth";
 import { TRANSITION_ACTIONS, type TransitionAction } from "@/lib/domain";
 import { handle, requestAudit } from "@/lib/server/http";
-import { notifyAndonClosed } from "@/lib/server/notifications";
+import { notifyAndonAcknowledged, notifyAndonClosed } from "@/lib/server/notifications";
 import { after } from "next/server";
 
 // JSON body: { action: "ACKNOWLEDGE" | "ACTION" | "CLOSE", comment? }
@@ -32,7 +32,9 @@ export async function POST(req: Request, ctx: RouteContext<"/api/andons/[id]/tra
       comment: body.comment == null ? undefined : String(body.comment),
       audit,
     });
-    if (event.status === "CLOSED") after(() => notifyAndonClosed(event)); // completion notice (자재 결품)
+    if (event.status === "CLOSED") after(() => notifyAndonClosed(event, user.id)); // completion notice (+ the caller)
+    // "접수 완료" back to whoever raised it (plant feedback 2026-10-09)
+    if (body.action === "ACKNOWLEDGE") after(() => notifyAndonAcknowledged(event, user));
     console.info(`[andon] ${id} ${body.action} by user #${user.id} (${user.departmentCode}) device ${audit.deviceId ?? "-"} ${audit.clientIp ?? ""} -> ${event.status}`);
     return Response.json({ event, transitions: await getTransitions(id) });
   });

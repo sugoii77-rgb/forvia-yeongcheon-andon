@@ -220,9 +220,10 @@ async function deliver(p: NotificationProvider, eventId: string, r: Notification
  *  - equipment (MT) — 수리 완료: all of MT and the line's UAP (SV + GL);
  *  - material shortage 자작품 (in-house part): the line's UAP (SV + GL) and all of PC&L (incl. the PC&L SV);
  *  - material shortage 외주품 (purchased part): the line's UAP (SV + GL) only.
- * Other completions send nothing. Never throws.
+ * The caller (who raised the ANDON) is always added, unless they closed it themselves (2026-10-09);
+ * other completions send only that. Never throws.
  */
-export async function notifyAndonClosed(event: AndonEvent): Promise<void> {
+export async function notifyAndonClosed(event: AndonEvent, closerId?: number): Promise<void> {
   try {
     const row = await db.get("SELECT situations FROM andon_event WHERE id = ?", event.id);
     let sits: string[] = [];
@@ -233,9 +234,17 @@ export async function notifyAndonClosed(event: AndonEvent): Promise<void> {
     }
     const inhouse = sits.includes("PCL_SHORTAGE_INHOUSE");
     const repair = event.departments.some((d) => d.code === "MT");
-    if (!inhouse && !repair && !sits.includes("PCL_SHORTAGE_PURCHASED")) return;
-    const { lineUapPeople } = await import("../andonService.ts");
-    const ids = new Set(await lineUapPeople(event.lineCode));
+    const ruled = inhouse || repair || sits.includes("PCL_SHORTAGE_PURCHASED");
+    // the person who called always hears that it is done (plant feedback 2026-10-09), unless they closed it
+    const caller = await callerOf(event.id);
+    const closer = closerId ?? null;
+    const ids = new Set<number>();
+    if (ruled) {
+      const { lineUapPeople } = await import("../andonService.ts");
+      for (const id of await lineUapPeople(event.lineCode)) ids.add(id);
+    }
+    if (caller !== null && caller !== closer) ids.add(caller);
+    if (ids.size === 0) return;
     const allOf = async (dept: string) => {
       for (const r of await db.all("SELECT u.id FROM app_user u JOIN role r ON r.code = u.role WHERE u.active = 1 AND r.can_respond = 1 AND u.department_code = ?", dept)) ids.add(r.id as number);
     };
@@ -262,5 +271,48 @@ export async function notifyAndonClosed(event: AndonEvent): Promise<void> {
     );
   } catch (err) {
     console.error("[notify] completion notice failed", err);
+  }
+}
+
+/** user id of whoever raised the ANDON (its CREATE transition); null for events without one. */
+async function callerOf(eventId: string): Promise<number | null> {
+  const r = await db.get("SELECT user_id FROM andon_transition WHERE event_id = ? AND action = 'CREATE' ORDER BY id LIMIT 1", eventId);
+  return (r?.user_id as number | null) ?? null;
+}
+
+/**
+ * "접수 완료" to the caller, like a delivery app's "order accepted" (plant feedback 2026-10-09: the GAP leader
+ * could not tell whether the called department had picked up the call). KakaoTalk + phone push, logged like
+ * every notification. Nothing when the caller acknowledged it themselves. Never throws.
+ */
+export async function notifyAndonAcknowledged(
+  event: AndonEvent,
+  actor: { id: number; name: string; departmentCode: string; departmentLabel: string },
+): Promise<void> {
+  try {
+    const caller = await callerOf(event.id);
+    if (caller === null || caller === actor.id) return;
+    const u = await db.get(
+      `SELECT u.id, u.name, u.department_code,
+              (SELECT c.recipient_id FROM user_notification_channel c
+               WHERE c.user_id = u.id AND c.provider = 'KAKAO' AND c.verified = 1 AND c.active = 1 ORDER BY c.id LIMIT 1) AS kakao
+       FROM app_user u WHERE u.id = ? AND u.active = 1`,
+      caller,
+    );
+    if (!u) return;
+    const base = (process.env.APP_BASE_URL || "http://localhost:3000").replace(/\/$/, "");
+    const at = new Date().toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false });
+    const repair = actor.departmentCode === "MT";
+    await sendToRecipients(
+      event.id,
+      [{ userId: u.id as number, name: u.name as string, departmentCode: u.department_code as string, address: (u.kakao as string | null) ?? null }],
+      {
+        title: `[ANDON ${repair ? "수리 시작" : "접수 완료"}] ${event.lineName} · ${event.situations.join(", ") || event.categoryName}`,
+        body: `${actor.departmentLabel} ${actor.name}님이 ${at}에 ${repair ? "수리를 시작했습니다" : "접수했습니다"}. (${event.id})`,
+        link: `${base}/respond/${encodeURIComponent(event.id)}`,
+      },
+    );
+  } catch (err) {
+    console.error("[notify] acknowledgement notice failed", err);
   }
 }
