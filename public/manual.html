@@ -119,13 +119,11 @@ code.mono { font-family: var(--font-mono); font-size: 14px; background: var(--na
 </style>
 
 <style>
-  .video { display: flex; align-items: center; gap: 14px; margin: 14px 0 6px; padding: 14px 18px; border-radius: 12px;
-           background: #0b2d5b; color: #fff; text-decoration: none; line-height: 1.45; }
-  .video:hover { filter: brightness(1.12); }
-  .video .play { flex: none; width: 44px; height: 44px; border-radius: 50%; background: #e5202e; display: grid;
-                 place-items: center; font-size: 18px; padding-left: 3px; }
-  .video span:last-child { font-size: 14px; opacity: 0.95; }
-  .video strong { font-size: 17px; }
+  .video { margin: 14px 0 6px; padding: 10px; border-radius: 12px; background: #0b2d5b; color: #fff; }
+  .video video { display: block; width: 100%; aspect-ratio: 16 / 9; border-radius: 8px; background: #000; }
+  .video figcaption { padding: 10px 6px 4px; font-size: 14px; line-height: 1.5; }
+  .video figcaption strong { font-size: 16px; }
+  .video a { color: #ffd400; }
 </style>
 </head>
 <body>
@@ -147,10 +145,13 @@ code.mono { font-family: var(--font-mono); font-size: 14px; background: var(--na
     <button type="button" id="copy">주소 복사</button>
   </div>
 
-  <a class="video" href="https://youtu.be/lJul2MJDQ3w" target="_blank" rel="noopener">
-    <span class="play" aria-hidden="true">▶</span>
-    <span><strong>동영상으로 보기 (1분 50초)</strong><br>설치 · 로그인 · 호출 · 조치 · 현황판을 한 번에 — YouTube</span>
-  </a>
+  <figure class="video">
+    <video controls preload="none" playsinline poster="/andon-guide.jpg">
+      <source src="/andon-guide.mp4" type="video/mp4">
+    </video>
+    <figcaption><strong>▶ 동영상으로 보기 (1분 50초)</strong> — 설치 · 로그인 · 호출 · 조치 · 현황판을 한 번에.
+      소리를 켜고 보세요. 재생이 안 되면 <a href="/andon-guide.mp4" target="_blank" rel="noopener">여기를 눌러 직접 여세요</a>.</figcaption>
+  </figure>
 
   <nav aria-label="역할별 바로가기">
     <div class="roles">
