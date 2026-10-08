@@ -64,7 +64,7 @@ export default function LoginPage() {
           <Link href="/reset">비밀번호를 잊으셨나요?</Link>
         </p>
         <p>
-          계정이 없으신가요? <Link href="/register" onClick={(e) => { e.preventDefault(); router.push(`/register${window.location.search}`); }}>회원가입</Link>
+          계정은 관리자가 만듭니다. <b>사번</b>(사번이 없으면 안내받은 이메일)으로 로그인하세요. 문의: 시스템 담당자 오영환 책임(QC)
         </p>
         <p className="muted" style={{ fontSize: 14 }}>
           ANDON 호출은 로그인한 GAP 리더가, 조치(접수·조치·완료)는 로그인한 조치부서 담당자가 합니다.

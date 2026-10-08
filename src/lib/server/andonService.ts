@@ -12,6 +12,7 @@ import {
   type RoleCode,
   type TransitionAction,
 } from "../domain.ts";
+import { selfRegistrationOpen } from "./auth.ts";
 import { db, nowIso } from "./db.ts";
 import { CALL_SITUATIONS } from "./masterData.ts";
 import { AndonError, type AuditInfo } from "./errors.ts";
@@ -198,6 +199,7 @@ export async function getMasterData(): Promise<MasterData> {
         canRespond: r.can_respond === 1,
         escalationLevel: (r.escalation_level as number | null) ?? null,
       })),
+    selfRegistration: selfRegistrationOpen(),
   };
 }
 

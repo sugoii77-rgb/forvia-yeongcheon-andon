@@ -10,10 +10,12 @@ delete process.env.TURSO_DATABASE_URL;
 delete process.env.TURSO_AUTH_TOKEN;
 process.env.DATABASE_PATH = path.join(DIR, "accounts.db");
 process.env.UPLOAD_DIR = path.join(DIR, "uploads");
+delete process.env.ALLOW_SELF_REGISTRATION; // production default: closed
 
 const { db, nowIso } = await import("../src/lib/server/db.ts");
 const { applyOrgImport } = await import("../src/lib/server/lineAssignments.ts");
-const { authenticate } = await import("../src/lib/server/auth.ts");
+const { authenticate, registerUser } = await import("../src/lib/server/auth.ts");
+const identity = await import("../src/lib/server/googleIdentity.ts");
 const acc = await import("./lib/account-import.ts");
 
 let failures = 0;
@@ -93,6 +95,17 @@ check(mt2?.subject === "10003003" && mt2?.email === null, "사번 and e-mail pre
 check(res2.problems.some((p) => p.includes("선임-T") && p.includes("no 사번")), "no 사번 and no e-mail → reported, no login");
 const byEmp = await authenticate("10002002", res2.credentials.find((c) => c.loginId === "10002002")!.temporaryPassword, audit);
 check(byEmp.role === "GAP_LEADER", "login with 사번 + temporary password works");
+
+// 회원가입 closed (2026-10-08): no self-made accounts; administrator import + existing logins keep working.
+const closed = async (fn: () => Promise<unknown>) => fn().then(() => false, (e: { code?: string }) => e.code === "REGISTRATION_CLOSED");
+const before = Number((await db.get("SELECT COUNT(*) AS n FROM app_user"))!.n);
+check(await closed(() => registerUser({ name: "가입-T", email: "join-t@andon.test", department: "UAP", password: "Passw0rd!x", passwordConfirm: "Passw0rd!x" })), "회원가입 rejected (REGISTRATION_CLOSED) by default");
+check(await closed(() => identity.registerGoogleEmployee({ subject: "g-new-t", email: "g-new@andon.test", name: "구글-T" }, { employeeId: "G-T-1", name: "구글-T", department: "UAP", phone: "", kakaoId: "", companyEmail: "" } as never)), "Google onboarding of a NEW employee rejected too");
+check(Number((await db.get("SELECT COUNT(*) AS n FROM app_user"))!.n) === before, "no account was created");
+check((await authenticate("10002002", res2.credentials.find((c) => c.loginId === "10002002")!.temporaryPassword, audit)).active, "existing 사번 login still works");
+process.env.ALLOW_SELF_REGISTRATION = "true";
+check((await registerUser({ name: "가입-T", email: "join-t@andon.test", department: "UAP", password: "Passw0rd!x", passwordConfirm: "Passw0rd!x" })).role === "RESPONDER", "ALLOW_SELF_REGISTRATION=true reopens it (test servers)");
+delete process.env.ALLOW_SELF_REGISTRATION;
 
 console.log(failures ? `\n${failures} CHECK(S) FAILED` : "\nALL CHECKS PASSED");
 process.exit(failures ? 1 : 0);

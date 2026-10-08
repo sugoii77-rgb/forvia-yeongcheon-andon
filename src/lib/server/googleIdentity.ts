@@ -1,6 +1,6 @@
 // Only server-verified OIDC claims may enter this module. Never accept claims from request JSON.
 import { DEPARTMENT_CODES, SELF_REGISTRATION_ROLE } from '../domain.ts';
-import { getPublicUser } from './auth.ts';
+import { assertSelfRegistrationOpen, getPublicUser } from './auth.ts';
 import { db, nowIso } from './db.ts';
 import { AndonError } from './errors.ts';
 
@@ -38,6 +38,7 @@ function profile(input: EmployeeProfile) {
 
 /** Caller holds a transaction. Link only to a reauthenticated, session-bound employee. */
 export async function addGoogleIdentity(identity: GoogleIdentity, input: EmployeeProfile, linkUserId: number | null) {
+  if (linkUserId === null) assertSelfRegistrationOpen(); // a NEW employee record = self-registration
   const p = profile(input);
   if ((await db.get("SELECT 1 FROM user_identity WHERE provider='GOOGLE' AND subject=?", identity.subject)))
     throw new AndonError(409, '이미 연결된 Google 계정입니다. 다시 로그인하세요.', 'GOOGLE_IDENTITY_TAKEN');

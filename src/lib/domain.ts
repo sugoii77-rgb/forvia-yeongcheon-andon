@@ -189,6 +189,8 @@ export interface MasterData {
   /** Active operational departments, in display order. */
   departments: { code: string; displayCode: string; label: string; nameKo: string; nameEn: string }[];
   roles: { code: RoleCode; nameKo: string; nameEn: string; canRespond: boolean; escalationLevel: number | null }[];
+  /** false = 회원가입 closed (ALLOW_SELF_REGISTRATION); accounts come from the administrator. */
+  selfRegistration: boolean;
 }
 
 /** Roles that may CALL an ANDON (plant decision 2026-10-06: the GAP leader decides and calls the departments). */

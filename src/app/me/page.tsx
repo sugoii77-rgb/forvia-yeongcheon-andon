@@ -39,7 +39,6 @@ export default function MePage() {
             <p>로그인되어 있지 않습니다.</p>
             <div className="row">
               <Link className="btn btn-primary" href="/login?next=/me">로그인</Link>
-              <Link className="btn" href="/register">회원가입</Link>
             </div>
           </div>
         )}
