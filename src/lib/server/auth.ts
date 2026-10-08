@@ -52,7 +52,7 @@ export function normalizeEmail(email: unknown): string {
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function validatePassword(password: string) {
+export function validatePassword(password: string) {
   if (password.length < 8 || password.length > 128) {
     throw new AndonError(400, "비밀번호는 8자 이상 128자 이하로 입력하세요.", "INVALID_PASSWORD");
   }
@@ -154,10 +154,10 @@ export async function registerUser(input: RegistrationInput): Promise<PublicUser
 const FAIL_WINDOW_MS = 15 * 60_000;
 const FAIL_LIMIT = 5;
 
-function throttleKey(email: string, ip: string | null) {
+export function throttleKey(email: string, ip: string | null) {
   return crypto.createHash("sha256").update(`${email}|${ip ?? "-"}`).digest("hex");
 }
-async function assertNotLocked(key: string) {
+export async function assertNotLocked(key: string) {
   const f = (await db.get("SELECT failures, first_failure_at FROM login_throttle WHERE throttle_key = ?", key)) as
     | { failures: number; first_failure_at: string }
     | undefined;
@@ -165,7 +165,7 @@ async function assertNotLocked(key: string) {
     throw new AndonError(429, "로그인 실패가 많습니다. 15분 후 다시 시도하세요.", "TOO_MANY_ATTEMPTS");
   }
 }
-async function recordFailure(key: string) {
+export async function recordFailure(key: string) {
   const windowStart = new Date(Date.now() - FAIL_WINDOW_MS).toISOString();
   // One atomic upsert: start a new window if the old one expired, otherwise count up.
   await db.run(
@@ -178,7 +178,7 @@ async function recordFailure(key: string) {
     windowStart,
   );
 }
-async function clearFailures(key: string) {
+export async function clearFailures(key: string) {
   await db.run("DELETE FROM login_throttle WHERE throttle_key = ?", key);
 }
 

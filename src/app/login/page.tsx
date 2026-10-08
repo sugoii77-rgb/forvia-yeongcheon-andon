@@ -61,6 +61,9 @@ export default function LoginPage() {
           </button>
         </form>
         <p style={{ marginTop: 16 }}>
+          <Link href="/reset">비밀번호를 잊으셨나요?</Link>
+        </p>
+        <p>
           계정이 없으신가요? <Link href="/register" onClick={(e) => { e.preventDefault(); router.push(`/register${window.location.search}`); }}>회원가입</Link>
         </p>
         <p className="muted" style={{ fontSize: 14 }}>

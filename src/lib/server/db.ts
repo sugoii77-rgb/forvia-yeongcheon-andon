@@ -576,6 +576,22 @@ async function migrateV9(db: Sql) {
   `);
 }
 
+/**
+ * v10 — self-service password reset (2026-10-08): a 6-digit code is sent to the employee's own KakaoTalk
+ * (verified "send to me" link); only its hash is stored, 10 minutes, 5 attempts, one-time.
+ */
+async function migrateV10(db: Sql) {
+  await db.exec(`
+    CREATE TABLE password_reset_code (
+      user_id    INTEGER PRIMARY KEY REFERENCES app_user(id),
+      code_hash  TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      attempts   INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+  `);
+}
+
 const MIGRATIONS: { version: number; up: (db: Sql) => Promise<void>; foreignKeysOff?: boolean }[] = [
   { version: 1, up: (db) => db.exec(V1_SQL) },
   { version: 2, up: migrateV2 },
@@ -587,6 +603,7 @@ const MIGRATIONS: { version: number; up: (db: Sql) => Promise<void>; foreignKeys
   { version: 7, up: migrateV7 },
   { version: 8, up: migrateV8 },
   { version: 9, up: migrateV9 },
+  { version: 10, up: migrateV10 },
 ];
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
 
