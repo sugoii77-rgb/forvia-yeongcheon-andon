@@ -66,6 +66,7 @@ ol.steps li { position: relative; padding: 0 0 20px 30px; counter-increment: s; 
 ol.steps li:last-child { padding-bottom: 0; }
 ol.steps li::before { content: counter(s); position: absolute; left: -17px; top: 0; width: 32px; height: 32px; border-radius: 50%; background: var(--navy); color: var(--paper); font-weight: 700; display: grid; place-items: center; font-size: 15px; }
 ol.steps li.red::before { background: var(--red); color: #fff; }
+ol.steps li.green::before { background: var(--green); color: #fff; }
 ol.steps li.kakao::before { background: var(--kakao); color: var(--kakao-ink); }
 .t { font-weight: 700; font-size: 17px; }
 .d { color: var(--muted); margin-top: 2px; }
@@ -219,6 +220,7 @@ code.mono { font-family: var(--font-mono); font-size: 14px; background: var(--na
       <li><div class="t">라인 누르기 <span class="muted">(담당 라인이 하나면 자동 선택 — 생략)</span></div><div class="d">맨 위 <b>내 담당 라인</b>에서 고릅니다. 다른 라인은 <span class="btnlike o">다른 라인 보기 (전체)</span>.</div></li>
       <li><div class="t">상황 누르기</div><div class="d">아래 표의 상황 버튼을 누르면 이상 유형, 조치부서, 받는 사람(부서원 전원 · SV는 그 라인 감독자)이 <b>자동으로</b> 정해집니다. 여러 상황을 함께 누를 수도 있습니다.</div></li>
       <li class="red"><div class="t">화면 아래 <span class="btnlike red">ANDON CALL</span> 누르기</div><div class="d">버튼 위에 &ldquo;FRT · Robot Fault → MT 3명&rdquo;처럼 누구에게 가는지 보입니다. ANDON 번호가 표시되면 완료 — 현황판에 바로 뜨고 선택된 사람에게 카카오톡이 갑니다.</div></li>
+      <li class="green"><div class="t">&lsquo;접수 완료&rsquo; 알림을 기다리기</div><div class="d">조치부서 담당자가 접수하면 <b>호출한 사람에게 카카오톡·휴대폰 알림</b>이 옵니다 &mdash; &ldquo;[ANDON 접수 완료] FRT · Robot Fault / MT · 보전 홍길동님이 10:42에 접수했습니다&rdquo; (설비는 &lsquo;수리 시작&rsquo;). 조치가 끝나 완료되면 &lsquo;완료&rsquo; 알림도 옵니다. 알림이 없으면 아직 아무도 접수하지 않은 것이니 현황판을 확인하세요.</div></li>
     </ol>
     <div class="note"><strong>바꾸고 싶을 때만 &lsquo;세부 설정&rsquo;을 펼치세요.</strong> 이상 유형, 조치부서 추가·삭제, 받는 사람 빼기·더하기, 내용 입력을 할 수 있습니다 (사진은 쓰지 않습니다). 상황표에 없는 문제는 세부 설정에서 이상 유형·조치부서를 직접 고르고 내용을 적으면 됩니다.</div>
 

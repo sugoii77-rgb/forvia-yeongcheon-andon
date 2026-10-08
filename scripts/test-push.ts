@@ -196,6 +196,38 @@ try {
     assert.deepEqual(await subs(bob.id), [b.endpoint]);
   });
 
+  await check("접수 → '접수 완료' push to the caller (not to the responder); self-acknowledge sends nothing", async () => {
+    const gl = await newUser("[TEST] Push GL", effDept);
+    const glPhone = newDevice();
+    await wp.subscribeFor(req("/x", gl.cookie), subJson(glPhone));
+    const caller = { id: gl.id, name: "[TEST] Push GL", departmentCode: effDept, role: "GAP_LEADER" };
+    const ev = (await andon.createEvent({ lineCode: p.line_code, processId: p.id, categoryCode: cat.code, description: "[TEST] 접수 알림", audit, caller })).event;
+    received.length = 0;
+    await notify.notifyAndonAcknowledged(ev, { id: alice.id, name: "[TEST] Push A", departmentCode: "QC", departmentLabel: "QC · 품질" });
+    const got = received.filter((m) => m.endpoint === glPhone.endpoint);
+    assert.equal(got.length, 1);
+    assert.match(got[0].payload.title, /\[ANDON 접수 완료\]/);
+    assert.match(got[0].payload.body, /QC · 품질 \[TEST\] Push A님이 .*접수했습니다/);
+    assert.equal(got[0].payload.url, `${BASE}/respond/${encodeURIComponent(ev.id)}`);
+    const mt = { id: alice.id, name: "[TEST] Push A", departmentCode: "MT", departmentLabel: "MT · 보전" };
+    received.length = 0;
+    await notify.notifyAndonAcknowledged(ev, mt);
+    assert.match(received.find((m) => m.endpoint === glPhone.endpoint)!.payload.title, /\[ANDON 수리 시작\]/);
+    received.length = 0;
+    await notify.notifyAndonAcknowledged(ev, { id: gl.id, name: "[TEST] Push GL", departmentCode: effDept, departmentLabel: effDept });
+    assert.equal(received.filter((m) => m.endpoint === glPhone.endpoint).length, 0, "the caller acknowledging it themselves gets nothing");
+
+    // completion: the caller hears it, unless the caller closed it
+    received.length = 0;
+    await notify.notifyAndonClosed(ev, alice.id);
+    const done = received.filter((m) => m.endpoint === glPhone.endpoint);
+    assert.equal(done.length, 1);
+    assert.match(done[0].payload.title, /\[ANDON (수리 )?완료\]/);
+    received.length = 0;
+    await notify.notifyAndonClosed(ev, gl.id);
+    assert.equal(received.filter((m) => m.endpoint === glPhone.endpoint).length, 0, "caller closed it → no notice to the caller");
+  });
+
   await check("no push request left this process", async () => {
     assert.deepEqual(outside, []);
   });
