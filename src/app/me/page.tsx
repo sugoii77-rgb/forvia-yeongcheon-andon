@@ -8,6 +8,7 @@ import { OWNERSHIP_VIEW_ROLES } from "@/lib/domain";
 import { GoogleLogin } from "@/components/GoogleLogin";
 import { KakaoNotify } from "@/components/KakaoNotify";
 import { PasswordChange } from "@/components/PasswordChange";
+import { PushNotify, pushOffBeforeLogout } from "@/components/PushNotify";
 
 export default function MePage() {
   const router = useRouter();
@@ -18,6 +19,7 @@ export default function MePage() {
   async function logout() {
     setBusy(true);
     try {
+      await pushOffBeforeLogout();
       await api("/api/auth/logout", { method: "POST" });
       router.push("/login");
     } catch (err) {
@@ -83,6 +85,7 @@ export default function MePage() {
             </div>
           </div>
         )}
+        {user?.active && <PushNotify />}
         {user?.active && <KakaoNotify />}
         {user?.active && (user.email || user.employeeId) && <PasswordChange />}
       </main>

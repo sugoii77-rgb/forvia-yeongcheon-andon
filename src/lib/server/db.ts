@@ -592,6 +592,28 @@ async function migrateV10(db: Sql) {
   `);
 }
 
+/**
+ * v11 — phone push notifications (Web Push, 2026-10-08): KakaoTalk "send to me" arrives silently, so each
+ * employee can also turn on a push subscription per device (/me). Endpoint + public keys only (no secret
+ * of ours); rows are removed when the user turns push off or the push service reports the device gone.
+ */
+async function migrateV11(db: Sql) {
+  await db.exec(`
+    CREATE TABLE push_subscription (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id      INTEGER NOT NULL REFERENCES app_user(id),
+      endpoint     TEXT NOT NULL UNIQUE,
+      p256dh       TEXT NOT NULL,
+      auth         TEXT NOT NULL,
+      user_agent   TEXT,
+      created_at   TEXT NOT NULL,
+      last_sent_at TEXT,
+      last_error   TEXT
+    );
+    CREATE INDEX ix_push_subscription_user ON push_subscription(user_id);
+  `);
+}
+
 const MIGRATIONS: { version: number; up: (db: Sql) => Promise<void>; foreignKeysOff?: boolean }[] = [
   { version: 1, up: (db) => db.exec(V1_SQL) },
   { version: 2, up: migrateV2 },
@@ -604,6 +626,7 @@ const MIGRATIONS: { version: number; up: (db: Sql) => Promise<void>; foreignKeys
   { version: 8, up: migrateV8 },
   { version: 9, up: migrateV9 },
   { version: 10, up: migrateV10 },
+  { version: 11, up: migrateV11 },
 ];
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
 

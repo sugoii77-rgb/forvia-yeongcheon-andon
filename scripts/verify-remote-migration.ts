@@ -82,7 +82,11 @@ try {
 
   check((await schemaVersion(d)) === from, `after rollback still v${from}`);
   check(JSON.stringify(await tables()) === JSON.stringify(oldTables), "after rollback no new tables");
-  check(JSON.stringify(await snapshot(oldTables, limits)) === JSON.stringify(before), "after rollback all data identical");
+  const after = await snapshot(oldTables, limits);
+  const differ = oldTables.filter((t) => JSON.stringify(after[t]) !== JSON.stringify(before[t]));
+  check(differ.length === 0, "after rollback all data identical");
+  // live use during the run (sessions, ANDON handling) also shows up here — name the tables
+  if (differ.length) console.log(`    differs (live writes?): ${differ.join(", ")}`);
 } catch (err) {
   failures++;
   console.error(`  ✖ ${(err as Error).message}`);

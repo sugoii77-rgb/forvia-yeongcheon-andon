@@ -32,6 +32,7 @@
     "test:shifts": "node scripts/test-shifts.ts",
     "test:display": "node scripts/test-display.ts",
     "test:kakao": "node scripts/test-kakao.ts",
+    "test:push": "node scripts/test-push.ts",
     "verify:roster": "node scripts/verify-roster.ts",
     "test:call": "node scripts/test-call.ts",
     "import:accounts": "node scripts/import-accounts.ts",
@@ -45,12 +46,14 @@
     "next": "16.3.8",
     "openid-client": "6.8.8",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@types/node": "^24.19.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/web-push": "^3.6.4",
     "eslint": "^9",
     "eslint-config-next": "16.3.8",
     "exceljs": "^4.4.0",

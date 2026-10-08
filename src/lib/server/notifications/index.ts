@@ -1,10 +1,12 @@
 // Notification layer. ANDON business logic only calls `notifyAndonCreated(event)`.
 // Providers: "mock" (log only) and "kakao" (KakaoTalk "send to me" — each employee links their own
-// Kakao account on /me; see ../kakaoNotify.ts). Selected by NOTIFICATION_PROVIDER.
+// Kakao account on /me; see ../kakaoNotify.ts). Selected by NOTIFICATION_PROVIDER. Phone push (../webPush.ts)
+// is sent alongside, to every device the recipient turned on in /me (KakaoTalk "send to me" has no sound).
 import type { AndonEvent } from "../../domain.ts";
 import { db, nowIso } from "../db.ts";
 import { sendKakaoMemoTo } from "../kakaoNotify.ts";
 import { primaryRecipients } from "../routingService.ts";
+import { sendPushTo } from "../webPush.ts";
 
 export interface NotificationRecipient {
   userId: number;
@@ -157,16 +159,7 @@ export async function notifyAndonCreated(event: AndonEvent): Promise<void> {
       await logAttempt(event.id, p.name, `(dept:${event.departmentCode})`, "FAILED", text, "수신자 없음 (no recipients chosen / configured)");
       return;
     }
-    for (const r of recipients) {
-      try {
-        await p.send(r, message);
-        await logAttempt(event.id, p.name, r.name, "SENT", text, null);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[notify] ${p.name} → ${r.name} failed: ${msg}`);
-        await logAttempt(event.id, p.name, r.name, "FAILED", text, msg);
-      }
-    }
+    await Promise.all(recipients.map((r) => deliver(p, event.id, r, message, text)));
   } catch (err) {
     console.error("[notify] notification step failed", err);
   }
@@ -183,19 +176,43 @@ export async function sendToRecipients(eventId: string, recipients: Notification
     await logAttempt(eventId, p.name, "(escalation)", "FAILED", text, "수신자 없음 (no plant manager / team leader configured)");
     return 0;
   }
-  let sent = 0;
-  for (const r of recipients) {
+  const ok = await Promise.all(recipients.map((r) => deliver(p, eventId, r, message, text)));
+  return ok.filter(Boolean).length;
+}
+
+/**
+ * One recipient: KakaoTalk (provider) and phone push (every device the person turned on in /me) at the same
+ * time — the KakaoTalk memo arrives silently, the push rings. Both attempts are logged; push only when the
+ * person has a device. True when at least one channel delivered. Never throws.
+ */
+async function deliver(p: NotificationProvider, eventId: string, r: NotificationRecipient, message: NotificationMessage, text: string): Promise<boolean> {
+  const kakao = (async () => {
     try {
       await p.send(r, message);
       await logAttempt(eventId, p.name, r.name, "SENT", text, null);
-      sent++;
+      return true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`[notify] ${p.name} → ${r.name} failed: ${msg}`);
       await logAttempt(eventId, p.name, r.name, "FAILED", text, msg);
+      return false;
     }
-  }
-  return sent;
+  })();
+  const push = (async () => {
+    try {
+      const res = await sendPushTo(r.userId, { ...message, tag: eventId });
+      if (res.devices === 0) return false;
+      await logAttempt(eventId, "push", `${r.name} (${res.sent}/${res.devices})`, res.sent > 0 ? "SENT" : "FAILED", text, res.sent > 0 ? null : res.error);
+      return res.sent > 0;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[notify] push → ${r.name} failed: ${msg}`);
+      await logAttempt(eventId, "push", r.name, "FAILED", text, msg);
+      return false;
+    }
+  })();
+  const [a, b] = await Promise.all([kakao, push]);
+  return a || b;
 }
 
 /**

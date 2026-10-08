@@ -21,5 +21,5 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: [{ source: "/((?!_next/static|_next/image|favicon.ico|pwa/|manual.html).*)", has: [{ type: "cookie", key: "andon_session" }] }],
+  matcher: [{ source: "/((?!_next/static|_next/image|favicon.ico|pwa/|manual.html|sw.js).*)", has: [{ type: "cookie", key: "andon_session" }] }],
 };
