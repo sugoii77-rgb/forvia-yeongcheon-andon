@@ -80,11 +80,29 @@ export function buildAndonMessage(event: AndonEvent): NotificationMessage {
 }
 
 /**
- * Initial recipients of the event's responsible department (routingService.primaryRecipients: every
- * member that may respond for HSE / ME / MT / QC, RESPONDER accounts for the other departments)
- * (decided by routingService; escalation roles are notified later, when escalation exists).
+ * Recipients of a new ANDON: the people the GAP leader chose at the call (v9 andon_call_recipient), or —
+ * for events created without a choice (server-internal callers) — the department rule
+ * (routingService.primaryRecipients). Escalation roles are notified later, when escalation exists.
+ * The KakaoTalk address comes ONLY from a verified, active user_notification_channel row.
  */
 async function resolveRecipients(event: AndonEvent): Promise<NotificationRecipient[]> {
+  const chosen = await db.all(
+    `SELECT u.id, u.name, x.department_code,
+            (SELECT c.recipient_id FROM user_notification_channel c
+             WHERE c.user_id = u.id AND c.provider = 'KAKAO' AND c.verified = 1 AND c.active = 1
+             ORDER BY c.id LIMIT 1) AS kakao_recipient_id
+     FROM andon_call_recipient x JOIN app_user u ON u.id = x.user_id
+     WHERE x.event_id = ? AND u.active = 1 ORDER BY u.id`,
+    event.id,
+  );
+  if (chosen.length > 0 || (await db.get("SELECT 1 FROM andon_event_department WHERE event_id = ?", event.id))) {
+    return chosen.map((u) => ({
+      userId: u.id as number,
+      name: u.name as string,
+      departmentCode: u.department_code as string,
+      address: (u.kakao_recipient_id as string | null) ?? null,
+    }));
+  }
   return (await primaryRecipients(event.departmentCode)).map((u) => ({
     userId: u.id,
     name: u.name,
@@ -136,7 +154,7 @@ export async function notifyAndonCreated(event: AndonEvent): Promise<void> {
       console.error("[notify] recipient lookup failed", err);
     }
     if (recipients.length === 0) {
-      await logAttempt(event.id, p.name, `(dept:${event.departmentCode})`, "FAILED", text, "수신자 없음 (no recipients configured)");
+      await logAttempt(event.id, p.name, `(dept:${event.departmentCode})`, "FAILED", text, "수신자 없음 (no recipients chosen / configured)");
       return;
     }
     for (const r of recipients) {
@@ -151,5 +169,81 @@ export async function notifyAndonCreated(event: AndonEvent): Promise<void> {
     }
   } catch (err) {
     console.error("[notify] notification step failed", err);
+  }
+}
+
+/**
+ * Sends one message per recipient and logs every attempt (shared by the escalation). Never throws.
+ * Recipients without a linked KakaoTalk are logged as FAILED by the provider.
+ */
+export async function sendToRecipients(eventId: string, recipients: NotificationRecipient[], message: NotificationMessage): Promise<number> {
+  const p = getProvider();
+  const text = `${message.title}\n${message.body}\n${message.link}`;
+  if (recipients.length === 0) {
+    await logAttempt(eventId, p.name, "(escalation)", "FAILED", text, "수신자 없음 (no plant manager / team leader configured)");
+    return 0;
+  }
+  let sent = 0;
+  for (const r of recipients) {
+    try {
+      await p.send(r, message);
+      await logAttempt(eventId, p.name, r.name, "SENT", text, null);
+      sent++;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[notify] ${p.name} → ${r.name} failed: ${msg}`);
+      await logAttempt(eventId, p.name, r.name, "FAILED", text, msg);
+    }
+  }
+  return sent;
+}
+
+/**
+ * Completion notices (plant meeting 2026-10-08):
+ *  - equipment (MT) — 수리 완료: all of MT and the line's UAP (SV + GL);
+ *  - material shortage 자작품 (in-house part): the line's UAP (SV + GL) and all of PC&L (incl. the PC&L SV);
+ *  - material shortage 외주품 (purchased part): the line's UAP (SV + GL) only.
+ * Other completions send nothing. Never throws.
+ */
+export async function notifyAndonClosed(event: AndonEvent): Promise<void> {
+  try {
+    const row = await db.get("SELECT situations FROM andon_event WHERE id = ?", event.id);
+    let sits: string[] = [];
+    try {
+      sits = JSON.parse((row?.situations as string) || "[]");
+    } catch {
+      /* none */
+    }
+    const inhouse = sits.includes("PCL_SHORTAGE_INHOUSE");
+    const repair = event.departments.some((d) => d.code === "MT");
+    if (!inhouse && !repair && !sits.includes("PCL_SHORTAGE_PURCHASED")) return;
+    const { lineUapPeople } = await import("../andonService.ts");
+    const ids = new Set(await lineUapPeople(event.lineCode));
+    const allOf = async (dept: string) => {
+      for (const r of await db.all("SELECT u.id FROM app_user u JOIN role r ON r.code = u.role WHERE u.active = 1 AND r.can_respond = 1 AND u.department_code = ?", dept)) ids.add(r.id as number);
+    };
+    if (inhouse) await allOf("PCL");
+    if (repair) await allOf("MT");
+    const people = ids.size
+      ? await db.all(
+          `SELECT u.id, u.name, u.department_code,
+                  (SELECT c.recipient_id FROM user_notification_channel c
+                   WHERE c.user_id = u.id AND c.provider = 'KAKAO' AND c.verified = 1 AND c.active = 1 ORDER BY c.id LIMIT 1) AS kakao
+           FROM app_user u WHERE u.active = 1 AND u.id IN (${[...ids].map(() => "?").join(",")}) ORDER BY u.id`,
+          ...ids,
+        )
+      : [];
+    const base = (process.env.APP_BASE_URL || "http://localhost:3000").replace(/\/$/, "");
+    await sendToRecipients(
+      event.id,
+      people.map((u) => ({ userId: u.id as number, name: u.name as string, departmentCode: u.department_code as string, address: (u.kakao as string | null) ?? null })),
+      {
+        title: `[ANDON ${repair ? "수리 완료" : "완료"}] ${event.lineName} · ${event.situations.join(", ") || event.categoryName}`,
+        body: `${event.id} · 조치: ${event.correctiveAction ?? "-"}`,
+        link: `${base}/respond/${encodeURIComponent(event.id)}`,
+      },
+    );
+  } catch (err) {
+    console.error("[notify] completion notice failed", err);
   }
 }

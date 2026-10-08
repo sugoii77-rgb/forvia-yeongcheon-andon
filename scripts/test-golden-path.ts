@@ -3,7 +3,7 @@
 // Creates one real test ANDON (description starts with "[TEST]").
 // Since Milestone 2B responder actions need a logged-in user: a throw-away QC responder is registered
 // (scripts/lib/testkit.ts) and deactivated again at the end.
-import { registerAccount, admin } from "./lib/testkit.ts";
+import { registerAccount, admin, callerClient } from "./lib/testkit.ts";
 
 const BASE = (process.env.BASE_URL || "http://localhost:3000").replace(/\/$/, "");
 
@@ -52,7 +52,10 @@ async function main() {
     f.set("photo", new Blob([PNG], { type: "image/png" }), "test.png");
     return f;
   };
-  const createRes = await fetch(`${BASE}/api/andons`, { method: "POST", body: form() });
+  const callerHeaders = (await callerClient()).headers();
+  const anonRes = await fetch(`${BASE}/api/andons`, { method: "POST", body: form() });
+  check(anonRes.status === 401, `ANDON call without login → 401 (GAP leader calls; got ${anonRes.status})`);
+  const createRes = await fetch(`${BASE}/api/andons`, { method: "POST", body: form(), headers: callerHeaders });
   const created = await json(createRes);
   check(createRes.status === 201, `POST /api/andons → 201 (got ${createRes.status})`);
   const id: string = created?.event?.id;
@@ -61,7 +64,7 @@ async function main() {
   check(created?.event?.departmentCode === "QC", "QUALITY issue routed to QC department");
 
   console.log("2) Duplicate submission is idempotent");
-  const dupRes = await fetch(`${BASE}/api/andons`, { method: "POST", body: form() });
+  const dupRes = await fetch(`${BASE}/api/andons`, { method: "POST", body: form(), headers: callerHeaders });
   const dup = await json(dupRes);
   check(dupRes.status === 200 && dup?.duplicate === true && dup?.event?.id === id, "same clientRequestId returns same event");
 
@@ -71,7 +74,7 @@ async function main() {
   bad.set("processId", String(proc.id));
   bad.set("categoryCode", "QUALITY");
   bad.set("description", "   ");
-  const badRes = await fetch(`${BASE}/api/andons`, { method: "POST", body: bad });
+  const badRes = await fetch(`${BASE}/api/andons`, { method: "POST", body: bad, headers: callerHeaders });
   check(badRes.status === 400, `empty description rejected with 400 (got ${badRes.status})`);
 
   console.log("4) Dashboard shows the event as RED");
@@ -91,10 +94,12 @@ async function main() {
   check(detail0.notifications.length >= 1 && detail0.notifications.every((n: { status: string }) => n.status === "SENT"), `notification logged (${detail0.notifications.length} recipient(s))`);
 
   const qc = await registerAccount("QC", "golden");
+  // QC acknowledges and acts; a QC event is CLOSED by UAP (plant meeting 2026-10-07) — the calling GAP leader
+  const uap = await callerClient();
   const transition = (action: string, _who: string, comment?: string) =>
     fetch(`${BASE}/api/andons/${id}/transition`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...qc.client.headers() },
+      headers: { "Content-Type": "application/json", ...(action === "CLOSE" ? uap : qc.client).headers() },
       body: JSON.stringify({ action, comment }),
     });
 
@@ -116,7 +121,13 @@ async function main() {
   const act = await transition("ACTION", "품질 담당 A", "체결 토크 확인 중");
   check(act.status === 200 && (await json(act)).event.status === "IN_PROGRESS", "status IN_PROGRESS");
 
-  console.log("9) CLOSE → GREEN");
+  console.log("9) CLOSE → GREEN (by UAP)");
+  const qcClose = await fetch(`${BASE}/api/andons/${id}/transition`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...qc.client.headers() },
+    body: JSON.stringify({ action: "CLOSE", comment: "x" }),
+  });
+  check(qcClose.status === 403, `QC cannot close a QC event — UAP confirms (got ${qcClose.status})`);
   const close = await transition("CLOSE", "품질 담당 A", "[TEST] 볼트 재체결 및 전수검사 OK");
   const closed = await json(close);
   check(close.status === 200 && closed.event.status === "CLOSED", "status CLOSED");

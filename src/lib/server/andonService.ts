@@ -5,15 +5,18 @@ import {
   type AndonEvent,
   type AndonStatus,
   type AndonTransition,
+  type CallTargetDepartment,
+  UAP_LABEL,
   type MasterData,
   type NotificationLogEntry,
   type RoleCode,
   type TransitionAction,
 } from "../domain.ts";
 import { db, nowIso } from "./db.ts";
+import { CALL_SITUATIONS } from "./masterData.ts";
 import { AndonError, type AuditInfo } from "./errors.ts";
 import { shiftSnapshotForLine } from "./shiftService.ts";
-import { departmentAliases, departmentLabelMap, resolveResponsibility, validateResponder } from "./routingService.ts";
+import { departmentAliases, departmentLabelMap, effectiveDepartment, resolveResponsibility, validateResponder } from "./routingService.ts";
 
 export { AndonError, type AuditInfo };
 
@@ -44,6 +47,8 @@ function toEvent(r: Row): AndonEvent {
     departmentCode: r.department_code as string,
     departmentName: r.department_name as string,
     departmentLabel: `${r.department_display as string} · ${r.department_name as string}`,
+    departments: [{ code: r.department_code as string, label: `${r.department_display as string} · ${r.department_name as string}` }],
+    situations: situationNames(r.situations),
     description: r.description as string,
     photoFile: (r.photo_file as string) ?? null,
     status: r.status as AndonStatus,
@@ -56,6 +61,61 @@ function toEvent(r: Row): AndonEvent {
     correctiveAction: (r.corrective_action as string) ?? null,
     updatedAt: r.updated_at as string,
   };
+}
+
+function situationNames(json: unknown): string[] {
+  if (typeof json !== "string" || !json) return [];
+  try {
+    const codes = JSON.parse(json) as string[];
+    return codes.map((c) => CALL_SITUATIONS.find((s) => s.code === c)?.nameKo ?? c);
+  } catch {
+    return [];
+  }
+}
+
+/** Adds the call's departments (v9 andon_event_department) to events; older events keep their single one. */
+async function withDepartments(events: AndonEvent[]): Promise<AndonEvent[]> {
+  if (events.length === 0) return events;
+  const rows = await db.all(
+    `SELECT x.event_id, x.department_code, COALESCE(d.display_code, d.code) AS display, d.name_ko
+     FROM andon_event_department x JOIN department d ON d.code = x.department_code
+     WHERE x.event_id IN (${events.map(() => "?").join(",")}) ORDER BY x.event_id, x.sort_order`,
+    ...events.map((e) => e.id),
+  );
+  const byEvent = new Map<string, { code: string; label: string }[]>();
+  for (const r of rows) {
+    const list = byEvent.get(r.event_id as string) ?? [];
+    list.push({ code: r.department_code as string, label: r.department_code === "UAP" ? UAP_LABEL : `${r.display as string} · ${r.name_ko as string}` });
+    byEvent.set(r.event_id as string, list);
+  }
+  for (const e of events) {
+    const list = byEvent.get(e.id);
+    if (list?.length) {
+      e.departments = list;
+      e.departmentLabel = list.map((d) => d.label).join(", ");
+    }
+  }
+  return events;
+}
+
+/**
+ * Departments whose members may perform `action` on an event. Plant meeting 2026-10-07: a QC event is
+ * closed by UAP (production confirms) — QC acknowledges and acts, but CLOSE belongs to UAP.
+ */
+export async function actionDepartmentCodes(eventId: string, fallback: string, action: TransitionAction): Promise<string[]> {
+  const deps = await eventDepartmentCodes(eventId, fallback);
+  if (action === "CLOSE") {
+    // QC and PC&L events are closed by UAP (2026-10-07 / 08); MT closes its own repair
+    const effective = await Promise.all(deps.map((d) => effectiveDepartment(d)));
+    if (effective.includes("QC") || effective.includes("PCL")) return ["UAP"];
+  }
+  return deps;
+}
+
+/** Departments of a stored event (v9 rows, else its single department_code). */
+export async function eventDepartmentCodes(eventId: string, fallback: string): Promise<string[]> {
+  const rows = await db.all("SELECT department_code FROM andon_event_department WHERE event_id = ? ORDER BY sort_order", eventId);
+  return rows.length ? rows.map((r) => r.department_code as string) : [fallback];
 }
 
 function toTransition(r: Row, labels: Map<string, string>): AndonTransition {
@@ -161,22 +221,25 @@ export async function listEvents(opts: ListOptions = {}): Promise<AndonEvent[]> 
   if (opts.scope === "active") {
     where.push(`e.status IN (${active})`);
   } else if (opts.scope === "board") {
-    const since = new Date(Date.now() - (opts.recentClosedMinutes ?? 30) * 60_000).toISOString();
+    // plant meeting 2026-10-07: a completed ANDON stays on the board (green) for 24 hours
+    const since = new Date(Date.now() - (opts.recentClosedMinutes ?? 24 * 60) * 60_000).toISOString();
     where.push(`(e.status IN (${active}) OR e.closed_at >= ?)`);
     params.push(since);
   }
-  if (opts.department) {
-    where.push("e.department_code = ?");
-    params.push(opts.department);
-  }
+  // an event belongs to every department of its call (v9) — or to its single department_code
+  const inDepartments = (codes: string[]) => {
+    const q = codes.map(() => "?").join(",");
+    where.push(`(e.department_code IN (${q}) OR EXISTS (SELECT 1 FROM andon_event_department x WHERE x.event_id = e.id AND x.department_code IN (${q})))`);
+    params.push(...codes, ...codes);
+  };
+  if (opts.department) inDepartments([opts.department]);
   if (opts.responderId != null) {
     const u = (await db.get("SELECT department_code FROM app_user WHERE id = ? AND active = 1", opts.responderId)) as
       | { department_code: string }
       | undefined;
     const codes = u ? await departmentAliases(u.department_code) : [];
     if (codes.length === 0) return [];
-    where.push(`e.department_code IN (${codes.map(() => "?").join(",")})`);
-    params.push(...codes);
+    inDepartments(codes);
   }
   // History: newest first. Boards: RED first, then YELLOW, then GREEN; oldest first within each.
   const order =
@@ -185,12 +248,12 @@ export async function listEvents(opts: ListOptions = {}): Promise<AndonEvent[]> 
       : "CASE e.status WHEN 'OPEN' THEN 0 WHEN 'CLOSED' THEN 2 ELSE 1 END, e.created_at ASC";
   const sql = EVENT_SELECT + (where.length ? ` WHERE ${where.join(" AND ")}` : "") + ` ORDER BY ${order} LIMIT ?`;
   params.push(opts.limit ?? 500);
-  return (await db.all(sql, ...params)).map(toEvent);
+  return withDepartments((await db.all(sql, ...params)).map(toEvent));
 }
 
 export async function getEvent(id: string): Promise<AndonEvent | null> {
   const r = (await db.get(`${EVENT_SELECT} WHERE e.id = ?`, id));
-  return r ? toEvent(r) : null;
+  return r ? (await withDepartments([toEvent(r)]))[0] : null;
 }
 
 export async function getTransitions(id: string): Promise<AndonTransition[]> {
@@ -225,6 +288,85 @@ export interface CreateAndonInput {
   /** Only used by the demo seeder to back-date events. */
   createdAt?: string;
   audit?: AuditInfo;
+  /** The logged-in caller (GAP leader). HTTP calls always pass it; it replaces `createdBy`. */
+  caller?: { id: number; name: string; departmentCode: string; role: string };
+  /** Departments chosen by the caller (v9). Omitted = the routing rule decides one department. */
+  departments?: string[];
+  /** People chosen to receive the message (must belong to the chosen departments). Omitted = department rule. */
+  recipientIds?: number[];
+  /** Situations picked at the call (CALL_SITUATIONS codes). */
+  situations?: string[];
+}
+
+/** Departments a GAP leader calls (plant meeting 2026-10-07/08: QC, MT, PC&L — plus UAP, added separately). */
+export const CALLABLE_DEPARTMENTS = ["QC", "MT", "PCL"];
+export async function callableDepartments(): Promise<{ code: string; label: string }[]> {
+  return (await db.all(`SELECT code, COALESCE(display_code, code) AS display, name_ko FROM department WHERE active = 1 AND code IN (${CALLABLE_DEPARTMENTS.map(() => "?").join(",")}) ORDER BY sort_order`, ...CALLABLE_DEPARTMENTS))
+    .map((r) => ({ code: r.code as string, label: `${r.display as string} · ${r.name_ko as string}` }));
+}
+
+/**
+ * Call targets with the people who can respond there (names only — no contact data): the callable
+ * departments, then UAP (production). Plant meeting 2026-10-07: every call except PC&L also messages
+ * UAP by default — the line's supervisor, the line's GAP leader (the team on shift; both while the shift
+ * is unresolved) and the UAP default recipients (app_user.call_default: UAP team leader, UAP 책임).
+ */
+/** The line's UAP owners now: its supervisor and its GAP leader (team on shift; both while unresolved). */
+export async function lineUapPeople(lineCode: string): Promise<number[]> {
+  const shift = await shiftSnapshotForLine(lineCode, nowIso());
+  const rows = await db.all(
+    `SELECT a.user_id, a.assignment_role, a.id FROM line_assignment a JOIN app_user u ON u.id = a.user_id
+     WHERE a.line_code = ? AND a.active = 1 AND u.active = 1 AND (a.effective_to IS NULL OR a.effective_to > ?)`,
+    lineCode,
+    nowIso(),
+  );
+  const out = new Set<number>();
+  for (const r of rows) {
+    const gapOnShift = shift.gapLeaderAssignmentId == null || r.id === shift.gapLeaderAssignmentId;
+    if (r.assignment_role === "SUPERVISOR" || (r.assignment_role === "GAP_LEADER" && gapOnShift)) out.add(r.user_id as number);
+  }
+  return [...out];
+}
+
+export async function callTargets(lineCode?: string): Promise<CallTargetDepartment[]> {
+  const deps = await callableDepartments();
+  const people = await db.all(
+    `SELECT u.id, u.name, u.department_code, u.role, u.call_default, r.name_ko AS role_name FROM app_user u JOIN role r ON r.code = u.role
+     WHERE u.active = 1 AND r.can_respond = 1 ORDER BY r.sort_order DESC, u.name`,
+  );
+  const member = (p: Record<string, unknown>) => ({ id: p.id as number, name: p.name as string, roleName: p.role_name as string });
+  const uapDefaults = new Set<number>(people.filter((p) => p.department_code === "UAP" && p.call_default === 1).map((p) => p.id as number));
+  if (lineCode) for (const id of await lineUapPeople(lineCode)) uapDefaults.add(id);
+  const uapMembers = people.filter((p) => p.department_code === "UAP");
+  return [
+    ...deps.map((d) => ({
+      ...d,
+      members: people.filter((p) => p.department_code === d.code).map(member),
+      supervisorIds: people.filter((p) => p.department_code === d.code && p.role === "SUPERVISOR").map((p) => p.id as number),
+    })),
+    { code: "UAP", label: UAP_LABEL, members: uapMembers.map(member), defaultMemberIds: uapMembers.map((p) => p.id as number).filter((id) => uapDefaults.has(id)) },
+  ];
+}
+
+/** Validates the caller's choice: departments (deduplicated, in order) and recipients with their department. */
+async function validateCall(departments: string[], recipientIds: number[]) {
+  // UAP (production) may be called too; "SV" is the older name of that target.
+  const allowed = new Set([...(await callableDepartments()).map((d) => d.code), "UAP", "SV"]);
+  const chosen = [...new Set(departments.map((d) => String(d).trim()).filter(Boolean))];
+  if (chosen.length === 0) throw new AndonError(400, "조치부서를 1개 이상 선택하세요.", "DEPARTMENT_REQUIRED");
+  if (chosen.length > 8 || chosen.some((d) => !allowed.has(d))) throw new AndonError(400, "조치부서 선택이 올바르지 않습니다.", "INVALID_DEPARTMENT");
+  const deps = [...new Set(chosen.map((d) => (d === "SV" ? "UAP" : d)))];
+  const ids = [...new Set(recipientIds)];
+  if (ids.length > 200 || ids.some((i) => !Number.isInteger(i) || i <= 0)) throw new AndonError(400, "받는 사람 선택이 올바르지 않습니다.", "INVALID_RECIPIENT");
+  const recipients: { id: number; departmentCode: string }[] = [];
+  for (const id of ids) {
+    const u = (await db.get("SELECT u.department_code FROM app_user u JOIN role r ON r.code = u.role WHERE u.id = ? AND u.active = 1 AND r.can_respond = 1", id)) as
+      | { department_code: string }
+      | undefined;
+    if (!u || !deps.includes(u.department_code)) throw new AndonError(400, "받는 사람은 선택한 조치부서의 담당자여야 합니다.", "INVALID_RECIPIENT");
+    recipients.push({ id, departmentCode: u.department_code });
+  }
+  return { deps, recipients };
 }
 
 /** Korea time date as YYYYMMDD, used in ANDON IDs. */
@@ -234,7 +376,7 @@ function kstDateKey(iso: string): string {
 
 export async function findByClientRequestId(clientRequestId: string): Promise<AndonEvent | null> {
   const r = (await db.get(`${EVENT_SELECT} WHERE e.client_request_id = ?`, clientRequestId));
-  return r ? toEvent(r) : null;
+  return r ? (await withDepartments([toEvent(r)]))[0] : null;
 }
 
 /**
@@ -243,7 +385,7 @@ export async function findByClientRequestId(clientRequestId: string): Promise<An
  */
 export async function createEvent(input: CreateAndonInput): Promise<{ event: AndonEvent; duplicate: boolean }> {
   const description = (input.description ?? "").trim();
-  const createdBy = (input.createdBy ?? "").trim() || "작업자";
+  const createdBy = input.caller?.name ?? ((input.createdBy ?? "").trim() || "작업자");
 
   if (input.clientRequestId) {
     const existing = await findByClientRequestId(input.clientRequestId);
@@ -258,6 +400,13 @@ export async function createEvent(input: CreateAndonInput): Promise<{ event: And
 
   const cat = (await db.get("SELECT 1 FROM category WHERE code = ? AND active = 1", input.categoryCode));
   if (!cat) throw new AndonError(400, "이상 유형 선택이 올바르지 않습니다.", "INVALID_CATEGORY");
+  const call = input.departments ? await validateCall(input.departments, input.recipientIds ?? []) : null;
+  const situations = [...new Set((input.situations ?? []).map(String))];
+  if (situations.some((c) => !CALL_SITUATIONS.some((s) => s.code === c))) throw new AndonError(400, "상황 선택이 올바르지 않습니다.", "INVALID_SITUATION");
+  // 예방보전 (preventive maintenance): planned MT work registered by UAP — yellow at once, short text only
+  const preventive = situations.includes("MT_PREVENTIVE");
+  if (preventive && description.length > 100) throw new AndonError(400, "예방보전 안내는 100자 이내로 입력하세요.", "DESCRIPTION_TOO_LONG");
+  const startStatus: AndonStatus = preventive ? "ACKNOWLEDGED" : "OPEN";
 
   const plant = (await db.get("SELECT p.name FROM line l JOIN plant p ON p.code = l.plant_code WHERE l.code = ?", input.lineCode)) as { name: string } | undefined;
   const createdAt = input.createdAt ?? nowIso();
@@ -269,14 +418,16 @@ export async function createEvent(input: CreateAndonInput): Promise<{ event: And
     const last = (await db.get("SELECT id FROM andon_event WHERE id LIKE ? ORDER BY id DESC LIMIT 1", `${prefix}%`)) as { id: string } | undefined;
     const seq = last ? Number(last.id.slice(prefix.length)) + 1 : 1;
     const newId = `${prefix}${String(seq).padStart(3, "0")}`;
-    // Responsibility is decided once, at creation, by the routing rules (src/lib/routing.ts).
-    const resp = await resolveResponsibility(input.lineCode, input.processId, input.categoryCode);
+    // Responsibility is decided once, at creation: by the caller's choice (v9), else by the routing rules.
+    const resp = call
+      ? { departmentCode: call.deps[0], routingRuleId: null }
+      : await resolveResponsibility(input.lineCode, input.processId, input.categoryCode);
 
     (await db.run(`INSERT INTO andon_event (id, plant, line_code, process_id, category_code, department_code, routing_rule_id,
          description, photo_file, status, created_by, created_at, updated_at, client_request_id,
          shift_status, shift_unresolved_reason, shift_team, shift_type, shift_operational_date, shift_start_at,
-         gap_leader_assignment_id, supervisor_assignment_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, newId,
+         gap_leader_assignment_id, supervisor_assignment_id, situations)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, newId,
       plant?.name ?? "",
       input.lineCode,
       input.processId,
@@ -285,6 +436,7 @@ export async function createEvent(input: CreateAndonInput): Promise<{ event: And
       resp.routingRuleId,
       description,
       input.photoFile ?? null,
+      startStatus,
       createdBy,
       createdAt,
       createdAt,
@@ -296,11 +448,22 @@ export async function createEvent(input: CreateAndonInput): Promise<{ event: And
       shift.operationalDate,
       shift.startAt,
       shift.gapLeaderAssignmentId,
-      shift.supervisorAssignmentId));
-    // Operators have no accounts yet: user_id stays NULL, the typed name is recorded as-is.
+      shift.supervisorAssignmentId,
+      situations.length ? JSON.stringify(situations) : null));
+    if (call) {
+      for (const [i, d] of call.deps.entries()) {
+        await db.run("INSERT INTO andon_event_department (event_id, department_code, sort_order) VALUES (?, ?, ?)", newId, d, i);
+      }
+      for (const r of call.recipients) {
+        await db.run("INSERT INTO andon_call_recipient (event_id, user_id, department_code) VALUES (?, ?, ?)", newId, r.id, r.departmentCode);
+      }
+    }
+    // The caller (GAP leader) is recorded with id / department / role. Server-internal callers without an
+    // account (demo seeder) keep user_id NULL and the given name.
+    const c = input.caller;
     await insertTransition(
       newId,
-      { action: "CREATE", from: null, to: "OPEN", userName: createdBy, userId: null, userDepartment: null, userRole: null, comment: description, at: createdAt },
+      { action: "CREATE", from: null, to: startStatus, userName: createdBy, userId: c?.id ?? null, userDepartment: c?.departmentCode ?? null, userRole: c?.role ?? null, comment: description, at: createdAt },
       input.audit ?? NO_AUDIT,
     );
     return newId;
@@ -343,8 +506,8 @@ export async function transitionEvent(id: string, input: TransitionInput): Promi
       | { status: AndonStatus; department_code: string }
       | undefined;
     if (!row) throw new AndonError(404, "ANDON을 찾을 수 없습니다.", "NOT_FOUND");
-    // Who: must be an active, responder-capable user of the event's responsible department.
-    const responder = await validateResponder({ userId: input.userId, userName: input.userName }, row.department_code);
+    // Who: an active, responder-capable member of one of the event's responsible departments.
+    const responder = await validateResponder({ userId: input.userId, userName: input.userName }, await actionDepartmentCodes(id, row.department_code, input.action));
     const userName = responder.name;
     if (!rule.from.includes(row.status)) {
       throw new AndonError(

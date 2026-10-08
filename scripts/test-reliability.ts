@@ -2,7 +2,7 @@
 // H1: a problem with the optional photo must never block the ANDON call.
 // Creates real test ANDONs (description starts with "[TEST]") and closes them again.
 // Responder steps (closing the test events) use a throw-away MT account (scripts/lib/testkit.ts).
-import { admin, registerAccount } from "./lib/testkit.ts";
+import { admin, callerClient, registerAccount } from "./lib/testkit.ts";
 
 const BASE = (process.env.BASE_URL || "http://localhost:3000").replace(/\/$/, "");
 
@@ -43,7 +43,7 @@ async function main() {
     f.set("createdBy", "reliability-test");
     f.set("clientRequestId", `rel-${Date.now()}-${Math.random()}`);
     if (photo) f.set("photo", photo, "photo");
-    const res = await fetch(`${BASE}/api/andons`, { method: "POST", body: f });
+    const res = await fetch(`${BASE}/api/andons`, { method: "POST", body: f, headers: (await callerClient()).headers() });
     const body = (await res.json().catch(() => ({}))) as CreateResponse;
     if (body.event?.id) created.push(body.event.id);
     return { status: res.status, body };

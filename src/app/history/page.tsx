@@ -4,6 +4,7 @@ import Link from "next/link";
 import { TopBar } from "@/components/TopBar";
 import { StatusBadge } from "@/components/StatusBadge";
 import { fmtDateTime, fmtDurationKo, usePolling } from "@/lib/client";
+import { HistoryCsv } from "@/components/HistoryCsv";
 import type { AndonEvent } from "@/lib/domain";
 
 interface Stats {
@@ -57,6 +58,8 @@ export default function HistoryPage() {
             </button>
           ))}
         </div>
+
+        <HistoryCsv />
 
         {stats.error && <div className="alert alert-error">통계 로드 실패: {stats.error}</div>}
 

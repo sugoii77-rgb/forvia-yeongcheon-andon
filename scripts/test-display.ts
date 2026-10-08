@@ -64,7 +64,7 @@ function ev(lineCode: string, status: AndonStatus, createdAt: string, closedAt: 
   seq++;
   return {
     id: `AND-TEST-${seq}`, plant: "Yeongcheon", lineCode, lineName: lineCode, processId: 1, processName: "p", categoryCode: "QUALITY", categoryName: "품질",
-    departmentCode: "QC", departmentName: "품질", departmentLabel: "QC · 품질", description: "test", photoFile: null, status, createdBy: "op",
+    departmentCode: "QC", departmentName: "품질", departmentLabel: "QC · 품질", departments: [{ code: "QC", label: "QC · 품질" }], situations: [], description: "test", photoFile: null, status, createdBy: "op",
     createdAt, acknowledgedAt: null, acknowledgedBy: null, closedAt, closedBy: null, correctiveAction: null, updatedAt: createdAt,
   };
 }
@@ -85,7 +85,11 @@ function partB() {
   const st = lineStates(events);
   check(st.get("AQ2-GAMMA2")?.state === "OPEN", "OPEN event → line red (OPEN)");
   check(st.get("AP1-MAIN1")?.state === "ACTION" && st.get("RESO-CTR")?.state === "ACTION", "ACKNOWLEDGED / IN_PROGRESS → amber (ACTION)");
-  check(!st.has("AQ2-KAPPA16"), "CLOSED → line back to normal");
+  check(st.get("AQ2-KAPPA16")?.state === "DONE", "CLOSED within the board window (24 h) → green DONE, not an alarm");
+  const busy = lineStates([ev("AQ2-KAPPA16", "CLOSED", t(30), t(5)), ev("AQ2-KAPPA16", "OPEN", t(2))]).get("AQ2-KAPPA16");
+  check(busy?.state === "OPEN" && busy.count === 1, "a new active ANDON on a line with a completed one shows the active state");
+  const done2 = stationState(["AQ2-KAPPA16"], lineStates([ev("AQ2-KAPPA16", "CLOSED", t(30), t(20)), ev("AQ2-KAPPA16", "CLOSED", t(10), t(3))]));
+  check(done2?.state === "DONE" && done2.count === 2 && done2.lead?.closedAt === t(3), "two completed → green, lead = most recently completed");
   const nui = st.get("AQ1-NUI1");
   check(nui?.state === "OPEN" && nui.count === 3 && nui.lead?.createdAt === t(8), "three active events on one line → OPEN, badge 3, lead = oldest OPEN");
   const order = sortActive(events).map((e) => `${e.lineCode}:${e.status}`);

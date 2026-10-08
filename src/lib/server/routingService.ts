@@ -117,6 +117,7 @@ export async function eventResponsibility(eventId: string): Promise<Responsibili
     | undefined;
   if (!r) return null;
   let matchedBy: Responsibility["matchedBy"] = "CATEGORY_DEFAULT";
+  if (await db.get("SELECT 1 FROM andon_event_department WHERE event_id = ?", eventId)) return responsibility(r.department_code, "GAP_LEADER_CALL", null);
   if (r.routing_rule_id != null) {
     const rule = (await db.get("SELECT process_id FROM routing_rule WHERE id = ?", r.routing_rule_id)) as
       | { process_id: number | null }
@@ -152,21 +153,23 @@ const summary = (u: ResponderCandidate): ResponderSummary => ({
  * Everyone who may ACK / ACTION / CLOSE events of this department: active users of the (current)
  * department whose role can respond. A newly registered RESPONDER appears here immediately.
  */
-export async function eligibleResponders(eventDepartmentCode: string): Promise<ResponderSummary[]> {
+export async function eligibleResponders(eventDepartmentCode: string | string[]): Promise<ResponderSummary[]> {
+  const deps = await departments();
+  const codes = [...new Set((Array.isArray(eventDepartmentCode) ? eventDepartmentCode : [eventDepartmentCode]).map((c) => effectiveOf(deps, c)))];
   return (
     await db.all(
-      `${USER_SELECT} WHERE u.active = 1 AND r.can_respond = 1 AND u.department_code = ? ORDER BY r.sort_order, u.id`,
-      await effectiveDepartment(eventDepartmentCode),
+      `${USER_SELECT} WHERE u.active = 1 AND r.can_respond = 1 AND u.department_code IN (${codes.map(() => "?").join(",")}) ORDER BY r.sort_order, u.id`,
+      ...codes,
     )
   ).map((r) => summary(toCandidate(r)));
 }
 
 /**
  * Responsible departments whose EVERY member receives the initial ANDON notification — team leader
- * included, any role that may respond (plant decision 2026-10-06: HSE, ME, MT, QC). Other departments
- * (UAP, PC&L) notify their RESPONDER accounts only.
+ * included, any role that may respond (plant decision 2026-10-06: HSE, ME, MT, QC, PC&L). Other departments
+ * (UAP) notify their RESPONDER accounts only.
  */
-export const ALL_MEMBER_NOTIFY_DEPARTMENTS: readonly string[] = ["HSE", "ME", "MT", "QC"];
+export const ALL_MEMBER_NOTIFY_DEPARTMENTS: readonly string[] = ["HSE", "ME", "MT", "QC", "PCL"];
 
 /**
  * Receivers of the initial notification of a department (escalation comes later, with Reaction Rules):
@@ -210,7 +213,7 @@ export interface ResponderIdentity {
  * Server-side responder validation. The responder must exist, be active, have a role that may
  * respond, and belong to the event's (current) responsible department. Throws AndonError otherwise.
  */
-export async function validateResponder(identity: ResponderIdentity, eventDepartmentCode: string): Promise<ResponderSummary> {
+export async function validateResponder(identity: ResponderIdentity, eventDepartmentCode: string | string[]): Promise<ResponderSummary> {
   let row: Row | undefined;
   if (identity.userId != null) {
     if (!Number.isInteger(identity.userId) || identity.userId <= 0) {
@@ -228,12 +231,14 @@ export async function validateResponder(identity: ResponderIdentity, eventDepart
 
   const user = toCandidate(row);
   const deps = await departments();
-  const responsible = effectiveOf(deps, eventDepartmentCode);
-  const problem = responderProblem(user, responsible);
+  // An event of a multi-department call (v9) may be handled by a member of ANY of its departments.
+  const codes = (Array.isArray(eventDepartmentCode) ? eventDepartmentCode : [eventDepartmentCode]).map((c) => effectiveOf(deps, c));
+  const problems = codes.map((c) => responderProblem(user, c));
+  const problem = problems.includes(null) ? null : (problems.find((x) => x !== "WRONG_DEPARTMENT") ?? "WRONG_DEPARTMENT");
   if (problem === "INACTIVE") throw new AndonError(403, `${user.name}: 비활성(사용 중지)된 계정입니다.`, "INACTIVE_RESPONDER");
   if (problem === "ROLE_NOT_ALLOWED")
     throw new AndonError(403, `${user.name}: 조치 권한이 없는 역할입니다 (${user.role}).`, "ROLE_NOT_ALLOWED");
   if (problem === "WRONG_DEPARTMENT")
-    throw new AndonError(403, `${user.name}: 이 ANDON의 담당 부서(${labelOf(deps, responsible)}) 소속이 아닙니다.`, "WRONG_DEPARTMENT");
+    throw new AndonError(403, `${user.name}: 이 ANDON의 담당 부서(${codes.map((c) => labelOf(deps, c)).join(", ")}) 소속이 아닙니다.`, "WRONG_DEPARTMENT");
   return summary(user);
 }

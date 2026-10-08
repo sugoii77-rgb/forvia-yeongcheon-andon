@@ -84,7 +84,7 @@ export default function MePage() {
           </div>
         )}
         {user?.active && <KakaoNotify />}
-        {user?.active && user.email && <PasswordChange />}
+        {user?.active && (user.email || user.employeeId) && <PasswordChange />}
       </main>
     </>
   );

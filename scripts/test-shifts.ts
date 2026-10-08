@@ -143,6 +143,9 @@ async function partB() {
     ],
     "test",
   );
+  // The fixed test timestamps (week of 2026-10-05) must lie inside the assignments' validity, whatever the
+  // real date of the run is: the import starts them "now", so start them before the test week.
+  await db.run("UPDATE line_assignment SET effective_from = '2026-01-01T00:00:00.000Z' WHERE source_ref = 'test'");
   const asg = async (line: string, role: string, team: string | null) =>
     Number((await db.get("SELECT id FROM line_assignment WHERE line_code = ? AND assignment_role = ? AND IFNULL(shift_code,'-') = IFNULL(?, '-') AND active = 1", line, role, team))!.id);
   const ids = { sv: await asg("AP1-MAIN1", "SUPERVISOR", null), a: await asg("AP1-MAIN1", "GAP_LEADER", "A"), b: await asg("AP1-MAIN1", "GAP_LEADER", "B") };

@@ -24,7 +24,7 @@ interface Detail {
   responsibility: Responsibility | null;
   eligibleResponders: ResponderSummary[];
   /** Logged-in user and whether the SERVER allows them to act on this event. */
-  viewer: { user: PublicUser; canRespond: boolean } | null;
+  viewer: { user: PublicUser; canRespond: boolean; actions?: TransitionAction[] } | null;
   serverTime: string;
 }
 
@@ -32,6 +32,7 @@ const ROUTING_LABEL: Record<string, string> = {
   LINE_PROCESS_CATEGORY: "공정별 규칙",
   LINE_CATEGORY: "라인별 규칙",
   CATEGORY_DEFAULT: "유형 기본값",
+  GAP_LEADER_CALL: "GAP 리더 호출",
 };
 
 /** "Android · Chrome" style summary of a user-agent string (display only). */
@@ -113,12 +114,18 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
   }
 
   const e = data.event;
-  const actions = allowedActions(e.status);
+  // the server decides per action (a QC event is closed by UAP); older servers: by status only
+  const actions = data.viewer?.actions ?? allowedActions(e.status);
+  const closeByUap = allowedActions(e.status).includes("CLOSE") && !actions.includes("CLOSE") && e.departments.some((d) => d.code === "QC" || d.code === "PCL");
+  // Equipment (MT) events: two steps for MT — 수리 시작 (yellow) → 수리 완료 (green) (plant meeting 2026-10-08)
+  const repair = e.departments.some((d) => d.code === "MT") && !e.departments.some((d) => d.code === "QC" || d.code === "PCL");
   const end = e.closedAt ? new Date(e.closedAt).getTime() : now;
   const elapsed = (end - new Date(e.createdAt).getTime()) / 1000;
   const eligible = data.eligibleResponders;
   const viewer = data.viewer;
-  const responsibleLabel = data.responsibility
+  const responsibleLabel = e.departments.length > 1
+    ? e.departmentLabel
+    : data.responsibility
     ? data.responsibility.effectiveDepartmentCode === data.responsibility.departmentCode
       ? data.responsibility.departmentLabel
       : `${data.responsibility.departmentLabel} → ${data.responsibility.effectiveDepartmentCode}`
@@ -145,6 +152,12 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
           <dl className="kv" style={{ marginTop: 10 }}>
             <dt>이상 유형</dt>
             <dd>{e.categoryName}</dd>
+            {e.situations.length > 0 && (
+              <>
+                <dt>상황</dt>
+                <dd>{e.situations.join(", ")}</dd>
+              </>
+            )}
             <dt>담당 부서</dt>
             <dd>
               {responsibleLabel}
@@ -206,11 +219,14 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
                     : `이 ANDON은 ${responsibleLabel} 부서 담당입니다 (내 부서: ${viewer.user.departmentLabel}).`}
               </div>
             )}
+            {viewer?.canRespond && closeByUap && (
+              <div className="alert alert-warn">품질(QC) 건의 최종 완료(Close)는 생산(UAP)이 확인 후 처리합니다. 조치 내용을 입력해 주세요.</div>
+            )}
             {eligible.length === 0 && <div className="alert alert-error">이 부서에 등록된 담당자가 없습니다 (기준정보 확인 필요).</div>}
 
             {viewer?.canRespond && mode && (
               <div className="field">
-                <label htmlFor="comment">{mode === "CLOSE" ? "시정 조치 내용 (Corrective action)" : "조치 내용 (Action note)"}</label>
+                <label htmlFor="comment">{mode === "CLOSE" ? (repair ? "수리 내용" : "시정 조치 내용 (Corrective action)") : "조치 내용 (Action note)"}</label>
                 <textarea
                   id="comment"
                   className="textarea"
@@ -229,17 +245,17 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
             <div className="row">
               {actions.includes("ACKNOWLEDGE") && (
                 <button className="btn btn-ack btn-big btn-block" disabled={busy} onClick={() => run("ACKNOWLEDGE")}>
-                  {busy ? "처리 중…" : "ACKNOWLEDGE · 접수"}
+                  {busy ? "처리 중…" : repair ? "수리 시작" : "ACKNOWLEDGE · 접수"}
                 </button>
               )}
-              {!mode && actions.includes("ACTION") && (
+              {!mode && !repair && actions.includes("ACTION") && (
                 <button className="btn btn-action btn-big" style={{ flex: 1 }} disabled={busy} onClick={() => setMode("ACTION")}>
                   ACTION · 조치 입력
                 </button>
               )}
               {!mode && actions.includes("CLOSE") && (
                 <button className="btn btn-close btn-big" style={{ flex: 1 }} disabled={busy} onClick={() => setMode("CLOSE")}>
-                  CLOSE · 완료
+                  {repair ? "수리 완료" : "CLOSE · 완료"}
                 </button>
               )}
               {mode && (
@@ -250,7 +266,7 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
                     disabled={busy}
                     onClick={() => run(mode)}
                   >
-                    {busy ? "저장 중…" : mode === "CLOSE" ? "완료 저장 (CLOSE)" : "조치 저장 (ACTION)"}
+                    {busy ? "저장 중…" : mode === "CLOSE" ? (repair ? "수리 완료 저장" : "완료 저장 (CLOSE)") : "조치 저장 (ACTION)"}
                   </button>
                   <button className="btn btn-big" style={{ flex: 1 }} disabled={busy} onClick={() => setMode(null)}>
                     취소

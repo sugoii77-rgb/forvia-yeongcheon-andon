@@ -4,7 +4,8 @@
 import { STATION_CELLS, stationBox, type StationCell } from "../config/plantLayout.ts";
 import type { AndonEvent, AndonStatus } from "./domain.ts";
 
-export type LineVisualState = "NORMAL" | "OPEN" | "ACTION";
+/** DONE = completed within the board window (24 h, plant meeting 2026-10-07): green, then it disappears. */
+export type LineVisualState = "NORMAL" | "OPEN" | "ACTION" | "DONE";
 
 const ACTIVE: readonly AndonStatus[] = ["OPEN", "ACKNOWLEDGED", "IN_PROGRESS"];
 export const isActive = (e: Pick<AndonEvent, "status">) => ACTIVE.includes(e.status);
@@ -46,7 +47,18 @@ export function lineStates(events: AndonEvent[]): Map<string, LineState> {
     if (cur) cur.count++;
     else out.set(e.lineCode, { state: e.status === "OPEN" ? "OPEN" : "ACTION", count: 1, lead: e });
   }
+  // lines without an active ANDON but with one completed in the board window: green (latest completion)
+  for (const e of sortDone(events)) {
+    const cur = out.get(e.lineCode);
+    if (!cur) out.set(e.lineCode, { state: "DONE", count: 1, lead: e });
+    else if (cur.state === "DONE") cur.count++;
+  }
   return out;
+}
+
+/** Completed events, most recently completed first. */
+export function sortDone<T extends Pick<AndonEvent, "status" | "closedAt">>(events: T[]): T[] {
+  return events.filter((e) => e.status === "CLOSED" && e.closedAt).slice().sort((a, b) => b.closedAt!.localeCompare(a.closedAt!));
 }
 
 /**
@@ -54,8 +66,10 @@ export function lineStates(events: AndonEvent[]): Map<string, LineState> {
  * state, summed count, lead = most urgent then oldest event of all of them.
  */
 export function stationState(codes: string[], states: Map<string, LineState>): LineState | undefined {
-  const parts = codes.map((c) => states.get(c)).filter((x): x is LineState => !!x);
-  if (parts.length === 0) return undefined;
+  const all = codes.map((c) => states.get(c)).filter((x): x is LineState => !!x);
+  if (all.length === 0) return undefined;
+  const parts = all.filter((p) => p.state !== "DONE");
+  if (parts.length === 0) return { state: "DONE", count: all.reduce((n, p) => n + p.count, 0), lead: sortDone(all.map((p) => p.lead!))[0] };
   const lead = sortActive(parts.map((p) => p.lead!))[0];
   return { state: parts.some((p) => p.state === "OPEN") ? "OPEN" : "ACTION", count: parts.reduce((n, p) => n + p.count, 0), lead };
 }

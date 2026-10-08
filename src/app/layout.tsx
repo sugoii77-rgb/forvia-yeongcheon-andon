@@ -4,6 +4,8 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Digital ANDON · Yeongcheon",
   description: "FORVIA Yeongcheon Plant Digital ANDON prototype",
+  // iPhone "홈 화면에 추가": opens full-screen like an app, named "ANDON"
+  appleWebApp: { capable: true, title: "ANDON", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {

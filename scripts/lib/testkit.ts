@@ -95,15 +95,35 @@ export async function processId(line: string, name: string): Promise<number> {
   return p.id;
 }
 
-/** Operator ANDON call (no login needed). */
+/**
+ * The ANDON caller: since 2026-10-06 a logged-in GAP leader calls the ANDON. One throw-away account per
+ * run (registered as RESPONDER in UAP, promoted to GAP_LEADER by the administrator CLI, then logged in).
+ */
+let caller: Promise<Client> | null = null;
+export function callerClient(): Promise<Client> {
+  caller ??= (async () => {
+    const acc = await registerAccount("UAP", "caller");
+    const r = admin("user", "role", acc.email, "GAP_LEADER");
+    if (!r.ok) throw new Error(`could not make the test caller a GAP leader: ${r.out}`);
+    const c = new Client("caller");
+    const login = await c.request("POST", "/api/auth/login", { email: acc.email, password: acc.password });
+    if (login.status !== 200) throw new Error(`caller login failed (${login.status})`);
+    return c;
+  })();
+  return caller;
+}
+
+/** GAP-leader ANDON call. Without `departments` the routing rule decides (department rule recipients). */
 export async function createAndon(
   line: string,
   process: string,
   category: string,
   description: string,
-  client = new Client("operator"),
+  client?: Client,
   photo?: Blob,
+  call?: { departments: string[]; recipients?: number[] },
 ) {
+  client ??= await callerClient();
   const f = new FormData();
   f.set("lineCode", line);
   f.set("processId", String(await processId(line, process)));
@@ -112,6 +132,8 @@ export async function createAndon(
   f.set("createdBy", "test-operator");
   f.set("clientRequestId", `t-${RUN}-${Date.now()}-${Math.random()}`);
   if (photo) f.set("photo", photo, "photo");
+  for (const d of call?.departments ?? []) f.append("departments", d);
+  for (const r of call?.recipients ?? []) f.append("recipients", String(r));
   return client.request("POST", "/api/andons", f);
 }
 
