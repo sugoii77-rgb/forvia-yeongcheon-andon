@@ -50,7 +50,7 @@ check(rows.length === 12 && rows[0].name === "리더-TA", `reads 12 rows, "(A)" 
 check(!JSON.stringify(rows).includes("010-0000-0000") && !JSON.stringify(rows).includes("kakao-x"), "phone / KakaoTalk columns are not read");
 
 const res = await acc.importAccounts(rows);
-check(res.loginAdded === 3 && res.created === 5, `GL + SV + existing PC&L get a login; 2 MT, UAP 팀장, UAP 책임, PM created (added ${res.loginAdded}, created ${res.created})`);
+check(res.loginAdded === 3 && res.created === 6, `GL + SV + existing PC&L get a login; 2 MT, 부서-T, UAP 팀장, UAP 책임, PM created (added ${res.loginAdded}, created ${res.created})`);
 const flag = async (n: string) => (await db.get("SELECT role, department_code d, team_leader t, call_default c FROM app_user WHERE name = ?", n))!;
 check((await flag("보전팀장-T")).t === 1 && (await flag("보전팀장-T")).c === 0, "MT 팀장 → team leader (escalation), not a default recipient");
 check((await flag("생산팀장-T")).t === 1 && (await flag("생산팀장-T")).c === 1, "UAP 팀장 → team leader + default recipient of QC / MT calls");
@@ -66,16 +66,16 @@ check(res.problems.some((p) => p.includes("리더-없음") && p.includes("not in
 check(!(await db.get("SELECT 1 FROM app_user WHERE name = '리더-없음'")), "… and no account was created for it");
 check(res.problems.some((p) => p.includes("중복-T")), "duplicate login e-mail in the file → reported");
 check(res.problems.some((p) => p.includes("잘못-T")), "invalid e-mail → reported");
-check(res.problems.some((p) => p.includes("부서-T") && p.includes("unknown department")), "unknown department → reported");
+check(res.problems.some((p) => p.includes("부서-T") && p.includes("not a department name")), "text that is not a department (QC sub-role, 총무 …) → department of the rows above, reported for checking");
 const login = await authenticate("gl-a@andon.test", res.credentials.find((c) => c.loginId === "gl-a@andon.test")!.temporaryPassword, audit);
 check(login.role === "GAP_LEADER", "the temporary password works for login");
 
 const again = await acc.importAccounts(rows);
-check(again.created === 0 && again.loginAdded === 0 && again.unchanged === 8, `repeat import changes nothing (unchanged ${again.unchanged})`);
+check(again.created === 0 && again.loginAdded === 0 && again.unchanged === 9, `repeat import changes nothing (unchanged ${again.unchanged})`);
 
 const out = acc.writeCredentials(DIR, res.credentials);
 const text = fs.readFileSync(out, "utf8");
-check(text.split("\r\n").length === 9 && text.includes("임시 비밀번호"), "credentials file: header + 8 rows");
+check(text.split("\r\n").length === 10 && text.includes("임시 비밀번호"), "credentials file: header + 9 rows");
 const stored = JSON.stringify(await db.all("SELECT * FROM app_user")) + JSON.stringify(await db.all("SELECT * FROM user_identity"));
 check(!res.credentials.some((c) => stored.includes(c.temporaryPassword)), "temporary passwords are not stored in plain text");
 

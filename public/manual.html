@@ -115,6 +115,7 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line)
   .qr span { text-align: left; }
   h1 { font-size: 25px; }
 }
+code.mono { font-family: var(--font-mono); font-size: 14px; background: var(--navy-soft); padding: 1px 6px; border-radius: 4px; word-break: break-all; }
 </style>
 
 </head>
@@ -143,6 +144,7 @@ footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line)
       <a class="role" href="#call"><strong>GAP 리더</strong><span>ANDON 호출하기</span></a>
       <a class="role" href="#respond"><strong>조치부서 담당자</strong><span>QC · MT · PC&amp;L · UAP</span></a>
       <a class="role" href="#board"><strong>모두</strong><span>현황판 · 이력 · 문제 해결</span></a>
+      <a class="role" href="#kiosk"><strong>현황판 PC 설치</strong><span>키오스크 · 자동 실행 · LTE</span></a>
     </div>
   </nav>
 
@@ -268,8 +270,23 @@ https://forvia-yeongcheon-andon.vercel.app/respond/AND-20261006-001</div>
     <div class="note"><strong>이력은 1년간 보관 후 삭제됩니다.</strong> &lsquo;이력 / 통계&rsquo; 화면의 <span class="btnlike">CSV 저장</span>에서 기간을 골라 PC에 저장할 수 있습니다 (로그인 필요, 엑셀로 열림).</div>
   </section>
 
+  <section id="kiosk" aria-labelledby="h-kiosk">
+    <div class="sec-head"><span class="who">현황판 담당 · 설치하는 분</span><h2 id="h-kiosk">7. 현황판 PC 설정</h2></div>
+    <p>현장 대형 모니터의 미니 PC를 <b>켜면 바로 현황판만 꽉 차게</b> 나오도록(키오스크) 한 번만 설정합니다. 현황판은 공개 화면이라 <b>ANDON 로그인이 필요 없습니다.</b></p>
+    <ol class="steps">
+      <li><div class="t">Chrome 설치 · 모니터 해상도</div><div class="d">Chrome을 설치하고, 디스플레이 해상도를 <b>1920 × 1080</b>으로 맞춥니다 (4K 모니터는 배율 200%).</div></li>
+      <li><div class="t">키오스크 바로가기 만들기</div><div class="d">바탕화면 Chrome 바로가기 → 오른쪽 클릭 → 속성 → &lsquo;대상&rsquo; 맨 끝에 한 칸 띄우고 아래를 붙여 넣습니다.<br><code class="mono">--kiosk https://forvia-yeongcheon-andon.vercel.app/dashboard</code></div></li>
+      <li><div class="t">켜면 자동 실행</div><div class="d"><b>Win + R</b> → <code class="mono">shell:startup</code> 입력 → 열린 폴더에 위 바로가기를 복사합니다.</div></li>
+      <li><div class="t">Windows 자동 로그인</div><div class="d">PC를 켜면 비밀번호 없이 바탕화면까지 가도록 설정합니다 (회사 IT 정책 확인).</div></li>
+      <li><div class="t">절전 끄기</div><div class="d">설정 → 시스템 → 전원 → 화면 끄기 · 절전 모드를 <b>&lsquo;안 함&rsquo;</b>으로 합니다.</div></li>
+      <li><div class="t">정전 후 자동 켜짐</div><div class="d">BIOS에서 <b>AC Power On / Restore on AC Power Loss</b>를 켭니다.</div></li>
+      <li><div class="t">LTE 데이터 절약</div><div class="d">LTE 공유기 연결을 Windows에서 <b>&lsquo;데이터 통신 연결(종량제)&rsquo;</b>로 설정하고, Windows 업데이트 재시작 시간을 근무 외 시간으로 지정합니다.</div></li>
+    </ol>
+    <div class="note"><strong>현황판은 상시 켜 두세요.</strong> 현황판이 켜져 있는 동안 서버가 1분마다 &lsquo;2시간 미완료&rsquo;를 확인해 에스컬레이션 카카오톡을 보냅니다. 화면은 5초마다 새로 고쳐지고, 연결이 20초 이상 끊기면 화면 위에 경고가 표시됩니다. 점검할 때는 <b>Alt + F4</b>로 현황판을 닫을 수 있습니다.</div>
+  </section>
+
   <section aria-labelledby="h-faq">
-    <div class="sec-head"><h2 id="h-faq">7. 이럴 땐 이렇게</h2></div>
+    <div class="sec-head"><h2 id="h-faq">8. 이럴 땐 이렇게</h2></div>
     <div class="faq">
       <details><summary>ANDON 호출 화면에 &ldquo;호출할 수 없습니다&rdquo;가 나와요</summary><p>호출은 GAP 리더·감독자 역할만 할 수 있습니다. 시스템 담당자 오영환 책임(QC)에게 역할 변경을 요청하세요.</p></details>
       <details><summary>받는 사람 목록에 우리 부서 사람이 없어요</summary><p>아직 가입하지 않은 사람은 목록에 나오지 않습니다. 가입할 때 부서를 정확히 골랐는지도 확인하세요.</p></details>

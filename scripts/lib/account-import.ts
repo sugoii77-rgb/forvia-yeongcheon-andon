@@ -26,6 +26,8 @@ export interface AccountRow {
   email: string;
   /** 사번 — the login ID when present */
   employeeId: string;
+  /** department text that is not a department name (taken from the block above) — reported */
+  deptNote?: string;
   /** optional column "기본알림" (Y / O / 1): always messaged on QC / MT calls (UAP 팀장, UAP 책임) */
   callDefault?: boolean;
 }
@@ -113,13 +115,17 @@ export async function readAccountFile(file: string): Promise<AccountRow[]> {
     const row = table[r];
     const name = (row[c.name] ?? "").replace(/\((A|B)\)$/, "").trim();
     // 부서-1 (UAP area AP-1 …, Mt, PC&L) first, then 부서; blank = the department of the rows above
-    const own = (c.department1 >= 0 ? row[c.department1] : "") || (c.department >= 0 ? row[c.department] : "");
+    // Only text that names a department counts: QC rows carry their sub-role there ("AQ CS", "AP 공정 QC")
+    // and continue the QC block above.
+    const own = [c.department1 >= 0 ? row[c.department1] : "", c.department >= 0 ? row[c.department] : ""].find((x) => x && departmentOf(x)) ?? "";
     const dept = own || lastDept;
     if (own) lastDept = own;
+    const rawDept = [c.department1 >= 0 ? row[c.department1] : "", c.department >= 0 ? row[c.department] : ""].find((x) => x && x !== "-") ?? "";
+    const deptNote = !own && rawDept && lastDept ? rawDept : undefined;
     const email = /@/.test(row[c.email] ?? "") ? row[c.email] : "";
     const employeeId = c.employeeId >= 0 ? (row[c.employeeId] ?? "").replace(/\s/g, "").toUpperCase() : "";
     if (!name || name === "-") continue;
-    out.push({ line: r + 1, name, department: dept, position: c.position >= 0 ? (row[c.position] ?? "") : "", email, employeeId, callDefault: c.callDefault >= 0 && /^(Y|YES|O|1|V|✔|예)$/i.test(row[c.callDefault] ?? "") });
+    out.push({ line: r + 1, name, department: dept, deptNote, position: c.position >= 0 ? (row[c.position] ?? "") : "", email, employeeId, callDefault: c.callDefault >= 0 && /^(Y|YES|O|1|V|✔|예)$/i.test(row[c.callDefault] ?? "") });
   }
   return out;
 }
@@ -154,6 +160,7 @@ export async function importAccounts(rows: AccountRow[]): Promise<ImportResult> 
       res.problems.push(`row ${r.line} (${r.name}): no 사번 and no valid e-mail — no login created`);
       continue;
     }
+    if (r.deptNote) res.problems.push(`row ${r.line} (${r.name}): "${r.deptNote}" is not a department name — took ${dept} from the rows above (check)`);
     const login = r.employeeId || mail;
     if (seen.has(login)) {
       res.problems.push(`row ${r.line} (${r.name}): the same login ID appears twice in the file`);
