@@ -15,6 +15,7 @@
 //                                                pre-assigning prevents a newcomer from claiming that ID
 //   user unlink-google <user>                    remove the Google login (e.g. lost Google account); ends sessions
 //   user deactivate-test-accounts                deactivates all *@andon.test accounts (API tests)
+//   user set-login <user> emp                    same, but the login ID is the account's employee ID (사번)
 //   user set-login <user> <e-mail>               give an account without login (e.g. imported from the
 //                                                workbook) a local login; prints a temporary password once.
 //                                                Use this instead of letting that person register again
@@ -142,6 +143,21 @@ try {
   }
   else if (cmd === "line" && (sub === "activate" || sub === "deactivate") && args.length === 1) {
     changed(await db.run("UPDATE line SET active = ? WHERE code = ?", sub === "activate" ? 1 : 0, args[0]), `line ${args[0]} ${sub}d`);
+  }
+  else if (cmd === "user" && sub === "set-login" && args.length === 2 && args[1] === "emp") {
+    // 사번 login (like the workbook import): login ID = the employee ID already set on the account.
+    const id = await userId(args[0]);
+    const emp = (await db.get("SELECT employee_id FROM app_user WHERE id = ?", id))?.employee_id as string | null;
+    if (!emp) throw new Error(`user #${id} has no employee ID (first: user employee-id ${id} <ID>)`);
+    const temp = `Andon-${crypto.randomBytes(6).toString("base64url")}1`;
+    const hash = await hashPassword(temp);
+    await db.transaction(async () => {
+      if (await db.get("SELECT 1 FROM user_identity WHERE user_id = ? AND provider = 'LOCAL'", id)) throw new Error(`user #${id} already has a local login (use reset-password)`);
+      if (await db.get("SELECT 1 FROM user_identity WHERE provider = 'LOCAL' AND subject = ?", emp)) throw new Error("this employee ID is already a login of another account");
+      await db.run("INSERT INTO user_identity (user_id, provider, subject, password_hash, created_at) VALUES (?, 'LOCAL', ?, ?, ?)", id, emp, hash, nowIso());
+    });
+    console.log(`OK: user #${id} can log in with employee ID ${emp}`);
+    console.log(`Temporary password (shown once): ${temp}`);
   }
   else if (cmd === "user" && sub === "set-login" && args.length === 2) {
     const id = await userId(args[0]);
