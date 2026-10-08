@@ -199,10 +199,11 @@ export async function sendToRecipients(eventId: string, recipients: Notification
 }
 
 /**
- * Completion notice (plant meeting 2026-10-08) for material shortages:
- *  - 자작품 (in-house part): the line's UAP (SV + GL) and all of PC&L (incl. the PC&L SV);
- *  - 외주품 (purchased part): the line's UAP (SV + GL) only.
- * Other completions send nothing (yet). Never throws.
+ * Completion notices (plant meeting 2026-10-08):
+ *  - equipment (MT) — 수리 완료: all of MT and the line's UAP (SV + GL);
+ *  - material shortage 자작품 (in-house part): the line's UAP (SV + GL) and all of PC&L (incl. the PC&L SV);
+ *  - material shortage 외주품 (purchased part): the line's UAP (SV + GL) only.
+ * Other completions send nothing. Never throws.
  */
 export async function notifyAndonClosed(event: AndonEvent): Promise<void> {
   try {
@@ -214,12 +215,15 @@ export async function notifyAndonClosed(event: AndonEvent): Promise<void> {
       /* none */
     }
     const inhouse = sits.includes("PCL_SHORTAGE_INHOUSE");
-    if (!inhouse && !sits.includes("PCL_SHORTAGE_PURCHASED")) return;
+    const repair = event.departments.some((d) => d.code === "MT");
+    if (!inhouse && !repair && !sits.includes("PCL_SHORTAGE_PURCHASED")) return;
     const { lineUapPeople } = await import("../andonService.ts");
     const ids = new Set(await lineUapPeople(event.lineCode));
-    if (inhouse) {
-      for (const r of await db.all("SELECT u.id FROM app_user u JOIN role r ON r.code = u.role WHERE u.active = 1 AND r.can_respond = 1 AND u.department_code = 'PCL'")) ids.add(r.id as number);
-    }
+    const allOf = async (dept: string) => {
+      for (const r of await db.all("SELECT u.id FROM app_user u JOIN role r ON r.code = u.role WHERE u.active = 1 AND r.can_respond = 1 AND u.department_code = ?", dept)) ids.add(r.id as number);
+    };
+    if (inhouse) await allOf("PCL");
+    if (repair) await allOf("MT");
     const people = ids.size
       ? await db.all(
           `SELECT u.id, u.name, u.department_code,
@@ -234,7 +238,7 @@ export async function notifyAndonClosed(event: AndonEvent): Promise<void> {
       event.id,
       people.map((u) => ({ userId: u.id as number, name: u.name as string, departmentCode: u.department_code as string, address: (u.kakao as string | null) ?? null })),
       {
-        title: `[ANDON 완료] ${event.lineName} · ${event.situations.join(", ") || event.categoryName}`,
+        title: `[ANDON ${repair ? "수리 완료" : "완료"}] ${event.lineName} · ${event.situations.join(", ") || event.categoryName}`,
         body: `${event.id} · 조치: ${event.correctiveAction ?? "-"}`,
         link: `${base}/respond/${encodeURIComponent(event.id)}`,
       },

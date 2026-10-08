@@ -237,6 +237,18 @@ async function main() {
   const pur = await closeNames("PCL_SHORTAGE_PURCHASED");
   check(pur.notes.includes(frtSvName) && !pur.notes.includes(pcl.name) && !pur.notes.includes(pcl2.name), `외주품 completion → line UAP only, PC&L not told (${pur.notes.length})`);
 
+  // MT: 수리 시작 (yellow) → 수리 완료 by MT (green); notice to all of MT + the line's UAP (SV + GL)
+  const mt2 = await registerAccount("MT", "call-mt2");
+  const rep = await callWith("MAINTENANCE", ["MT"], [mt.id], ["MT_ROBOT"], "[TEST] Robot Fault");
+  check((await transition(mt.client, rep.body.event.id, "ACKNOWLEDGE")).body.event.status === "ACKNOWLEDGED", "MT 수리 시작 → yellow");
+  check((await transition(mt.client, rep.body.event.id, "CLOSE", "[TEST] 로봇 리셋")).body.event.status === "CLOSED", "MT 수리 완료 → green (closed by MT)");
+  let repNotes: string[] = [];
+  for (let i = 0; i < 20 && repNotes.length === 0; i++) {
+    await sleep(250);
+    repNotes = ((await detail(rep.body.event.id)).body.notifications as { recipient: string; message: string }[]).filter((n) => n.message.startsWith("[ANDON 수리 완료]")).map((n) => n.recipient);
+  }
+  check(repNotes.includes(mt.name) && repNotes.includes(mt2.name) && repNotes.includes(frtSvName) && !repNotes.includes(pcl.name), `수리 완료 notice → all MT + line UAP (${repNotes.length})`);
+
   console.log("APPEND-ONLY");
   let blocked = 0;
   for (const sql of ["UPDATE andon_event_department SET sort_order = 9 WHERE event_id = ?", "DELETE FROM andon_call_recipient WHERE event_id = ?"]) {
