@@ -10,6 +10,7 @@ import { DEPARTMENT_CODES, SELF_REGISTRATION_ROLE, type PublicUser, type RoleCod
 import { db, nowIso } from "./db.ts";
 import { AndonError, type AuditInfo } from "./errors.ts";
 import { departmentLabelMap } from "./routingService.ts";
+import { SESSION_COOKIE, SESSION_IDLE_MS, secureCookieFor } from "./sessionPolicy.ts";
 
 const scrypt = promisify(crypto.scrypt) as (
   password: crypto.BinaryLike,
@@ -221,8 +222,7 @@ export async function authenticate(emailInput: unknown, passwordInput: unknown, 
 
 // ---------------------------------------------------------------- sessions
 
-export const SESSION_COOKIE = "andon_session";
-const SESSION_TTL_MS = Math.max(1, Number(process.env.SESSION_TTL_HOURS || 168)) * 3600_000;
+export { SESSION_COOKIE };
 
 const sha256 = (s: string) => crypto.createHash("sha256").update(s).digest("hex");
 
@@ -230,7 +230,7 @@ const sha256 = (s: string) => crypto.createHash("sha256").update(s).digest("hex"
 export async function createSession(userId: number, audit: AuditInfo): Promise<{ token: string; expiresAt: Date }> {
   const token = crypto.randomBytes(32).toString("base64url");
   const now = new Date();
-  const expiresAt = new Date(now.getTime() + SESSION_TTL_MS);
+  const expiresAt = new Date(now.getTime() + SESSION_IDLE_MS);
   (await db.run(`INSERT INTO user_session (token_hash, user_id, created_at, expires_at, last_seen_at, device_id, client_ip, user_agent)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, sha256(token), userId, now.toISOString(), expiresAt.toISOString(), now.toISOString(), audit.deviceId, audit.clientIp, audit.userAgent));
   return { token, expiresAt };
@@ -257,9 +257,12 @@ export async function getSessionUser(req: Request): Promise<PublicUser | null> {
   if (!token || token.length > 100) return null;
   const s = (await db.get("SELECT user_id, expires_at, last_seen_at FROM user_session WHERE token_hash = ? AND revoked_at IS NULL", sha256(token))) as { user_id: number; expires_at: string; last_seen_at: string } | undefined;
   if (!s || s.expires_at <= nowIso()) return null;
-  // Touch at most every 5 minutes (dashboards poll constantly).
+  // Touch at most every 5 minutes (dashboards poll constantly); sliding expiry — each use pushes the
+  // expiry SESSION_IDLE_DAYS ahead (the proxy refreshes the browser cookie the same way).
   if (Date.now() - new Date(s.last_seen_at).getTime() > 5 * 60_000) {
-    (await db.run("UPDATE user_session SET last_seen_at = ? WHERE token_hash = ?", nowIso(), sha256(token)));
+    const now = Date.now();
+    (await db.run("UPDATE user_session SET last_seen_at = ?, expires_at = ? WHERE token_hash = ? AND revoked_at IS NULL",
+      new Date(now).toISOString(), new Date(now + SESSION_IDLE_MS).toISOString(), sha256(token)));
   }
   return getPublicUser(s.user_id);
 }
@@ -271,10 +274,7 @@ export async function revokeSession(req: Request): Promise<void> {
 }
 
 function secureCookie(req: Request): boolean {
-  const mode = (process.env.COOKIE_SECURE || "auto").toLowerCase();
-  if (mode === "true") return true;
-  if (mode === "false") return false;
-  return new URL(req.url).protocol === "https:" || req.headers.get("x-forwarded-proto") === "https";
+  return secureCookieFor(req.url, req.headers.get("x-forwarded-proto"));
 }
 
 /** HttpOnly + SameSite=Lax (+ Secure on HTTPS). Lax keeps the user logged in when opening a notification link. */

@@ -270,7 +270,7 @@ new department without rewriting history. Display: "QUALITY · 품질" (original
   token (no session fixation) and revokes the session cookie sent with the request.
 - **Session**: cookie `andon_session` — HttpOnly, SameSite=Lax (so opening a notification link keeps
   the user logged in), Path=/, Secure on HTTPS (`COOKIE_SECURE`). Only the SHA-256 of the token is
-  stored (`user_session`). Lifetime `SESSION_TTL_HOURS` (default 7 days). The user's department, role
+  stored (`user_session`). Sliding expiry: every use extends the session by `SESSION_IDLE_DAYS` (default 90; `src/proxy.ts` refreshes the browser cookie) — log in once and stay logged in. The user's department, role
   and active flag are read from the DB on **every** request, so deactivation or a role change applies
   immediately. Logout revokes the session server-side. State-changing auth requests reject a foreign
   `Origin` header (403). Nothing auth-related is stored in localStorage.
@@ -477,7 +477,7 @@ See `.env.example`. Copy to `.env`. No secrets in source code.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `SESSION_TTL_HOURS` | `168` | login session lifetime (hours) |
+| `SESSION_IDLE_DAYS` | `90` | session ends after this many days without use (sliding) |
 | `GOOGLE_CLIENT_ID` | — | Google OAuth client id (Web application). Empty = Google login hidden |
 | `GOOGLE_CLIENT_SECRET` | — | Google OAuth client secret — **only in `.env`**, never in git / chat / logs |
 | `GOOGLE_REDIRECT_URI` | — | exactly `<origin>/api/auth/google/callback` (must match Google Cloud and the address users open) |
@@ -532,7 +532,7 @@ npm run dev       # development mode with hot reload
 | Functions | region `iad1` (`vercel.json`), Node 24 (`engines`) |
 | Database | Turso `andon-db` (Vercel Marketplace integration, `aws-us-east-1`); env `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` |
 | Photos | private Blob store `andon-photos` (`icn1`); env `BLOB_READ_WRITE_TOKEN` |
-| Other env (production + preview) | `COOKIE_SECURE=true`, `NOTIFICATION_PROVIDER=mock`, `SESSION_TTL_HOURS=168`, `APP_BASE_URL=https://forvia-yeongcheon-andon.vercel.app` |
+| Other env (production + preview) | `COOKIE_SECURE=true`, `NOTIFICATION_PROVIDER=mock`, `SESSION_TTL_HOURS=168` (no longer read — replaced by `SESSION_IDLE_DAYS`, default 90), `APP_BASE_URL=https://forvia-yeongcheon-andon.vercel.app` |
 
 - **Schema changes:** before pushing code with a new migration, migrate Turso first:
   `vercel env run -e production -- npm run db:migrate` (credentials stay in the process environment;
