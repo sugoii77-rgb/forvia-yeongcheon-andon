@@ -2,7 +2,8 @@
 // Shop-floor display v2 — PLANT MAP ANDON. Answers one question from several meters away:
 // "WHERE is the abnormal condition right now?" Lines keep their physical position (plant layout page 2,
 // src/config/plantLayout.ts); an abnormal line lights up in place, it never moves. Public display:
-// line, problem category, state and elapsed time only — no people.
+// line, problem category, state, elapsed time and — since 2026-10-08 (plant request) — the NAME of the
+// person who acknowledged / completed it. Never contact data.
 import Link from "next/link";
 import { fmtTime, usePolling, useServerNow } from "@/lib/client";
 import { MAP_LANDMARKS, MAP_ZONES } from "@/config/plantLayout";
@@ -34,7 +35,10 @@ const kstClock = new Intl.DateTimeFormat("ko-KR", {
 });
 
 const pct = (b: { x: number; y: number; w: number; h: number }) => ({ left: `${b.x}%`, top: `${b.y}%`, width: `${b.w}%`, height: `${b.h}%` });
-const stateText = (s: LineState) => (s.state === "OPEN" ? "발생 OPEN" : STATUS_LABEL[s.lead!.status].ko + " " + (s.lead!.status === "ACKNOWLEDGED" ? "ACK" : "IN ACTION"));
+const stateText = (s: LineState) =>
+  s.state === "OPEN"
+    ? "발생 OPEN"
+    : `${STATUS_LABEL[s.lead!.status].ko}${s.lead!.acknowledgedBy ? ` · ${s.lead!.acknowledgedBy}` : ` ${s.lead!.status === "ACKNOWLEDGED" ? "ACK" : "IN ACTION"}`}`;
 
 function LineTile({ line, st, now, compact, sub, tone }: { line: MapLine; st: LineState | undefined; now: number; compact?: boolean; sub?: string; tone?: string }) {
   if (!st) {
@@ -51,7 +55,7 @@ function LineTile({ line, st, now, compact, sub, tone }: { line: MapLine; st: Li
     return (
       <Link href={`/respond/${encodeURIComponent(e.id)}`} className={`pm-line pm-done${compact ? " pm-chip" : ""}`} data-line={line.code} data-state="DONE" title={`${line.name} · 완료 ${fmtTime(e.closedAt!)}`}>
         <span className="pm-name">{line.name}</span>
-        <span className="pm-state">✔ 완료 {fmtTime(e.closedAt!)}</span>
+        <span className="pm-state">✔ 완료 {fmtTime(e.closedAt!)}{e.closedBy ? ` · ${e.closedBy}` : ""}</span>
       </Link>
     );
   }
@@ -172,7 +176,7 @@ export default function PlantMapPage() {
                   <span className="fs-line">{e.lineName}</span>
                   <span className="fs-meta">
                     <i className={`fs-dot pm-c-${categoryKey(e.categoryCode)}`} />
-                    {e.categoryName} · {e.status === "OPEN" ? "발생" : `${e.departments.map((d) => d.code).join("·")} ${STATUS_LABEL[e.status].ko}`}
+                    {e.categoryName} · {e.status === "OPEN" ? "발생" : `${e.departments.map((d) => d.code).join("·")} ${STATUS_LABEL[e.status].ko}${e.acknowledgedBy ? ` · ${e.acknowledgedBy}` : ""}`}
                   </span>
                   <span className="fs-time">{formatElapsed(elapsedSeconds(e, now))}</span>
                 </Link>
@@ -189,7 +193,7 @@ export default function PlantMapPage() {
                       <span className="fs-line">{e.lineName}</span>
                       <span className="fs-meta">
                         <i className={`fs-dot pm-c-${categoryKey(e.categoryCode)}`} />
-                        {e.categoryName} · 완료 {fmtTime(e.closedAt!)}
+                        {e.categoryName} · 완료 {fmtTime(e.closedAt!)}{e.closedBy ? ` · ${e.closedBy}` : ""}
                       </span>
                       <span className="fs-time">{formatElapsed(elapsedSeconds(e, now))}</span>
                     </Link>
