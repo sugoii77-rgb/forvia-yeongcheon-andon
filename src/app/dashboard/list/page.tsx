@@ -9,9 +9,10 @@ interface BoardResponse {
   serverTime: string;
 }
 
-const POLL_MS = 2000;
+// 5 s (2026-10-08): the shop-floor PC runs on LTE — about 2.5× less data and server requests than 2 s
+const POLL_MS = 5000;
 /** Show "disconnected" once no successful poll for this long. */
-const STALE_MS = 10000;
+const STALE_MS = 20000; // ~3 missed updates before the "disconnected" warning
 
 const kstClock = new Intl.DateTimeFormat("ko-KR", {
   timeZone: "Asia/Seoul",

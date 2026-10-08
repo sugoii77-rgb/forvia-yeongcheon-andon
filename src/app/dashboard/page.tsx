@@ -17,8 +17,9 @@ interface BoardResponse {
   shift?: PublicShift;
 }
 
-const POLL_MS = 2000;
-const STALE_MS = 10000;
+// 5 s (2026-10-08): the shop-floor PC runs on LTE — about 2.5× less data and server requests than 2 s
+const POLL_MS = 5000;
+const STALE_MS = 20000; // ~3 missed updates before the "disconnected" warning
 const META_MS = 5 * 60_000;
 
 const kstClock = new Intl.DateTimeFormat("ko-KR", {

@@ -35,7 +35,7 @@ Worker detects issue → creates ANDON → event stored → dashboard turns RED
 ## 3. Current architecture
 
 ```
- Operator tablet/phone ─┐                         ┌─ Live dashboard (big monitor, polls every 2 s)
+ Operator tablet/phone ─┐                         ┌─ Live dashboard (big monitor, polls every 5 s)
  Responder phone ───────┼── HTTP (plant LAN) ──►  │
  Manager PC ────────────┘                         │
                          ┌────────────────────────┴──────────────────────────┐
@@ -65,7 +65,7 @@ Worker detects issue → creates ANDON → event stored → dashboard turns RED
   and a **private Vercel Blob** store instead of `data/uploads/`. Selected only by environment
   variables (`TURSO_DATABASE_URL`, `BLOB_READ_WRITE_TOKEN`); see §9 "Vercel deployment".
   `src/lib/server/sql.ts` hides the two database drivers behind one async API.
-- **Real-time = polling** (dashboard 2 s, responder list 3 s, detail 5 s). Simple and survives
+- **Real-time = polling** (dashboard 5 s — LTE shop-floor PC, 2026-10-08; responder list 3 s, detail 5 s). Simple and survives
   server restarts/network hiccups without reconnection logic. SSE can be added later if needed.
 - **History is append-only**: `andon_transition` rows can't be updated or deleted (SQLite triggers).
 - **Authentication (2B):** local accounts (e-mail + password, scrypt) and server-side sessions
@@ -673,7 +673,7 @@ data intact, operator retry succeeds ✔ · backup script ✔.
   - **Hobby plan = non-commercial use only.** Company use needs Vercel Pro (and a Turso plan check).
   - **Public URL with open registration:** anyone who finds the URL can register a RESPONDER account
     and see the dashboard. Before sharing it widely: Vercel Deployment Protection or an access gate.
-  - **Polling cost:** each open dashboard makes ~1,800 requests/hour (2 s polling). Several monitors
+  - **Polling cost:** each open dashboard makes ~720 requests/hour (5 s polling). Several monitors
     left open all day can exhaust free-tier function / Turso quotas — keep the plant monitor on the
     plant server.
   - **Latency:** functions and DB are in the US east (`iad1` / `aws-us-east-1`): ~0.5–0.6 s per warm
