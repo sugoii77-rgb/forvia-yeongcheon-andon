@@ -200,8 +200,7 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
             {!viewer && (
               <div className="alert alert-warn">
                 조치하려면 로그인하세요.{" "}
-                <Link href={`/login?next=${encodeURIComponent(`/respond/${e.id}`)}`}>로그인</Link> ·{" "}
-                <Link href={`/register?next=${encodeURIComponent(`/respond/${e.id}`)}`}>회원가입</Link>
+                <Link href={`/login?next=${encodeURIComponent(`/respond/${e.id}`)}`}>로그인</Link>
               </div>
             )}
             {viewer && (

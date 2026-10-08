@@ -18,6 +18,7 @@ const health = await realFetch(`${base}/api/health`).then((r) => r.json());
 assert.equal(path.resolve(health.db), path.resolve(process.env.DATABASE_PATH), "Test server must use the isolated test DB");
 
 // Explicitly fake values, process-local only. No .env writes.
+process.env.ALLOW_SELF_REGISTRATION = "true"; // onboarding of new employees (closed in production)
 process.env.GOOGLE_CLIENT_ID = "test-client.invalid";
 process.env.GOOGLE_CLIENT_SECRET = crypto.randomBytes(24).toString("hex");
 process.env.GOOGLE_REDIRECT_URI = `${base}/api/auth/google/callback`;

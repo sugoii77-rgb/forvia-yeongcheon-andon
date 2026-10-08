@@ -8,12 +8,19 @@ import { GoogleLogin } from "@/components/GoogleLogin";
 
 export default function RegisterPage() {
   const [departments, setDepartments] = useState<MasterData["departments"]>([]);
+  const [open, setOpen] = useState<boolean | null>(null);
   const [form, setForm] = useState({ name: "", email: "", department: "", password: "", passwordConfirm: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api<MasterData>("/api/meta").then((m) => setDepartments(m.departments), (e: Error) => setError(e.message));
+    api<MasterData>("/api/meta").then(
+      (m) => {
+        setDepartments(m.departments);
+        setOpen(m.selfRegistration);
+      },
+      (e: Error) => setError(e.message),
+    );
   }, []);
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -46,7 +53,20 @@ export default function RegisterPage() {
       <TopBar />
       <main className="page" style={{ maxWidth: 520 }}>
         <h1>회원가입 <span className="muted" style={{ fontSize: 16 }}>Register</span></h1>
-        <GoogleLogin />
+        {open === false && (
+          <div className="card" data-testid="registration-closed">
+            <p>
+              <b>회원가입은 받지 않습니다.</b> 계정은 관리자가 미리 만들어 두었습니다. <b>사번</b>(사번이 없으면 안내받은
+              이메일)과 안내받은 임시 비밀번호로 로그인하세요.
+            </p>
+            <p className="muted" style={{ fontSize: 14 }}>
+              비밀번호를 잊었으면 로그인 화면의 &lsquo;비밀번호를 잊으셨나요?&rsquo;를, 계정이 없으면 시스템 담당자 오영환 책임(QC)에게 문의하세요.
+            </p>
+            <Link className="btn btn-primary" href="/login">로그인으로</Link>
+          </div>
+        )}
+        {open && <GoogleLogin />}
+        {open && (
         <form className="card" onSubmit={submit}>
           <div className="field">
             <label htmlFor="name">이름</label>
@@ -86,6 +106,7 @@ export default function RegisterPage() {
             {busy ? "등록 중…" : "회원가입"}
           </button>
         </form>
+        )}
         <p style={{ marginTop: 16 }}>
           이미 계정이 있으신가요? <Link href="/login">로그인</Link>
         </p>

@@ -25,7 +25,7 @@ export default function RespondListPage() {
         {loaded && !user && (
           <div className="alert alert-warn">
             조치(접수·조치·완료)하려면 로그인하세요.{" "}
-            <Link href="/login?next=/respond">로그인</Link> · <Link href="/register">회원가입</Link>
+            <Link href="/login?next=/respond">로그인</Link>
           </div>
         )}
         {user && (

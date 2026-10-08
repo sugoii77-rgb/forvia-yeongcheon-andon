@@ -102,7 +102,23 @@ export interface RegistrationInput {
  * Self-registration. The role is ALWAYS RESPONDER and the account is active; any role sent by the
  * client is ignored. Department must be one of the active operational departments.
  */
+/**
+ * Self-registration (회원가입) is CLOSED unless ALLOW_SELF_REGISTRATION=true (plant decision 2026-10-08: accounts
+ * are created by the administrator — import / masterdata — and people log in with their 사번; self-registered
+ * duplicates could not call). Test servers set the flag; existing logins are unaffected.
+ */
+export function selfRegistrationOpen(): boolean {
+  return (process.env.ALLOW_SELF_REGISTRATION || "").trim().toLowerCase() === "true";
+}
+
+export function assertSelfRegistrationOpen() {
+  if (!selfRegistrationOpen()) {
+    throw new AndonError(403, "회원가입은 받지 않습니다. 계정은 관리자가 만듭니다 — 사번으로 로그인하세요. (문의: 시스템 담당자 오영환 책임)", "REGISTRATION_CLOSED");
+  }
+}
+
 export async function registerUser(input: RegistrationInput): Promise<PublicUser> {
+  assertSelfRegistrationOpen();
   const name = String(input.name ?? "").trim().replace(/\s+/g, " ");
   const email = normalizeEmail(input.email);
   const department = String(input.department ?? "").trim();
