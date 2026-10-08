@@ -305,6 +305,59 @@ try {
     assert.equal(await has("PCL", ids.pclEng), true);
     await db.run(`UPDATE app_user SET active = 0 WHERE id IN (${Object.values(ids).join(",")})`);
   });
+  // ---- self-service password reset with a code sent to the own KakaoTalk (bob is linked to 9000001 now)
+  const reset = await import("../src/lib/server/passwordReset.ts");
+  const ra = { deviceId: null, clientIp: "10.0.0.9", userAgent: "reset-test" };
+  const bobLogin = `bob-${crypto.randomBytes(3).toString("hex")}@andon.test`;
+  await db.run("INSERT INTO user_identity (user_id, provider, subject, password_hash, created_at) VALUES (?, 'LOCAL', ?, ?, ?)", bob.id, bobLogin, await auth.hashPassword("OldPass123"), nowIso());
+  await db.run("INSERT INTO user_identity (user_id, provider, subject, password_hash, created_at) VALUES (?, 'LOCAL', ?, ?, ?)", carol.id, `carol-${bobLogin}`, await auth.hashPassword("OldPass123"), nowIso());
+  const lastCode = () => /인증번호: (\d{6})/.exec(memos.at(-1)?.template.text ?? "")?.[1];
+  await check("reset: unknown login / login without Kakao → same answer, nothing sent", async () => {
+    const n = memos.length;
+    const a = await reset.requestPasswordReset("nobody@andon.test", BASE, ra);
+    const b = await reset.requestPasswordReset(`carol-${bobLogin}`, BASE, ra);
+    assert.equal(a, b);
+    assert.equal(memos.length, n);
+    assert.equal(await db.get("SELECT 1 FROM password_reset_code WHERE user_id = ?", carol.id), undefined);
+  });
+  await check("reset: code goes to the own KakaoTalk only; only its hash is stored", async () => {
+    await reset.requestPasswordReset(bobLogin, BASE, ra);
+    const code = lastCode()!;
+    assert.match(code, /^\d{6}$/);
+    assert.equal(memos.at(-1)!.kakaoId, "9000001");
+    const row = (await db.get("SELECT code_hash FROM password_reset_code WHERE user_id = ?", bob.id))!;
+    assert.ok(!String(row.code_hash).includes(code));
+  });
+  await check("reset: wrong code rejected; right code sets the new password and ends all sessions", async () => {
+    const code = lastCode()!;
+    const wrong = code === "000000" ? "111111" : "000000";
+    await rejectsCode(() => reset.confirmPasswordReset({ login: bobLogin, code: wrong, newPassword: "NewPass456", newPasswordConfirm: "NewPass456" }, ra), "INVALID_RESET_CODE");
+    await rejectsCode(() => reset.confirmPasswordReset({ login: bobLogin, code, newPassword: "short", newPasswordConfirm: "short" }, ra), "INVALID_PASSWORD");
+    await reset.confirmPasswordReset({ login: bobLogin, code, newPassword: "NewPass456", newPasswordConfirm: "NewPass456" }, ra);
+    assert.equal((await auth.authenticate(bobLogin, "NewPass456", ra)).id, bob.id);
+    await assert.rejects(() => auth.authenticate(bobLogin, "OldPass123", { ...ra, clientIp: "10.0.0.10" }));
+    assert.equal(await auth.getSessionUser(req("/", bob.cookie)), null, "old session ended");
+    await rejectsCode(() => reset.confirmPasswordReset({ login: bobLogin, code, newPassword: "Again789x", newPasswordConfirm: "Again789x" }, ra), "INVALID_RESET_CODE");
+  });
+  await check("reset: works with the 사번 too; expired code rejected", async () => {
+    await db.run("UPDATE app_user SET employee_id = ? WHERE id = ?", "77001234", bob.id);
+    await reset.requestPasswordReset("77001234", BASE, ra);
+    const code = lastCode()!;
+    await db.run("UPDATE password_reset_code SET expires_at = ? WHERE user_id = ?", new Date(Date.now() - 1000).toISOString(), bob.id);
+    await rejectsCode(() => reset.confirmPasswordReset({ login: "77001234", code, newPassword: "Emp12345x", newPasswordConfirm: "Emp12345x" }, ra), "INVALID_RESET_CODE");
+    await reset.requestPasswordReset("77001234", BASE, ra);
+    await reset.confirmPasswordReset({ login: "77001234", code: lastCode()!, newPassword: "Emp12345x", newPasswordConfirm: "Emp12345x" }, ra);
+    assert.equal((await auth.authenticate("77001234", "Emp12345x", ra)).id, bob.id);
+  });
+  await check("reset: after 5 wrong codes even the right code is refused", async () => {
+    await reset.requestPasswordReset(bobLogin, BASE, { ...ra, clientIp: "10.0.0.11" });
+    const code = lastCode()!;
+    const wrong = code === "000000" ? "111111" : "000000";
+    for (let i = 0; i < 5; i++) {
+      await reset.confirmPasswordReset({ login: bobLogin, code: wrong, newPassword: "Lock1234x", newPasswordConfirm: "Lock1234x" }, { ...ra, clientIp: `10.0.1.${i}` }).catch(() => {});
+    }
+    await rejectsCode(() => reset.confirmPasswordReset({ login: bobLogin, code, newPassword: "Lock1234x", newPasswordConfirm: "Lock1234x" }, { ...ra, clientIp: "10.0.2.1" }), "INVALID_RESET_CODE");
+  });
   await check("not configured → 503 and status configured=false", async () => {
     const k = process.env.KAKAO_REST_API_KEY;
     delete process.env.KAKAO_REST_API_KEY;
