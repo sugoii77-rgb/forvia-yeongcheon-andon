@@ -6,7 +6,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Digital ANDON · 영천",
     short_name: "ANDON",
     description: "FORVIA 영천공장 Digital ANDON — 호출, 조치, 현황판",
-    start_url: "/",
+    start_url: "/start", // GL / SV open the call screen directly (src/app/start/route.ts)
     scope: "/",
     display: "standalone",
     orientation: "portrait",

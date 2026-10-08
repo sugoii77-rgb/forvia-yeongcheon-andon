@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { TopBar } from "@/components/TopBar";
+import { AppLaunchRedirect } from "@/components/AppLaunchRedirect";
 
 export default function Home() {
   return (
     <>
       <TopBar />
+      <AppLaunchRedirect />
       <main className="page">
         <h1>Digital ANDON · 영천공장</h1>
         <div className="tiles">
