@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { TopBar } from "@/components/TopBar";
 import { AppLaunchRedirect } from "@/components/AppLaunchRedirect";
+import { SetupTile } from "@/components/SetupTile";
 
 export default function Home() {
   return (
@@ -25,6 +26,7 @@ export default function Home() {
           <a href="/manual.html" className="tile">
             <strong>사용 매뉴얼</strong>Manual · 호출 · 조치 · 카카오 알림
           </a>
+          <SetupTile />
         </div>
       </main>
     </>
