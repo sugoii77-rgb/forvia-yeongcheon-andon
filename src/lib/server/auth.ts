@@ -65,7 +65,7 @@ export function validatePassword(password: string) {
 // ---------------------------------------------------------------- users
 
 const PUBLIC_USER_SELECT = `
-SELECT u.id, u.employee_id, u.name, u.email, u.department_code, u.role, u.active, r.name_ko AS role_name, r.can_respond,
+SELECT u.id, u.employee_id, u.name, u.email, u.department_code, u.role, u.active, u.team_leader, r.name_ko AS role_name, r.can_respond,
        EXISTS(SELECT 1 FROM user_identity i WHERE i.user_id=u.id AND i.provider='GOOGLE') AS google_linked
 FROM app_user u JOIN role r ON r.code = u.role`;
 
@@ -82,6 +82,7 @@ function toPublicUser(r: Record<string, unknown>, labels: Map<string, string>): 
     roleName: r.role_name as string,
     active: r.active === 1,
     canRespond: r.active === 1 && r.can_respond === 1,
+    teamLeader: r.team_leader === 1,
   };
 }
 
