@@ -161,6 +161,25 @@ try {
     assert.ok(!log.some((l) => (l.recipient as string).startsWith("[TEST] Push B")), "no push log for users without a device");
   });
 
+  await check("new-ANDON push carries the one-tap button (MT → '수리 시작'); not once acknowledged; never on other notices", async () => {
+    received.length = 0;
+    const ev = await mk("[TEST] 원탭 접수");
+    await notify.notifyAndonCreated(ev);
+    const mine = received.filter((m) => devices.get(m.endpoint) === phoneA || devices.get(m.endpoint) === pcA);
+    assert.ok(mine.length > 0);
+    const want = effDept === "MT" ? "수리 시작" : "접수";
+    for (const m of mine) assert.deepEqual((m.payload as unknown as { ack: unknown }).ack, { eventId: ev.id, title: want });
+    // acknowledged → a re-sent notice offers no button
+    await andon.transitionEvent(ev.id, { action: "ACKNOWLEDGE", userId: alice.id, audit });
+    received.length = 0;
+    await notify.sendToRecipients(ev.id, [{ userId: alice.id, name: "[TEST] Push A", departmentCode: effDept, address: null }], { ...notify.buildAndonMessage(ev) });
+    for (const m of received) assert.equal((m.payload as unknown as { ack: unknown }).ack, null);
+    // completion notices never carry it
+    received.length = 0;
+    await notify.sendToRecipients(ev.id, [{ userId: alice.id, name: "[TEST] Push A", departmentCode: effDept, address: null }], { title: "t", body: "b", link: BASE });
+    for (const m of received) assert.equal((m.payload as unknown as { ack: unknown }).ack, null);
+  });
+
   await check("device gone (410) → removed; other device still delivered", async () => {
     phoneA.status = 410;
     received.length = 0;
