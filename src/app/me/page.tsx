@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { TopBar } from "@/components/TopBar";
 import { api, useMe } from "@/lib/client";
-import { OWNERSHIP_VIEW_ROLES } from "@/lib/domain";
+import { OWNERSHIP_VIEW_ROLES, canViewSetupStatus } from "@/lib/domain";
 import { GoogleLogin } from "@/components/GoogleLogin";
 import { KakaoNotify } from "@/components/KakaoNotify";
 import { PasswordChange } from "@/components/PasswordChange";
@@ -78,6 +78,7 @@ export default function MePage() {
               {user.active && OWNERSHIP_VIEW_ROLES.includes(user.role) && (
                 <Link className="btn" href="/admin/shifts">근무조 (A/B)</Link>
               )}
+              {canViewSetupStatus(user) && <Link className="btn" href="/admin/setup">설정 현황 (로그인·카카오·알림음)</Link>}
               <button className="btn" onClick={logout} disabled={busy}>
                 {busy ? "로그아웃 중…" : "로그아웃"}
               </button>

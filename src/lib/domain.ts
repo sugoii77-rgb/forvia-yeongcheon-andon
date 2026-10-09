@@ -86,6 +86,8 @@ export interface PublicUser {
   roleName: string;
   active: boolean;
   canRespond: boolean;
+  /** 팀장 (v9): receives the 2-hour escalation; may view the setup-status page. */
+  teamLeader?: boolean;
 }
 
 /** How the responsible department of an event was determined (see src/lib/routing.ts). */
@@ -220,6 +222,26 @@ export const UAP_LABEL = "UAP · 생산";
 
 /** Roles that may see the line ownership master (/admin/lines). Assigned by an administrator only. */
 export const OWNERSHIP_VIEW_ROLES: readonly RoleCode[] = ["GAP_LEADER", "SUPERVISOR", "ENGINEER", "PLANT_MANAGER"];
+
+/** Who may open the setup-status page (/admin/setup): the ownership roles and every 팀장. */
+export function canViewSetupStatus(u: { active: boolean; role: RoleCode; teamLeader?: boolean } | null | undefined): boolean {
+  return !!u && u.active && (OWNERSHIP_VIEW_ROLES.includes(u.role) || !!u.teamLeader);
+}
+
+/** One employee on the setup-status page: names and states only — no e-mail, phone or KakaoTalk id. */
+export interface SetupStatusPerson {
+  id: number;
+  name: string;
+  departmentCode: string;
+  departmentLabel: string;
+  roleName: string;
+  teamLeader: boolean;
+  lastLoginAt: string | null;
+  lastSeenAt: string | null;
+  kakaoLinkedAt: string | null;
+  pushDevices: number;
+  pushSince: string | null;
+}
 
 /** A person in line-ownership data: id and name only — never contact fields. */
 export interface LinePerson {
