@@ -19,14 +19,42 @@ self.addEventListener("push", (e) => {
       vibrate: [400, 150, 400, 150, 400],
       icon: "/pwa/icon-192.png",
       badge: "/pwa/icon-192.png",
-      data: { url: d.url || "/" },
+      data: { url: d.url || "/", ack: d.ack || null },
+      // one-tap acknowledge (Android / desktop Chrome; iPhone shows no buttons — a tap opens the page)
+      actions: d.ack ? [{ action: "ack", title: d.ack.title }] : [],
       lang: "ko",
     }),
   );
 });
 
+// [접수] / [수리 시작] tapped: acknowledge with this device's own session, then confirm with a notification.
+async function acknowledge(n) {
+  const { ack, url } = n.data || {};
+  const done = (title, body, openUrl) =>
+    self.registration.showNotification(title, { body, tag: n.tag || undefined, icon: "/pwa/icon-192.png", badge: "/pwa/icon-192.png", data: { url: openUrl || url }, lang: "ko" });
+  try {
+    const res = await fetch(`/api/andons/${encodeURIComponent(ack.eventId)}/transition`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", "x-andon-device": "push-action" },
+      body: JSON.stringify({ action: "ACKNOWLEDGE" }),
+    });
+    if (res.ok) return done(`✔ ${ack.title} 완료`, `${n.title.replace(/^\[ANDON 발생\]\s*/, "")}\n탭하면 상세 화면이 열립니다.`);
+    const err = await res.json().catch(() => ({}));
+    if (res.status === 401) return self.clients.openWindow(`/login?next=${encodeURIComponent(new URL(url, self.location.origin).pathname)}`);
+    if (res.status === 409) return done("이미 처리된 ANDON입니다", "다른 담당자가 먼저 접수했거나 이미 완료되었습니다.\n탭하면 상세 화면이 열립니다.");
+    return done(`${ack.title}하지 못했습니다`, (err.error || `오류 ${res.status}`) + "\n탭하면 상세 화면이 열립니다.");
+  } catch {
+    return done(`${ack.title}하지 못했습니다`, "네트워크를 확인하세요. 탭하면 상세 화면이 열립니다.");
+  }
+}
+
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
+  if (e.action === "ack" && e.notification.data && e.notification.data.ack) {
+    e.waitUntil(acknowledge(e.notification));
+    return;
+  }
   const url = new URL((e.notification.data && e.notification.data.url) || "/", self.location.origin);
   if (url.origin !== self.location.origin) return;
   e.waitUntil(

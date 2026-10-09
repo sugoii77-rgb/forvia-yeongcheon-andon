@@ -20,6 +20,8 @@ export interface NotificationMessage {
   title: string;
   body: string;
   link: string;
+  /** New-ANDON notices only: offer the one-tap [접수] button on phone push (see ackButtonFor). */
+  ackable?: boolean;
 }
 
 export interface NotificationProvider {
@@ -78,7 +80,24 @@ export function buildAndonMessage(event: AndonEvent): NotificationMessage {
     title: `[ANDON 발생] ${event.lineName} / ${event.processName}`,
     body: `${event.id} · ${event.categoryName} · ${event.description}`,
     link: `${base}/respond/${encodeURIComponent(event.id)}`,
+    ackable: true,
   };
+}
+
+/**
+ * The [접수] button of a new-ANDON push, for recipients who actually respond: members of a called department
+ * other than UAP (UAP people are told for information) — unless UAP is the only department called (ME_* →
+ * UAP), then UAP responds. MT says "수리 시작" (its acknowledge). Only while the event is still OPEN
+ * (preventive maintenance starts acknowledged).
+ */
+async function ackButtonFor(eventId: string, r: NotificationRecipient): Promise<{ eventId: string; title: string } | undefined> {
+  const ev = await db.get("SELECT status, department_code FROM andon_event WHERE id = ?", eventId);
+  if (!ev || ev.status !== "OPEN") return undefined;
+  const { eventDepartmentCodes } = await import("../andonService.ts");
+  const deps = await eventDepartmentCodes(eventId, ev.department_code as string);
+  const responding = deps.length > 1 ? deps.filter((d) => d !== "UAP") : deps;
+  if (!responding.includes(r.departmentCode)) return undefined;
+  return { eventId, title: r.departmentCode === "MT" ? "수리 시작" : "접수" };
 }
 
 /**
@@ -200,7 +219,8 @@ async function deliver(p: NotificationProvider, eventId: string, r: Notification
   })();
   const push = (async () => {
     try {
-      const res = await sendPushTo(r.userId, { ...message, tag: eventId });
+      const ack = message.ackable ? await ackButtonFor(eventId, r) : undefined;
+      const res = await sendPushTo(r.userId, { title: message.title, body: message.body, link: message.link, tag: eventId, ack });
       if (res.devices === 0) return false;
       await logAttempt(eventId, "push", `${r.name} (${res.sent}/${res.devices})`, res.sent > 0 ? "SENT" : "FAILED", text, res.sent > 0 ? null : res.error);
       return res.sent > 0;

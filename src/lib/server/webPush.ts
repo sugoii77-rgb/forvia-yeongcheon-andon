@@ -20,6 +20,12 @@ export interface PushMessage {
   link: string;
   /** Same tag = the newer notification replaces the older one (one per ANDON). */
   tag?: string;
+  /**
+   * One-tap acknowledge from the notification (2026-10-09): the service worker shows a button with this
+   * title and, when tapped, sends ACKNOWLEDGE for `eventId` with the device's own session. The server still
+   * checks the user's right to acknowledge, exactly as on the respond page.
+   */
+  ack?: { eventId: string; title: string };
 }
 
 const PUSH_HOSTS = [
@@ -120,7 +126,7 @@ export async function sendPushTo(userId: number, m: PushMessage): Promise<{ sent
     id: number; endpoint: string; p256dh: string; auth: string;
   }[];
   if (!v || subs.length === 0) return { sent: 0, devices: subs.length, error: v ? null : "PUSH_NOT_CONFIGURED" };
-  const payload = JSON.stringify({ title: m.title, body: m.body, url: m.link, tag: m.tag ?? null });
+  const payload = JSON.stringify({ title: m.title, body: m.body, url: m.link, tag: m.tag ?? null, ack: m.ack ?? null });
   let sent = 0;
   let lastError: string | null = null;
   await Promise.all(
