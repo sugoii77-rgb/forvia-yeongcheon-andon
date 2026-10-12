@@ -60,6 +60,9 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   font-size: 15px;
 }
 .topbar nav a.active, .topbar nav a:hover { background: rgba(255, 255, 255, 0.16); opacity: 1; }
+/* name + gear = one button to 내 정보 / settings */
+.topbar nav a.tb-me { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid rgba(255, 255, 255, 0.35); opacity: 1; }
+.topbar nav a.tb-me .tb-gear { flex: none; }
 /* Narrow phones (plant feedback 2026-10-09: the menu had to be swiped sideways): the menu wraps onto its own
    rows under the title, every item visible, evenly sized. The bar scrolls away with the page there, so the
    taller bar does not eat the small screen. */
