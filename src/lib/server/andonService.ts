@@ -225,7 +225,8 @@ export async function listEvents(opts: ListOptions = {}): Promise<AndonEvent[]> 
   } else if (opts.scope === "board") {
     // plant meeting 2026-10-07: a completed ANDON stays on the board (green) for 24 hours
     const since = new Date(Date.now() - (opts.recentClosedMinutes ?? 24 * 60) * 60_000).toISOString();
-    where.push(`(e.status IN (${active}) OR e.closed_at >= ?)`);
+    // test events closed by the administrator ('[TEST] …' note) leave the board at once (history keeps them)
+    where.push(`(e.status IN (${active}) OR (e.closed_at >= ? AND COALESCE(e.corrective_action, '') NOT LIKE '[TEST]%'))`);
     params.push(since);
   }
   // an event belongs to every department of its call (v9) — or to its single department_code
