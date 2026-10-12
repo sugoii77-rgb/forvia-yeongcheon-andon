@@ -191,7 +191,7 @@ export function PushNotify() {
         <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>
           <b>안드로이드만 가능</b> (아이폰은 기본 알림음만 됩니다). ① [알림음 받기] → ② 휴대폰 설정 → 애플리케이션 → <b>ANDON</b>
           (없으면 Chrome → 알림 → 사이트) → 알림 → <b>소리</b> → 오른쪽 위 <b>+</b> 또는 &lsquo;내 파일&rsquo;에서 다운로드 폴더의
-          ANDON-알림음 선택 → ③ 위의 [테스트 알림]으로 확인.
+          ANDON-알림음 선택 → ③ 위의 [테스트 알림]으로 확인. 자세한 방법은 상단 메뉴 <a href="/help#sound">도움말</a>.
         </p>
       </details>
     </div>

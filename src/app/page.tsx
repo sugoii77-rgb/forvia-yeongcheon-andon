@@ -23,6 +23,9 @@ export default function Home() {
           <Link href="/history" className="tile">
             <strong>이력 / 통계</strong>History &amp; analytics
           </Link>
+          <Link href="/help" className="tile">
+            <strong>도움말</strong>동영상 · 빠른 시작 · 알림음 받기
+          </Link>
           <a href="/manual.html" className="tile">
             <strong>사용 매뉴얼</strong>Manual · 호출 · 조치 · 카카오 알림
           </a>
