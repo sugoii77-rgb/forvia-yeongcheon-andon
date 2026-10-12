@@ -180,6 +180,20 @@ export function PushNotify() {
           </button>
         )}
       </div>
+      <details style={{ marginTop: 12 }}>
+        <summary style={{ cursor: "pointer", fontWeight: 700 }}>ANDON 전용 알림음 (딩동 + &ldquo;안돈 호출입니다&rdquo;)</summary>
+        <div className="row" style={{ marginTop: 8, flexWrap: "wrap", gap: 6 }}>
+          <button className="btn" type="button" onClick={() => new Audio("/andon-alert.mp3").play().catch(() => {})}>
+            ▶ 미리 듣기
+          </button>
+          <a className="btn" href="/andon-alert.mp3" download="ANDON-알림음.mp3">알림음 받기</a>
+        </div>
+        <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>
+          <b>안드로이드만 가능</b> (아이폰은 기본 알림음만 됩니다). ① [알림음 받기] → ② 휴대폰 설정 → 애플리케이션 → <b>ANDON</b>
+          (없으면 Chrome → 알림 → 사이트) → 알림 → <b>소리</b> → 오른쪽 위 <b>+</b> 또는 &lsquo;내 파일&rsquo;에서 다운로드 폴더의
+          ANDON-알림음 선택 → ③ 위의 [테스트 알림]으로 확인.
+        </p>
+      </details>
     </div>
   );
 }
