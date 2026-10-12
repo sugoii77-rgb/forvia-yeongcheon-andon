@@ -99,7 +99,7 @@ export default function RegisterPage() {
           </div>
           <p className="muted" style={{ fontSize: 14 }}>
             가입하면 선택한 부서의 <strong>담당자(RESPONDER)</strong>로 등록되어 해당 부서 ANDON을 조치할 수 있습니다.
-            GAP 리더·감독자 등 다른 역할은 관리자가 지정합니다.
+            GAP 리더·슈퍼 등 다른 역할은 관리자가 지정합니다.
           </p>
           {error && <div className="alert alert-error" role="alert">{error}</div>}
           <button className="btn btn-primary btn-big btn-block" disabled={busy}>

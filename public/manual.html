@@ -196,7 +196,7 @@ code.mono { font-family: var(--font-mono); font-size: 14px; background: var(--na
       <li><div class="t">계정이 없는 분</div><div class="d">시스템 담당자 오영환 책임(QC)에게 계정 등록을 요청하세요. 품질팀 등 명단에 없는 분은 <span class="btnlike o">회원가입</span>에서 이름·이메일·비밀번호·<b>내 부서</b>를 넣어 직접 만들 수 있습니다.</div></li>
       
     </ol>
-    <div class="note"><strong>역할은 관리자가 정합니다.</strong> 가입하면 모두 &lsquo;담당자&rsquo;로 시작합니다. GAP 리더·감독자(SV)는 관리자가 역할을 바꿔야 ANDON을 호출할 수 있습니다. 비밀번호를 잊으면 시스템 담당자 오영환 책임(QC)에게 재설정을 요청하세요.</div>
+    <div class="note"><strong>역할은 관리자가 정합니다.</strong> 가입하면 모두 &lsquo;담당자&rsquo;로 시작합니다. GAP 리더·슈퍼(SV)는 관리자가 역할을 바꿔야 ANDON을 호출할 수 있습니다. 비밀번호를 잊으면 시스템 담당자 오영환 책임(QC)에게 재설정을 요청하세요.</div>
 
     <div class="sec-head"><h2>3. 카카오톡 알림 연결</h2></div>
     <ol class="steps">
@@ -217,11 +217,11 @@ code.mono { font-family: var(--font-mono); font-size: 14px; background: var(--na
   </section>
 
   <section id="call" aria-labelledby="h-call">
-    <div class="sec-head"><span class="who">GAP 리더 · 감독자</span><h2 id="h-call">4. ANDON 호출하기</h2></div>
+    <div class="sec-head"><span class="who">GAP 리더 · 슈퍼</span><h2 id="h-call">4. ANDON 호출하기</h2></div>
     <p>작업자가 해결하지 못한 문제는 GAP 리더를 부르고, GAP 리더가 상황을 보고 조치부서를 호출합니다. GL · SV는 <b>로그인하면 바로 호출 화면</b>이 열립니다 (다른 화면에서는 첫 화면의 <span class="btnlike">ANDON 호출</span>). <b>보통 2~3번 누르면 끝납니다.</b></p>
     <ol class="steps">
       <li><div class="t">라인 누르기 <span class="muted">(담당 라인이 하나면 자동 선택 — 생략)</span></div><div class="d">맨 위 <b>내 담당 라인</b>에서 고릅니다. 다른 라인은 <span class="btnlike o">다른 라인 보기 (전체)</span>.</div></li>
-      <li><div class="t">상황 누르기</div><div class="d">아래 표의 상황 버튼을 누르면 이상 유형, 조치부서, 받는 사람(부서원 전원 · SV는 그 라인 감독자)이 <b>자동으로</b> 정해집니다. 여러 상황을 함께 누를 수도 있습니다.</div></li>
+      <li><div class="t">상황 누르기</div><div class="d">아래 표의 상황 버튼을 누르면 이상 유형, 조치부서, 받는 사람(부서원 전원 · SV는 그 라인 슈퍼)이 <b>자동으로</b> 정해집니다. 여러 상황을 함께 누를 수도 있습니다.</div></li>
       <li class="red"><div class="t">화면 아래 <span class="btnlike red">ANDON CALL</span> 누르기</div><div class="d">버튼 위에 &ldquo;FRT · Robot Fault → MT 3명&rdquo;처럼 누구에게 가는지 보입니다. ANDON 번호가 표시되면 완료 — 현황판에 바로 뜨고 선택된 사람에게 카카오톡이 갑니다.</div></li>
       <li class="green"><div class="t">&lsquo;접수 완료&rsquo; 알림을 기다리기</div><div class="d">조치부서 담당자가 접수하면 <b>호출한 사람에게 카카오톡·휴대폰 알림</b>이 옵니다 &mdash; &ldquo;[ANDON 접수 완료] FRT · Robot Fault / MT · 보전 홍길동님이 10:42에 접수했습니다&rdquo; (설비는 &lsquo;수리 시작&rsquo;). 조치가 끝나 완료되면 &lsquo;완료&rsquo; 알림도 옵니다. 알림이 없으면 아직 아무도 접수하지 않은 것이니 현황판을 확인하세요.</div></li>
     </ol>
@@ -326,7 +326,7 @@ https://forvia-yeongcheon-andon.vercel.app/respond/AND-20261006-001</div>
   <section aria-labelledby="h-faq">
     <div class="sec-head"><h2 id="h-faq">8. 이럴 땐 이렇게</h2></div>
     <div class="faq">
-      <details><summary>ANDON 호출 화면에 &ldquo;호출할 수 없습니다&rdquo;가 나와요</summary><p>호출은 GAP 리더·감독자 역할만 할 수 있습니다. 시스템 담당자 오영환 책임(QC)에게 역할 변경을 요청하세요.</p></details>
+      <details><summary>ANDON 호출 화면에 &ldquo;호출할 수 없습니다&rdquo;가 나와요</summary><p>호출은 GAP 리더·슈퍼 역할만 할 수 있습니다. 시스템 담당자 오영환 책임(QC)에게 역할 변경을 요청하세요.</p></details>
       <details><summary>받는 사람 목록에 우리 부서 사람이 없어요</summary><p>아직 가입하지 않은 사람은 목록에 나오지 않습니다. 가입할 때 부서를 정확히 골랐는지도 확인하세요.</p></details>
       <details><summary>카카오톡 알림이 안 와요</summary><p>&lsquo;내 정보&rsquo;에서 카카오 알림 상태가 &lsquo;✔ 연결됨&rsquo;인지 확인하세요. &lsquo;⚠ 다시 연결 필요&rsquo;면 다시 연결합니다. 호출할 때 내가 받는 사람으로 선택됐는지도 GAP 리더에게 확인하세요.</p></details>
       <details><summary>처리 화면에 접수 버튼이 없어요</summary><p>로그인했는지, 그리고 그 ANDON이 내 부서로 호출됐는지 확인하세요. 다른 부서 ANDON은 볼 수만 있습니다.</p></details>

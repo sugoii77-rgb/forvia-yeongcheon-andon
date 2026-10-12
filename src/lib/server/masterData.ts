@@ -20,7 +20,7 @@ export const ROLES: {
   { code: "OPERATOR", nameKo: "작업자", nameEn: "Operator", canRespond: false, escalationLevel: null, sortOrder: 1 },
   { code: "RESPONDER", nameKo: "담당자", nameEn: "Responder", canRespond: true, escalationLevel: 0, sortOrder: 2 },
   { code: "GAP_LEADER", nameKo: "GAP 리더", nameEn: "GAP Leader", canRespond: true, escalationLevel: 1, sortOrder: 3 },
-  { code: "SUPERVISOR", nameKo: "감독자", nameEn: "Supervisor", canRespond: true, escalationLevel: 2, sortOrder: 4 },
+  { code: "SUPERVISOR", nameKo: "슈퍼", nameEn: "Supervisor", canRespond: true, escalationLevel: 2, sortOrder: 4 },
   { code: "ENGINEER", nameKo: "엔지니어", nameEn: "Engineer", canRespond: true, escalationLevel: 2, sortOrder: 5 },
   { code: "PLANT_MANAGER", nameKo: "공장장", nameEn: "Plant Manager", canRespond: true, escalationLevel: 3, sortOrder: 6 },
 ];

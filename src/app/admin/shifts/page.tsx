@@ -69,7 +69,7 @@ export default function AdminShiftsPage() {
             <Link className="btn btn-primary" href="/login?next=/admin/shifts">로그인</Link>
           </div>
         )}
-        {loaded && user && !allowed && <div className="alert alert-error">이 화면은 GAP 리더 · 감독자 · 엔지니어 · 공장장 역할만 볼 수 있습니다.</div>}
+        {loaded && user && !allowed && <div className="alert alert-error">이 화면은 GAP 리더 · 슈퍼 · 엔지니어 · 공장장 역할만 볼 수 있습니다.</div>}
         {error && <div className="alert alert-error">{error}</div>}
         {data && n && (
           <>
