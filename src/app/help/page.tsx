@@ -41,10 +41,10 @@ export default function HelpPage() {
         </section>
 
         <section id="quick" className="card">
-          <h2 style={{ marginTop: 0 }}>빠른 시작 <span className="muted" style={{ fontSize: 14 }}>아이콘 · 로그인 · 알림음 · 카카오, 5분</span></h2>
+          <h2 style={{ marginTop: 0 }}>빠른 시작 <span className="muted" style={{ fontSize: 14 }}>아이콘 · 로그인 · 알림음 · 카카오, 5분 (3장은 선택: 전용 알림음)</span></h2>
           <p className="muted" style={{ fontSize: 14 }}>그림을 누르면 크게 열립니다.</p>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10 }}>
-            {["/quickstart.png", "/quickstart-2.png"].map((src, i) => (
+            {["/quickstart.png", "/quickstart-2.png", "/quickstart-3.png"].map((src, i) => (
               <a key={src} href={src} target="_blank" rel="noopener">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={src} alt={`빠른 시작 ${i + 1}장`} loading="lazy" style={{ width: "100%", borderRadius: 10, border: "1px solid var(--line, #dde3ec)" }} />
