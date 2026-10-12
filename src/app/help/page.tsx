@@ -63,11 +63,15 @@ export default function HelpPage() {
             <a className="btn btn-primary" href="/andon-alert.mp3" download="ANDON-알림음.mp3">알림음 받기</a>
           </div>
           <ol style={{ lineHeight: 1.7, paddingLeft: 20, marginTop: 12 }}>
-            <li><b>[알림음 받기]</b> → 휴대폰 <b>내 파일 → 다운로드</b> 폴더에 <b>ANDON-알림음</b>으로 저장됩니다.</li>
-            <li>휴대폰 <b>설정 → 애플리케이션 → ANDON</b> <span className="muted">(목록에 없으면 Chrome → 알림 → 사이트)</span></li>
-            <li><b>알림 → 소리</b> → 오른쪽 위 <b>+</b> <span className="muted">(또는 &lsquo;내 파일&rsquo;)</span> → 다운로드 폴더의 <b>ANDON-알림음</b> 선택</li>
-            <li>오른쪽 위 <b>이름 ⚙ → 내 정보 → [테스트 알림]</b>으로 &ldquo;딩동, 안돈 호출입니다&rdquo;가 나오면 완료</li>
+            <li><span className="muted">[ANDON 앱]</span> 위의 <b>[알림음 받기]</b> → 휴대폰 <b>다운로드</b> 폴더에 <b>ANDON-알림음</b>으로 저장</li>
+            <li>
+              <span className="muted">[휴대폰 설정]</span> 홈 화면의 <b>ANDON 아이콘을 길게 누르기 → ⓘ (애플리케이션 정보) → 알림 → 소리</b>
+              <div className="muted" style={{ fontSize: 13 }}>또는 휴대폰 <b>설정</b>(톱니바퀴 앱) → 애플리케이션 → ANDON → 알림 → 소리 · ANDON이 목록에 없으면 Chrome → 알림 → 사이트</div>
+            </li>
+            <li><span className="muted">[휴대폰 설정]</span> 소리 목록 오른쪽 위 <b>+</b> <span className="muted">(또는 &lsquo;내 파일&rsquo;)</span> → <b>다운로드</b> 폴더의 <b>ANDON-알림음</b> 선택</li>
+            <li><span className="muted">[ANDON 앱]</span> 오른쪽 위 <b>이름 ⚙ → 내 정보 → [테스트 알림]</b> → &ldquo;딩동, 안돈 호출입니다&rdquo;가 나오면 완료</li>
           </ol>
+          <p className="muted" style={{ fontSize: 13 }}>소리는 휴대폰이 관리하기 때문에 2·3번은 ANDON 앱이 아니라 <b>휴대폰 설정</b>에서 합니다. 휴대폰 기종에 따라 메뉴 이름이 조금 다를 수 있습니다.</p>
           <div className="alert" style={{ background: "#fff4d6", border: "1px solid #f5b800", fontSize: 14 }}>
             <b>안드로이드만 가능합니다.</b> 아이폰은 웹 알림 소리를 바꿀 수 없어 기본 알림음이 울립니다.
             먼저 &lsquo;내 정보&rsquo;에서 <b>[이 기기 알림 켜기]</b>가 되어 있어야 합니다.
