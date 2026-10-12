@@ -8,6 +8,7 @@ const LINKS = [
   { href: "/dashboard", label: "현황판" },
   { href: "/respond", label: "조치 (담당자)" },
   { href: "/history", label: "이력/통계" },
+  { href: "/help", label: "도움말" },
 ];
 
 export function TopBar() {
