@@ -42,13 +42,13 @@ export default function AdminLinesPage() {
           </div>
         )}
         {loaded && user && !allowed && (
-          <div className="alert alert-error">이 화면은 GAP 리더 · 감독자 · 엔지니어 · 공장장 역할만 볼 수 있습니다.</div>
+          <div className="alert alert-error">이 화면은 GAP 리더 · 슈퍼 · 엔지니어 · 공장장 역할만 볼 수 있습니다.</div>
         )}
         {error && <div className="alert alert-error">{error}</div>}
         {data && (
           <>
             <p className="muted" style={{ fontSize: 14 }}>
-              감독자(SV)와 조별 GAP 리더는 라인 <strong>소유(담당자)</strong> 정보입니다. ANDON의 책임 부서는 이상 유형 ·
+              슈퍼(SV)와 조별 GAP 리더는 라인 <strong>소유(담당자)</strong> 정보입니다. ANDON의 책임 부서는 이상 유형 ·
               라우팅 규칙으로 정해지며 이 화면과 별개입니다.
               {shiftNote && " A/B 조 근무 시간이 아직 확정되지 않아, 현재 근무 중인 조는 표시하지 않습니다."}
             </p>
@@ -60,7 +60,7 @@ export default function AdminLinesPage() {
                     <thead>
                       <tr>
                         <th>라인 Line</th>
-                        <th>감독자 Supervisor</th>
+                        <th>슈퍼 Supervisor</th>
                         {data.shifts.map((s) => (
                           <th key={s.code}>GAP 리더 {s.nameKo}</th>
                         ))}

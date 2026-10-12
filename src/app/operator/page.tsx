@@ -271,7 +271,7 @@ export default function OperatorPage() {
         )}
         {loaded && user && !canCall && (
           <div className="alert alert-warn">
-            {user.name} 님 계정({user.roleName})은 ANDON을 호출할 수 없습니다. 호출은 GAP 리더·감독자만 할 수 있습니다.
+            {user.name} 님 계정({user.roleName})은 ANDON을 호출할 수 없습니다. 호출은 GAP 리더·슈퍼만 할 수 있습니다.
             역할 변경은 관리자에게 요청하세요.
           </div>
         )}

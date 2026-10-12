@@ -44,7 +44,7 @@ export async function POST(req: Request) {
     const caller = await getSessionUser(req);
     if (!caller) throw new AndonError(401, "ANDON 호출은 로그인한 GAP 리더만 할 수 있습니다.", "AUTH_REQUIRED");
     if (!caller.active) throw new AndonError(403, "비활성(사용 중지)된 계정입니다.", "ACCOUNT_INACTIVE");
-    if (!CALL_ROLES.includes(caller.role)) throw new AndonError(403, "ANDON 호출은 GAP 리더·감독자만 할 수 있습니다.", "ROLE_NOT_ALLOWED");
+    if (!CALL_ROLES.includes(caller.role)) throw new AndonError(403, "ANDON 호출은 GAP 리더·슈퍼만 할 수 있습니다.", "ROLE_NOT_ALLOWED");
     let form: FormData;
     try {
       form = await req.formData();

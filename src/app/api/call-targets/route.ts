@@ -12,7 +12,7 @@ export async function GET(req: Request) {
   return handle("GET /api/call-targets", async () => {
     const user = await getSessionUser(req);
     if (!user) throw new AndonError(401, "로그인이 필요합니다.", "AUTH_REQUIRED");
-    if (!user.active || !CALL_ROLES.includes(user.role)) throw new AndonError(403, "ANDON 호출은 GAP 리더·감독자만 할 수 있습니다.", "ROLE_NOT_ALLOWED");
+    if (!user.active || !CALL_ROLES.includes(user.role)) throw new AndonError(403, "ANDON 호출은 GAP 리더·슈퍼만 할 수 있습니다.", "ROLE_NOT_ALLOWED");
     // Suggested department per issue category (current department code; the GAP leader can change it).
     const categoryDefaults: Record<string, string> = {};
     for (const c of await db.all("SELECT code, default_department FROM category WHERE active = 1")) {
