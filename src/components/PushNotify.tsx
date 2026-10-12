@@ -189,9 +189,8 @@ export function PushNotify() {
           <a className="btn" href="/andon-alert.mp3" download="ANDON-알림음.mp3">알림음 받기</a>
         </div>
         <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>
-          <b>안드로이드만 가능</b> (아이폰은 기본 알림음만 됩니다). ① [알림음 받기] → ② 휴대폰 설정 → 애플리케이션 → <b>ANDON</b>
-          (없으면 Chrome → 알림 → 사이트) → 알림 → <b>소리</b> → 오른쪽 위 <b>+</b> 또는 &lsquo;내 파일&rsquo;에서 다운로드 폴더의
-          ANDON-알림음 선택 → ③ 위의 [테스트 알림]으로 확인. 자세한 방법은 상단 메뉴 <a href="/help#sound">도움말</a>.
+          <b>안드로이드만, 선택 사항.</b> 받은 파일을 내 파일 앱에서 <b>Notifications</b> 폴더로 옮긴 뒤 휴대폰 설정에서 ANDON 알림 소리로
+          고릅니다 (삼성은 설정 → 알림 → 고급 설정 → &lsquo;앱별 알림 카테고리 관리&rsquo;를 먼저 켜기). 순서는 상단 메뉴 <a href="/help#sound">도움말</a>에 있습니다.
         </p>
       </details>
     </div>
