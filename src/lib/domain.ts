@@ -222,6 +222,11 @@ export interface CallSituation {
 /** Label of the SV call target (production supervisors; their department is UAP). */
 export const UAP_LABEL = "UAP · 생산";
 
+/** "공정 미지정" (no process master yet) is not shown anywhere (plant 2026-10-13). */
+export const isPlaceholderProcess = (name: string | null | undefined) => !name || name === "공정 미지정";
+/** "Main #1 / Welding" — or just "Main #1" while the line has no process master. */
+export const lineWithProcess = (line: string, process: string | null | undefined) => (isPlaceholderProcess(process) ? line : `${line} / ${process}`);
+
 /** Roles that may see the line ownership master (/admin/lines). Assigned by an administrator only. */
 export const OWNERSHIP_VIEW_ROLES: readonly RoleCode[] = ["GAP_LEADER", "SUPERVISOR", "ENGINEER", "PLANT_MANAGER"];
 

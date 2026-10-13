@@ -2,7 +2,7 @@
 // Providers: "mock" (log only) and "kakao" (KakaoTalk "send to me" — each employee links their own
 // Kakao account on /me; see ../kakaoNotify.ts). Selected by NOTIFICATION_PROVIDER. Phone push (../webPush.ts)
 // is sent alongside, to every device the recipient turned on in /me (KakaoTalk "send to me" has no sound).
-import type { AndonEvent } from "../../domain.ts";
+import { lineWithProcess, type AndonEvent } from "../../domain.ts";
 import { db, nowIso } from "../db.ts";
 import { sendKakaoMemoTo } from "../kakaoNotify.ts";
 import { primaryRecipients } from "../routingService.ts";
@@ -77,7 +77,7 @@ function getProvider() {
 export function buildAndonMessage(event: AndonEvent): NotificationMessage {
   const base = (process.env.APP_BASE_URL || "http://localhost:3000").replace(/\/$/, "");
   return {
-    title: `[ANDON 발생] ${event.lineName} / ${event.processName}`,
+    title: `[ANDON 발생] ${lineWithProcess(event.lineName, event.processName)}`,
     body: `${event.id} · ${event.categoryName} · ${event.description}`,
     link: `${base}/respond/${encodeURIComponent(event.id)}`,
     ackable: true,

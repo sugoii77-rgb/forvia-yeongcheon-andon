@@ -4,7 +4,7 @@ import Link from "next/link";
 import { TopBar } from "@/components/TopBar";
 import { StatusBadge } from "@/components/StatusBadge";
 import { fmtDuration, fmtTime, useMe, usePolling, useServerNow } from "@/lib/client";
-import { signalColor, type AndonEvent } from "@/lib/domain";
+import { lineWithProcess, signalColor, type AndonEvent } from "@/lib/domain";
 
 export default function RespondListPage() {
   const { user, loaded } = useMe();
@@ -62,7 +62,7 @@ export default function RespondListPage() {
                 </strong>
               </div>
               <div className="title">
-                {e.lineName} / {e.processName} · {e.categoryName}
+                {lineWithProcess(e.lineName, e.processName)} · {e.categoryName}
               </div>
               <div>{e.description}</div>
               <div className="muted" style={{ fontSize: 14, marginTop: 4 }}>

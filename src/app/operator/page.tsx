@@ -3,8 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { TopBar } from "@/components/TopBar";
 import { api, fmtTime, newRequestId, useMe, useStoredState } from "@/lib/client";
-import { CALL_ROLES, type AndonEvent, type CallSituation, type CallTargetDepartment, type MasterData } from "@/lib/domain";
-import { MultiSelect } from "@/components/MultiSelect";
+import { CALL_ROLES, lineWithProcess, type AndonEvent, type CallSituation, type CallTargetDepartment, type MasterData } from "@/lib/domain";
 
 type SubmitState =
   | { kind: "idle" }
@@ -18,13 +17,11 @@ export default function OperatorPage() {
   const { user, loaded } = useMe();
   const canCall = !!user?.active && CALL_ROLES.includes(user.role);
   const [targets, setTargets] = useState<CallTargetDepartment[] | null>(null);
-  const [categoryDefaults, setCategoryDefaults] = useState<Record<string, string>>({});
   const [situationList, setSituationList] = useState<CallSituation[]>([]);
   const [situations, setSituations] = useState<string[]>([]);
   // The GAP leader's own lines (line ownership) come first; all other lines are folded away.
   const [myLines, setMyLines] = useState<string[] | null>(null);
   const [showAllLines, setShowAllLines] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
   const [targetsError, setTargetsError] = useState<string | null>(null);
   const [deps, setDeps] = useState<string[]>([]);
   const [people, setPeople] = useState<Record<string, string[]>>({});
@@ -60,7 +57,6 @@ export default function OperatorPage() {
     ).then(
       (r) => {
         setTargets(r.departments);
-        setCategoryDefaults(r.categoryDefaults ?? {});
         setSituationList(r.situations ?? []);
         setMyLines(r.myLines ?? []);
         setTargetsError(null);
@@ -72,64 +68,45 @@ export default function OperatorPage() {
     if (canCall) loadTargets();
   }, [canCall, loadTargets]);
 
-  /** Departments changed: a newly added department starts with ALL its people chosen (the department rule). */
-  function chooseDeps(chosen: string[]) {
-    // Plant meeting 2026-10-07: calling any department except PC&L also messages UAP (line SV, line GL,
-    // UAP team leader / 책임) — added automatically when such a department is ADDED (removable).
-    const added = chosen.filter((d) => !deps.includes(d));
-    const order = (targets ?? []).map((t) => t.code);
-    const withUap = added.some((d) => d !== "PCL" && d !== "UAP") && !chosen.includes("UAP") && order.includes("UAP") ? [...chosen, "UAP"] : chosen;
-    const next = order.filter((c) => withUap.includes(c));
-    setDeps(next);
-    setPeople((cur) => {
-      const out: Record<string, string[]> = {};
-      for (const d of next) {
-        const t = targets?.find((x) => x.code === d);
-        out[d] = cur[d] ?? (t?.defaultMemberIds ?? t?.members.map((m) => m.id) ?? []).map(String);
-      }
-      return out;
-    });
-  }
-  function chooseCategory(code: string) {
-    setCategoryCode(code);
-    // Suggest the category's usual department while none is chosen yet; the GAP leader can change it.
-    const def = categoryDefaults[code];
-    if (deps.length === 0 && def && targets?.some((t) => t.code === def)) chooseDeps([def]);
-  }
-  /** Situation picked: its call target is added (with its default people) and the category suggested. */
+  /**
+   * The chosen situations decide everything else (plant 2026-10-13: no 세부 설정 — line → situation → CALL):
+   * category = the first situation's, departments = their targets with the default people. Calling any
+   * department except PC&L also messages UAP (plant meeting 2026-10-07). PC&L 자재 결품 (2026-10-08):
+   * 자작품 → PC&L SV + UAP 전체; 외주품 → PC&L 전체 (no UAP).
+   */
   function toggleSituation(code: string) {
-    const on = !situations.includes(code);
-    setSituations(on ? [...situations, code] : situations.filter((c) => c !== code));
-    if (!on) return;
-    if (code === "MT_PREVENTIVE") setMoreOpen(true); // the planned-work text is asked for
-    const sit = situationList.find((s) => s.code === code);
-    if (!sit) return;
-    if (!categoryCode) setCategoryCode(sit.category);
-    // PC&L 자재 결품 (plant decision 2026-10-08): 자작품 → PC&L SV + UAP 전체; 외주품 → PC&L 전체 (no UAP)
-    if (code === "PCL_SHORTAGE_INHOUSE" || code === "PCL_SHORTAGE_PURCHASED") {
-      const pcl = targets?.find((t) => t.code === "PCL");
-      const uap = targets?.find((t) => t.code === "UAP");
-      const inhouse = code === "PCL_SHORTAGE_INHOUSE";
-      const order = (targets ?? []).map((t) => t.code);
-      setDeps(order.filter((c) => deps.includes(c) || c === "PCL" || (inhouse && c === "UAP")));
-      setPeople((cur) => ({
-        ...cur,
-        PCL: (inhouse ? (pcl?.supervisorIds ?? []) : (pcl?.members.map((m) => m.id) ?? [])).map(String),
-        ...(inhouse ? { UAP: (uap?.members.map((m) => m.id) ?? []).map(String) } : {}),
-      }));
-      return;
+    const next = situations.includes(code) ? situations.filter((c) => c !== code) : [...situations, code];
+    setSituations(next);
+    const sits = next.map((c) => situationList.find((s) => s.code === c)).filter((s): s is CallSituation => !!s);
+    setCategoryCode(sits[0]?.category ?? "");
+    const target = (c: string) => targets?.find((t) => t.code === c);
+    const chosen: Record<string, Set<string>> = {};
+    const add = (dept: string, ids: (number | string)[] | undefined) => {
+      if (!target(dept)) return;
+      chosen[dept] ??= new Set();
+      for (const id of ids ?? []) chosen[dept].add(String(id));
+    };
+    const defaults = (dept: string) => target(dept)?.defaultMemberIds ?? target(dept)?.members.map((m) => m.id);
+    for (const s of sits) {
+      if (s.code === "PCL_SHORTAGE_INHOUSE") {
+        add("PCL", target("PCL")?.supervisorIds);
+        add("UAP", target("UAP")?.members.map((m) => m.id));
+      } else if (s.code === "PCL_SHORTAGE_PURCHASED") {
+        add("PCL", target("PCL")?.members.map((m) => m.id));
+      } else {
+        add(s.target, defaults(s.target));
+        if (s.target !== "PCL" && s.target !== "UAP") add("UAP", defaults("UAP"));
+      }
     }
-    if (!deps.includes(sit.target) && targets?.some((t) => t.code === sit.target)) {
-      chooseDeps((targets ?? []).map((t) => t.code).filter((c) => c === sit.target || deps.includes(c)));
-    }
+    setDeps((targets ?? []).map((t) => t.code).filter((c) => chosen[c]));
+    setPeople(Object.fromEntries(Object.entries(chosen).map(([d, ids]) => [d, [...ids]])));
   }
-  const situationGroups = [...new Set(situationList.map((s) => s.target))].map((target) => ({
+  const situationGroups = [...new Set(situationList.map((s) => s.target))].sort((a, b) => Number(b === "MT") - Number(a === "MT")).map((target) => ({
     target,
     label: targets?.find((t) => t.code === target)?.label ?? target,
     items: situationList.filter((s) => s.target === target),
   }));
-  const recipientCount = deps.reduce((n, d) => n + (people[d]?.length ?? 0), 0);
-  // "QC 3명 · MT 1명" — shown in the call bar and on the folded details
+  // "QC 3명 · MT 1명" — shown in the call bar
   const recipientSummary = deps
     .map((d) => `${targets?.find((t) => t.code === d)?.label.split(" · ")[0] ?? d} ${people[d]?.length ?? 0}명`)
     .join(" · ");
@@ -184,9 +161,7 @@ export default function OperatorPage() {
     const missing = [
       !lineCode && "라인",
       !validProcess && "공정",
-      !categoryCode && "이상 유형",
-      deps.length === 0 && "조치부서",
-      !description.trim() && situations.length === 0 && "상황 또는 이상 내용",
+      (situations.length === 0 || !categoryCode || deps.length === 0) && "상황",
     ].filter(Boolean);
     if (missing.length) {
       setValidation(`${missing.join(", ")}을(를) 선택/입력하세요.`);
@@ -227,7 +202,8 @@ export default function OperatorPage() {
     requestId.current = newRequestId();
     setCategoryCode("");
     setSituations([]);
-    chooseDeps([]);
+    setDeps([]);
+    setPeople({});
     setDescription("");
     setState({ kind: "idle" });
   }
@@ -242,7 +218,7 @@ export default function OperatorPage() {
             ✔ ANDON 호출 완료 (sent)
             <div style={{ fontSize: 34, fontWeight: 900, margin: "8px 0" }}>{e.id}</div>
             <div style={{ fontWeight: 500, fontSize: 18 }}>
-              {e.lineName} / {e.processName} · {e.categoryName} · 조치부서: {e.departmentLabel}
+              {lineWithProcess(e.lineName, e.processName)} · {e.categoryName} · 조치부서: {e.departmentLabel}
               <br />
               발생시각 {fmtTime(e.createdAt)} — 현황판에 표시되고 선택한 사람에게 카카오톡 알림이 전송됩니다.
               {state.duplicate && <><br />(이미 접수된 호출입니다 · already registered)</>}
@@ -319,12 +295,6 @@ export default function OperatorPage() {
                 })}
             </div>
 
-            {lineCode && onlyPlaceholder && (
-              <div className="field">
-                <span className="field-label">공정<span className="en">Process</span></span>
-                <p className="muted" style={{ margin: 0 }}>{processes[0].name} — 이 라인의 공정 기준정보는 준비 중입니다.</p>
-              </div>
-            )}
 
             {lineCode && !onlyPlaceholder && (
               <div className="field">
@@ -363,105 +333,28 @@ export default function OperatorPage() {
               </div>
             )}
 
-            {/* Everything below is filled in by the situation: folded away so the GL needs only 2–3 taps
-                (line → situation → ANDON CALL). Open it to change category, departments, people or add text. No photos (plant decision 2026-10-08). */}
-            <details className="call-more" open={moreOpen} onToggle={(e) => setMoreOpen((e.target as HTMLDetailsElement).open)}>
-              <summary>
-                <span className="call-more-t">세부 설정 <span className="muted">(선택)</span></span>
-                <span className="call-more-sum">
-                  {[meta.categories.find((c) => c.code === categoryCode)?.nameKo, recipientSummary || null, description.trim() ? "내용 입력됨" : null]
-                    .filter(Boolean)
-                    .join(" · ") || "이상 유형 · 조치부서 · 받는 사람 · 내용"}
-                </span>
-              </summary>
-
-            <div className="field">
-              <span className="field-label">이상 유형<span className="en">Issue category</span></span>
-              <div className="choices">
-                {meta.categories.map((c) => (
-                  <button
-                    key={c.code}
-                    type="button"
-                    className="choice"
-                    aria-pressed={categoryCode === c.code}
-                    onClick={() => chooseCategory(c.code)}
-                  >
-                    {c.nameKo}
-                    <small>{c.nameEn}</small>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="field">
-              <span className="field-label">조치부서<span className="en">Departments · 여러 개 선택 가능</span></span>
-              {targetsError && (
-                <div className="alert alert-error">
-                  부서·담당자 목록을 불러오지 못했습니다: {targetsError} <button className="btn" onClick={loadTargets}>다시 시도</button>
-                </div>
-              )}
-              <MultiSelect
-                label="조치부서"
-                testId="call-departments"
-                placeholder="조치부서 선택"
-                options={(targets ?? []).map((t) => ({ value: t.code, label: t.label, hint: `${t.members.length}명` }))}
-                selected={deps}
-                onChange={(v) => chooseDeps((targets ?? []).map((t) => t.code).filter((c) => v.includes(c)))}
-              />
-            </div>
-
-            {deps.length > 0 && (
-              <div className="field">
-                <span className="field-label">받는 사람<span className="en">Recipients · 부서별 여러 명 선택</span></span>
-                {deps.map((d) => {
-                  const t = targets?.find((x) => x.code === d);
-                  return (
-                    <div key={d} className="call-dept">
-                      <div className="call-dept-title">
-                        <span>{t?.label ?? d}</span>
-                        <span className="muted">{people[d]?.length ?? 0} / {t?.members.length ?? 0}명</span>
-                      </div>
-                      <MultiSelect
-                        label={`${t?.label ?? d} 받는 사람`}
-                        testId={`call-people-${d}`}
-                        placeholder="받는 사람 선택"
-                        emptyText="이 부서에 가입한 담당자가 아직 없습니다"
-                        options={(t?.members ?? []).map((m) => ({ value: String(m.id), label: m.name, hint: m.roleName }))}
-                        selected={people[d] ?? []}
-                        onChange={(v) => setPeople({ ...people, [d]: v })}
-                      />
-                    </div>
-                  );
-                })}
-                {recipientCount === 0 && (
-                  <div className="alert alert-warn" style={{ marginTop: 8 }}>
-                    선택한 사람이 없습니다. 호출은 등록되지만 카카오톡 메시지는 아무에게도 가지 않습니다.
-                  </div>
-                )}
+            {targetsError && (
+              <div className="alert alert-error">
+                부서·담당자 목록을 불러오지 못했습니다: {targetsError} <button className="btn" onClick={loadTargets}>다시 시도</button>
               </div>
             )}
 
-            <div className="field">
-              <label htmlFor="desc">
-                이상 내용<span className="en" style={{ fontWeight: 500, color: "var(--ink-3)", fontSize: 14, marginLeft: 6 }}>Description</span>
-              </label>
-              <textarea
-                id="desc"
-                className="textarea"
-                maxLength={situations.includes("MT_PREVENTIVE") ? 100 : 500}
-                placeholder={
-                  situations.includes("MT_PREVENTIVE")
-                    ? "예방보전 안내 (100자 이내) — 예) 3번 로봇 정기 점검, 14:00~16:00 라인 정지"
-                    : situations.length
-                      ? "추가 설명 (선택) — 비워두면 선택한 상황이 내용이 됩니다"
-                      : "예) Stay Bracket 체결 이상 발견"
-                }
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-              />
-            </div>
-
-            </details>
+            {/* 예방보전 needs a short note on the planned work; every other call is line → situation → CALL. No photos. */}
+            {situations.includes("MT_PREVENTIVE") && (
+              <div className="field">
+                <label htmlFor="desc">
+                  예방보전 안내<span className="en" style={{ fontWeight: 500, color: "var(--ink-3)", fontSize: 14, marginLeft: 6 }}>100자 이내</span>
+                </label>
+                <textarea
+                  id="desc"
+                  className="textarea"
+                  maxLength={100}
+                  placeholder="예) 3번 로봇 정기 점검, 14:00~16:00 라인 정지"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                />
+              </div>
+            )}
 
             {validation && <div className="alert alert-warn">{validation}</div>}
             {state.kind === "error" && (

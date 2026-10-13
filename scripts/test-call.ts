@@ -102,7 +102,7 @@ async function main() {
   const lineSv = Number((await db.get("SELECT user_id FROM line_assignment WHERE line_code = 'AP1-MAIN1' AND assignment_role = 'SUPERVISOR' AND active = 1"))!.user_id);
   check(!!sv && sv.members.length > 0 && sv.defaultMemberIds!.includes(lineSv), "UAP target: production people, the line's supervisor pre-chosen");
   const sitTarget = (code: string) => (t2.situations as { code: string; target: string }[]).find((x) => x.code === code)?.target;
-  check((t2.situations as unknown[]).length === 17 && sitTarget("MT_ROBOT") === "MT" && sitTarget("SQA_PART") === "QC" && sitTarget("ME_TOOLING") === undefined && sitTarget("SV_MANPOWER") === undefined && sitTarget("MT_PREVENTIVE") === "MT", "17 situations: SQA → QC, 예방보전 → MT, no UAP situations (2026-10-13)");
+  check((t2.situations as unknown[]).length === 6 && sitTarget("PCL_FIFO") === undefined && sitTarget("MT_BREAKDOWN") === "MT" && sitTarget("MT_ROBOT") === undefined && sitTarget("QC_SUPPLIER") === "QC" && sitTarget("SQA_PART") === undefined && sitTarget("ME_TOOLING") === undefined && sitTarget("SV_MANPOWER") === undefined && sitTarget("MT_PREVENTIVE") === "MT", "6 situations: QC = 공정불량 + 협력사불량, MT = 설비 고장 + 예방보전, PC&L = 자재 결품 ×2, no UAP (2026-10-13)");
   const sit = await (async () => {
     const f = new FormData();
     f.set("lineCode", "AP1-MAIN1");
@@ -110,12 +110,12 @@ async function main() {
     f.set("categoryCode", "MAINTENANCE");
     f.set("description", "[TEST] call: situations + SV");
     f.set("clientRequestId", `call-sit-${Date.now()}`);
-    for (const x of ["MT_ROBOT", "MT_SENSOR"]) f.append("situations", x);
+    for (const x of ["MT_BREAKDOWN", "QC_PROCESS"]) f.append("situations", x);
     for (const x of ["MT", "SV"]) f.append("departments", x); // "SV" = older name of the UAP target
     for (const x of [mt.id, lineSv]) f.append("recipients", String(x));
     return gap.request("POST", "/api/andons", f);
   })();
-  check(sit.status === 201 && sit.body.event.situations.join() === "Robot Fault,Sensor Fault", `situations stored with the event (${sit.body.event?.situations})`);
+  check(sit.status === 201 && sit.body.event.situations.join() === "설비 고장,공정불량", `situations stored with the event (${sit.body.event?.situations})`);
   check(sit.body.event.departments.map((x: { label: string }) => x.label).join() === "MT · 보전,UAP · 생산", `MT + UAP (via the older "SV" name) called (${sit.body.event?.departmentLabel})`);
   await transition(mt.client, sit.body.event.id, "CLOSE", "[TEST] cleanup");
   const badSit = await createAndon("TGDI1", "WCC Final Inspection", "QUALITY", "[TEST] call: bad situation", gap, undefined, { departments: ["QC"] });
@@ -243,7 +243,7 @@ async function main() {
 
   // MT: 수리 시작 (yellow) → 수리 완료 by MT (green); notice to all of MT + the line's UAP (SV + GL)
   const mt2 = await registerAccount("MT", "call-mt2");
-  const rep = await callWith("MAINTENANCE", ["MT"], [mt.id], ["MT_ROBOT"], "[TEST] Robot Fault");
+  const rep = await callWith("MAINTENANCE", ["MT"], [mt.id], ["MT_BREAKDOWN"], "[TEST] 설비 고장");
   check((await transition(mt.client, rep.body.event.id, "ACKNOWLEDGE")).body.event.status === "ACKNOWLEDGED", "MT 수리 시작 → yellow");
   check((await transition(mt.client, rep.body.event.id, "CLOSE", "[TEST] 로봇 리셋")).body.event.status === "CLOSED", "MT 수리 완료 → green (closed by MT)");
   let repNotes: string[] = [];

@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { fmtDuration, fmtTime, usePolling, useServerNow } from "@/lib/client";
-import { STATUS_LABEL, signalColor, type AndonEvent } from "@/lib/domain";
+import { STATUS_LABEL, isPlaceholderProcess, signalColor, type AndonEvent } from "@/lib/domain";
 
 interface BoardResponse {
   events: AndonEvent[];
@@ -82,7 +82,7 @@ export default function DashboardListPage() {
               </div>
               <div className="where">{e.lineName}</div>
               <div className="proc">
-                {e.processName} · {e.categoryName}
+                {isPlaceholderProcess(e.processName) ? e.categoryName : `${e.processName} · ${e.categoryName}`}
               </div>
               <div className="desc">{e.description}</div>
               <div className="meta">

@@ -5,7 +5,7 @@ import { TopBar } from "@/components/TopBar";
 import { StatusBadge } from "@/components/StatusBadge";
 import { fmtDateTime, fmtDurationKo, usePolling } from "@/lib/client";
 import { HistoryCsv } from "@/components/HistoryCsv";
-import type { AndonEvent } from "@/lib/domain";
+import { lineWithProcess, type AndonEvent } from "@/lib/domain";
 
 interface Stats {
   total: number;
@@ -115,7 +115,7 @@ export default function HistoryPage() {
                   <tr key={i}>
                     <td>{i + 1}</td>
                     <td>
-                      {r.lineName} / {r.processName}
+                      {lineWithProcess(r.lineName, r.processName)}
                     </td>
                     <td>{r.categoryName}</td>
                     <td>{r.description}</td>
@@ -161,7 +161,7 @@ export default function HistoryPage() {
                     </td>
                     <td style={{ whiteSpace: "nowrap" }}>{fmtDateTime(e.createdAt)}</td>
                     <td>
-                      {e.lineName} / {e.processName}
+                      {lineWithProcess(e.lineName, e.processName)}
                     </td>
                     <td>{e.categoryName}</td>
                     <td>{e.description}</td>

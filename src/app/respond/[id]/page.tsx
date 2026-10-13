@@ -5,6 +5,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import Link from "next/link";
 import { api, fmtDateTime, fmtDuration, fmtTime, usePolling, useServerNow } from "@/lib/client";
 import {
+  lineWithProcess,
   STATUS_LABEL,
   allowedActions,
   signalColor,
@@ -146,7 +147,7 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
             <strong style={{ fontSize: 24, fontVariantNumeric: "tabular-nums" }}>{fmtDuration(elapsed)}</strong>
           </div>
           <div className="title" style={{ fontSize: 22 }}>
-            {e.lineName} / {e.processName}
+            {lineWithProcess(e.lineName, e.processName)}
           </div>
           <div style={{ fontSize: 19, margin: "6px 0" }}>{e.description}</div>
           <dl className="kv" style={{ marginTop: 10 }}>

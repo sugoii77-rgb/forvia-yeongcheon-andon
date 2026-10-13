@@ -231,23 +231,22 @@ code.mono { font-family: var(--font-mono); font-size: 14px; background: var(--na
     <ol class="steps">
       <li><div class="t">라인 누르기 <span class="muted">(담당 라인이 하나면 자동 선택 — 생략)</span></div><div class="d">맨 위 <b>내 담당 라인</b>에서 고릅니다. 다른 라인은 <span class="btnlike o">다른 라인 보기 (전체)</span>.</div></li>
       <li><div class="t">상황 누르기</div><div class="d">아래 표의 상황 버튼을 누르면 이상 유형, 조치부서, 받는 사람(부서원 전원 · SV는 그 라인 슈퍼)이 <b>자동으로</b> 정해집니다. 여러 상황을 함께 누를 수도 있습니다.</div></li>
-      <li class="red"><div class="t">화면 아래 <span class="btnlike red">ANDON CALL</span> 누르기</div><div class="d">버튼 위에 &ldquo;FRT · Robot Fault → MT 3명&rdquo;처럼 누구에게 가는지 보입니다. ANDON 번호가 표시되면 완료 — 현황판에 바로 뜨고 선택된 사람에게 카카오톡이 갑니다.</div></li>
-      <li class="green"><div class="t">&lsquo;접수 완료&rsquo; 알림을 기다리기</div><div class="d">조치부서 담당자가 접수하면 <b>호출한 사람에게 카카오톡·휴대폰 알림</b>이 옵니다 &mdash; &ldquo;[ANDON 접수 완료] FRT · Robot Fault / MT · 보전 홍길동님이 10:42에 접수했습니다&rdquo; (설비는 &lsquo;수리 시작&rsquo;). 조치가 끝나 완료되면 &lsquo;완료&rsquo; 알림도 옵니다. 알림이 없으면 아직 아무도 접수하지 않은 것이니 현황판을 확인하세요.</div></li>
+      <li class="red"><div class="t">화면 아래 <span class="btnlike red">ANDON CALL</span> 누르기</div><div class="d">버튼 위에 &ldquo;FRT · 설비 고장 → MT 3명&rdquo;처럼 누구에게 가는지 보입니다. ANDON 번호가 표시되면 완료 — 현황판에 바로 뜨고 선택된 사람에게 카카오톡이 갑니다.</div></li>
+      <li class="green"><div class="t">&lsquo;접수 완료&rsquo; 알림을 기다리기</div><div class="d">조치부서 담당자가 접수하면 <b>호출한 사람에게 카카오톡·휴대폰 알림</b>이 옵니다 &mdash; &ldquo;[ANDON 접수 완료] FRT · 설비 고장 / MT · 보전 홍길동님이 10:42에 접수했습니다&rdquo; (설비는 &lsquo;수리 시작&rsquo;). 조치가 끝나 완료되면 &lsquo;완료&rsquo; 알림도 옵니다. 알림이 없으면 아직 아무도 접수하지 않은 것이니 현황판을 확인하세요.</div></li>
     </ol>
-    <div class="note"><strong>바꾸고 싶을 때만 &lsquo;세부 설정&rsquo;을 펼치세요.</strong> 이상 유형, 조치부서 추가·삭제, 받는 사람 빼기·더하기, 내용 입력을 할 수 있습니다 (사진은 쓰지 않습니다). 상황표에 없는 문제는 세부 설정에서 이상 유형·조치부서를 직접 고르고 내용을 적으면 됩니다.</div>
+    <div class="note"><strong>상황만 고르면 됩니다.</strong> 조치부서와 받는 사람은 상황에 따라 자동으로 정해집니다. <b>예방보전</b>을 고르면 짧은 안내(100자 이내)를 적는 칸이 나옵니다. 사진은 쓰지 않습니다.</div>
 
     <h3>상황별 호출 부서</h3>
     <div class="table-wrap">
       <table>
         <thead><tr><th>상황</th><th>호출</th></tr></thead>
         <tbody>
-          <tr><td>누락, 용접불량, 외관불량, Leak NG, 검사기준 불명확, 검사구 문제</td><td class="tgt">QC</td></tr>
-          <tr><td>단품불량 (협력사)</td><td class="tgt">QC (SQA)</td></tr>
-          <tr><td>설비 정지, Robot Fault, Nutrunner Fault, Leak Tester NG, Sensor Fault</td><td class="tgt">MT</td></tr>
+          <tr><td>공정불량</td><td class="tgt">QC</td></tr>
+          <tr><td>협력사불량</td><td class="tgt">QC (SQA)</td></tr>
+          <tr><td>설비 고장</td><td class="tgt">MT</td></tr>
           <tr><td>예방보전 (계획 작업 안내 · 100자 이내 · 바로 노랑)</td><td class="tgt">MT</td></tr>
           <tr><td>자재 결품 (자작품)</td><td class="tgt">PC&amp;L SV + UAP 전체</td></tr>
           <tr><td>자재 결품 (외주품)</td><td class="tgt">PC&amp;L 전체</td></tr>
-          <tr><td>잘못 투입, FIFO 문제</td><td class="tgt">PC&amp;L</td></tr>
         </tbody>
       </table>
     </div>
@@ -258,8 +257,8 @@ code.mono { font-family: var(--font-mono); font-size: 14px; background: var(--na
     <div class="sec-head"><span class="who">조치부서 담당자 (QC · MT · PC&amp;L · UAP)</span><h2 id="h-respond">5. 알림 받고 조치하기</h2></div>
     <div class="chat">
       <div class="bubble" role="img" aria-label="ANDON 알림 예시">
-        <div class="body">[ANDON 발생] Main #1 / 공정 미지정
-AND-20261006-001 · 설비 · [Robot Fault] 로봇 정지 (예시)
+        <div class="body">[ANDON 발생] Main #1
+AND-20261006-001 · 설비 · [설비 고장] 로봇 정지 (예시)
 https://forvia-yeongcheon-andon.vercel.app/respond/AND-20261006-001</div>
         <div class="btn">ANDON 보기</div>
       </div>
