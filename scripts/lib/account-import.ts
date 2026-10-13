@@ -44,7 +44,7 @@ export function departmentOf(text: string): string | null {
   if (/^(PC&L|PCL|PC&L|물류|LOGIS)/.test(t)) return "PCL";
   if (/^(SQA|외주품질)/.test(t)) return "QC"; // SQA is part of QC (2026-10-08)
   if (/^(QC|품질|QUAL)/.test(t)) return "QC";
-  if (/^(ME|생산기술)/.test(t)) return "ME";
+  if (/^(ME|생산기술|IPL)/.test(t)) return "ME"; // IPL is the plant's name for the ME team (2026-10-13)
   return null;
 }
 
@@ -118,7 +118,9 @@ export async function readAccountFile(file: string): Promise<AccountRow[]> {
     // 부서-1 (UAP area AP-1 …, Mt, PC&L) first, then 부서; blank = the department of the rows above
     // Only text that names a department counts: QC rows carry their sub-role there ("AQ CS", "AP 공정 QC")
     // and continue the QC block above.
-    const own = [c.department1 >= 0 ? row[c.department1] : "", c.department >= 0 ? row[c.department] : ""].find((x) => x && departmentOf(x)) ?? "";
+    // …except ME: the IPL (= ME) rows carry "QC" in 부서-1 (2026-10-13 roster), so 부서 = IPL wins
+    const deptME = c.department >= 0 && departmentOf(row[c.department] ?? "") === "ME" ? row[c.department] : "";
+    const own = deptME || ([c.department1 >= 0 ? row[c.department1] : "", c.department >= 0 ? row[c.department] : ""].find((x) => x && departmentOf(x)) ?? "");
     const dept = own || lastDept;
     if (own) lastDept = own;
     const rawDept = [c.department1 >= 0 ? row[c.department1] : "", c.department >= 0 ? row[c.department] : ""].find((x) => x && x !== "-") ?? "";
