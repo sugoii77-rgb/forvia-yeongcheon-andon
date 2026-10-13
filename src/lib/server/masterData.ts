@@ -35,6 +35,8 @@ export const DEPARTMENTS = [
   { code: "UAP", displayCode: "UAP", nameKo: "생산", nameEn: "Production", sortOrder: 3 },
   { code: "QC", displayCode: "QC", nameKo: "품질", nameEn: "Quality", sortOrder: 4 },
   { code: "PCL", displayCode: "PC&L", nameKo: "물류", nameEn: "Production Control & Logistics", sortOrder: 5 },
+  // HSE (안전) callable under PC&L (plant 2026-10-13); production DB: work/hse-department.mjs
+  { code: "HSE", displayCode: "HSE", nameKo: "안전", nameEn: "Health, Safety & Environment", sortOrder: 6 },
 ];
 
 /**
@@ -80,6 +82,8 @@ export const CALL_SITUATIONS: { code: string; nameKo: string; target: string; ca
   // PC&L: only the two 자재 결품 items on the call screen (plant 2026-10-13)
   { code: "PCL_WRONG_INPUT", nameKo: "잘못 투입", target: "PCL", category: "MATERIAL", retired: true },
   { code: "PCL_FIFO", nameKo: "FIFO 문제", target: "PCL", category: "MATERIAL", retired: true },
+  // HSE: the message goes to HSE + plant managers + every team leader + the line's 슈퍼 (notifications/index.ts)
+  { code: "HSE_SAFETY", nameKo: "안전 이상", target: "HSE", category: "SAFETY" },
   { code: "SV_MANPOWER", nameKo: "인원 부족", target: "UAP", category: "PRODUCTION", retired: true },
   { code: "SV_METHOD", nameKo: "작업방법 문제", target: "UAP", category: "PRODUCTION", retired: true },
 ];

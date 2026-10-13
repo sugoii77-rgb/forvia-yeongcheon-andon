@@ -44,7 +44,7 @@ async function main() {
     const r = await createAndon("TGDI1", "WCC Final Inspection", "QUALITY", `[TEST] call: ${label}`, gap, undefined, call);
     check(r.status === 400 && r.body.code === code, `${label} → 400 ${code} (${r.body.code})`);
   };
-  await bad({ departments: ["HSE"] }, "INVALID_DEPARTMENT", "HSE (not set up) as department");
+  await bad({ departments: ["SQA"] }, "INVALID_DEPARTMENT", "SQA (part of QC) as department");
   await bad({ departments: ["NOPE"] }, "INVALID_DEPARTMENT", "unknown department");
   await bad({ departments: ["QC"], recipients: [mt.id] }, "INVALID_RECIPIENT", "recipient outside the chosen departments");
 
@@ -98,11 +98,11 @@ async function main() {
   console.log("SITUATIONS / SQA / SV");
   const t2 = (await gap.request("GET", "/api/call-targets?line=AP1-MAIN1")).body;
   const sv = (t2.departments as { code: string; members: { id: number; roleName: string }[]; defaultMemberIds?: number[] }[]).find((d) => d.code === "UAP");
-  check((t2.departments as { code: string }[]).map((d) => d.code).join() === "MT,QC,PCL,UAP", `call targets: MT, QC, PC&L, UAP — no ME / SQA / HSE (${(t2.departments as { code: string }[]).map((d) => d.code).join()})`);
+  check((t2.departments as { code: string }[]).map((d) => d.code).join() === "MT,QC,PCL,HSE,UAP", `call targets: MT, QC, PC&L, HSE, UAP — no ME / SQA (${(t2.departments as { code: string }[]).map((d) => d.code).join()})`);
   const lineSv = Number((await db.get("SELECT user_id FROM line_assignment WHERE line_code = 'AP1-MAIN1' AND assignment_role = 'SUPERVISOR' AND active = 1"))!.user_id);
   check(!!sv && sv.members.length > 0 && sv.defaultMemberIds!.includes(lineSv), "UAP target: production people, the line's supervisor pre-chosen");
   const sitTarget = (code: string) => (t2.situations as { code: string; target: string }[]).find((x) => x.code === code)?.target;
-  check((t2.situations as unknown[]).length === 6 && sitTarget("PCL_FIFO") === undefined && sitTarget("MT_BREAKDOWN") === "MT" && sitTarget("MT_ROBOT") === undefined && sitTarget("QC_SUPPLIER") === "QC" && sitTarget("SQA_PART") === undefined && sitTarget("ME_TOOLING") === undefined && sitTarget("SV_MANPOWER") === undefined && sitTarget("MT_PREVENTIVE") === "MT", "6 situations: QC = 공정불량 + 협력사불량, MT = 설비 고장 + 예방보전, PC&L = 자재 결품 ×2, no UAP (2026-10-13)");
+  check((t2.situations as unknown[]).length === 7 && sitTarget("HSE_SAFETY") === "HSE" && sitTarget("PCL_FIFO") === undefined && sitTarget("MT_BREAKDOWN") === "MT" && sitTarget("MT_ROBOT") === undefined && sitTarget("QC_SUPPLIER") === "QC" && sitTarget("SQA_PART") === undefined && sitTarget("ME_TOOLING") === undefined && sitTarget("SV_MANPOWER") === undefined && sitTarget("MT_PREVENTIVE") === "MT", "7 situations: QC = 공정불량 + 협력사불량, MT = 설비 고장 + 예방보전, PC&L = 자재 결품 ×2, HSE 안전 이상, no UAP (2026-10-13)");
   const sit = await (async () => {
     const f = new FormData();
     f.set("lineCode", "AP1-MAIN1");
@@ -252,6 +252,22 @@ async function main() {
     repNotes = ((await detail(rep.body.event.id)).body.notifications as { recipient: string; message: string }[]).filter((n) => n.message.startsWith("[ANDON 수리 완료]")).map((n) => n.recipient);
   }
   check(repNotes.includes(mt.name) && repNotes.includes(mt2.name) && repNotes.includes(frtSvName) && !repNotes.includes(pcl.name), `수리 완료 notice → all MT + line UAP (${repNotes.length})`);
+
+  // HSE (2026-10-13): HSE + every plant manager + every team leader + the line's 슈퍼, whoever was chosen
+  const hse = await registerAccount("HSE", "call-hse");
+  const hseCall = await callWith("SAFETY", ["HSE"], [hse.id], ["HSE_SAFETY"], "[TEST] 안전 이상");
+  check(hseCall.status === 201, `HSE call accepted (${hseCall.status} ${hseCall.body.code ?? ""})`);
+  const mustGet = (await db.all("SELECT name FROM app_user WHERE active = 1 AND (role = 'PLANT_MANAGER' OR team_leader = 1)")).map((r) => r.name as string);
+  let hseNotes: string[] = [];
+  for (let i = 0; i < 20 && hseNotes.length === 0; i++) {
+    await sleep(250);
+    hseNotes = ((await detail(hseCall.body.event.id)).body.notifications as { recipient: string; message: string }[]).filter((n) => n.message.startsWith("[ANDON 발생]")).map((n) => n.recipient);
+  }
+  check(
+    hseNotes.includes(hse.name) && hseNotes.includes(frtSvName) && mustGet.length > 0 && mustGet.every((n) => hseNotes.includes(n)) && !hseNotes.includes(pcl.name),
+    `HSE call → HSE + ${mustGet.length} plant managers / team leaders + line 슈퍼 (${hseNotes.length})`,
+  );
+  await transition(hse.client, hseCall.body.event.id, "CLOSE", "[TEST] cleanup");
 
   console.log("APPEND-ONLY");
   let blocked = 0;

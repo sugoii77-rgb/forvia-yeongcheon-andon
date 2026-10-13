@@ -302,7 +302,7 @@ export interface CreateAndonInput {
 }
 
 /** Departments a GAP leader calls (plant meeting 2026-10-07/08: QC, MT, PC&L — plus UAP, added separately). */
-export const CALLABLE_DEPARTMENTS = ["QC", "MT", "PCL"];
+export const CALLABLE_DEPARTMENTS = ["QC", "MT", "PCL", "HSE"];
 export async function callableDepartments(): Promise<{ code: string; label: string }[]> {
   return (await db.all(`SELECT code, COALESCE(display_code, code) AS display, name_ko FROM department WHERE active = 1 AND code IN (${CALLABLE_DEPARTMENTS.map(() => "?").join(",")}) ORDER BY sort_order`, ...CALLABLE_DEPARTMENTS))
     .map((r) => ({ code: r.code as string, label: `${r.display as string} · ${r.name_ko as string}` }));

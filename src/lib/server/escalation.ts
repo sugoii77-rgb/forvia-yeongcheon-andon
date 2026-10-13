@@ -10,7 +10,7 @@ import { db, nowIso } from "./db.ts";
 import { sendToRecipients, type NotificationRecipient } from "./notifications/index.ts";
 
 export const ESCALATION_AFTER_MS = 2 * 3600_000;
-export const ESCALATION_DEPARTMENTS = ["PCL", "QC", "MT", "UAP"] as const;
+export const ESCALATION_DEPARTMENTS = ["PCL", "QC", "MT", "UAP", "HSE"] as const;
 /** Situations that never escalate (예방보전 — preventive maintenance, when it is added as a situation). */
 export const NO_ESCALATION_SITUATIONS = ["MT_PREVENTIVE"];
 

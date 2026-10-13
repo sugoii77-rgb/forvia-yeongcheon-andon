@@ -116,6 +116,24 @@ async function resolveRecipients(event: AndonEvent): Promise<NotificationRecipie
      WHERE x.event_id = ? AND u.active = 1 ORDER BY u.id`,
     event.id,
   );
+  // HSE (안전, plant 2026-10-13): besides the people chosen, every plant manager, every team leader, all of
+  // HSE and the line's 슈퍼 are told.
+  if (event.departments?.some((d) => d.code === "HSE")) {
+    const extra = await db.all(
+      `SELECT u.id, u.name, u.department_code,
+              (SELECT c.recipient_id FROM user_notification_channel c
+               WHERE c.user_id = u.id AND c.provider = 'KAKAO' AND c.verified = 1 AND c.active = 1
+               ORDER BY c.id LIMIT 1) AS kakao_recipient_id
+       FROM app_user u
+       WHERE u.active = 1 AND (u.role = 'PLANT_MANAGER' OR u.team_leader = 1 OR u.department_code = 'HSE'
+         OR u.id IN (SELECT a.user_id FROM line_assignment a WHERE a.line_code = ? AND a.assignment_role = 'SUPERVISOR'
+                     AND a.active = 1 AND (a.effective_to IS NULL OR a.effective_to > ?)))
+       ORDER BY u.id`,
+      event.lineCode,
+      new Date().toISOString(),
+    );
+    for (const u of extra) if (!chosen.some((c) => c.id === u.id)) chosen.push(u);
+  }
   if (chosen.length > 0 || (await db.get("SELECT 1 FROM andon_event_department WHERE event_id = ?", event.id))) {
     return chosen.map((u) => ({
       userId: u.id as number,

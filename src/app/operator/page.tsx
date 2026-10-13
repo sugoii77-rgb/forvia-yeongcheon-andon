@@ -95,7 +95,7 @@ export default function OperatorPage() {
         add("PCL", target("PCL")?.members.map((m) => m.id));
       } else {
         add(s.target, defaults(s.target));
-        if (s.target !== "PCL" && s.target !== "UAP") add("UAP", defaults("UAP"));
+        if (s.target !== "PCL" && s.target !== "UAP" && s.target !== "HSE") add("UAP", defaults("UAP")); // HSE: the server adds PM, team leaders, line 슈퍼
       }
     }
     setDeps((targets ?? []).map((t) => t.code).filter((c) => chosen[c]));
@@ -109,7 +109,7 @@ export default function OperatorPage() {
   // "QC 3명 · MT 1명" — shown in the call bar
   const recipientSummary = deps
     .map((d) => `${targets?.find((t) => t.code === d)?.label.split(" · ")[0] ?? d} ${people[d]?.length ?? 0}명`)
-    .join(" · ");
+    .join(" · ") + (deps.includes("HSE") ? " + 공장장 · 팀장 · 담당 슈퍼" : "");
   const situationText = situationList.filter((s) => situations.includes(s.code)).map((s) => s.nameKo).join(", ");
 
   const processes = meta?.processes.filter((p) => p.lineCode === lineCode) ?? [];
