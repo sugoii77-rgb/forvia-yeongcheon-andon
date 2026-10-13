@@ -74,9 +74,7 @@ export default function OperatorPage() {
    * department except PC&L also messages UAP (plant meeting 2026-10-07). PC&L 자재 결품 (2026-10-08):
    * 자작품 → PC&L SV + UAP 전체; 외주품 → PC&L 전체 (no UAP).
    */
-  function toggleSituation(code: string) {
-    const next = situations.includes(code) ? situations.filter((c) => c !== code) : [...situations, code];
-    setSituations(next);
+  function applySituations(next: string[], targets: CallTargetDepartment[] | null) {
     const sits = next.map((c) => situationList.find((s) => s.code === c)).filter((s): s is CallSituation => !!s);
     setCategoryCode(sits[0]?.category ?? "");
     const target = (c: string) => targets?.find((t) => t.code === c);
@@ -102,6 +100,21 @@ export default function OperatorPage() {
     setDeps((targets ?? []).map((t) => t.code).filter((c) => chosen[c]));
     setPeople(Object.fromEntries(Object.entries(chosen).map(([d, ids]) => [d, [...ids]])));
   }
+  function toggleSituation(code: string) {
+    const next = situations.includes(code) ? situations.filter((c) => c !== code) : [...situations, code];
+    setSituations(next);
+    applySituations(next, targets);
+  }
+  // The line's people (슈퍼 / GL) arrive with the targets of that line: a situation tapped before they loaded
+  // is applied again, so nobody is missed (there is no screen to add people by hand any more).
+  const situationsRef = useRef(situations);
+  useEffect(() => {
+    situationsRef.current = situations;
+  }, [situations]);
+  useEffect(() => {
+    if (targets && situationsRef.current.length) applySituations(situationsRef.current, targets);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the targets change
+  }, [targets]);
   const situationGroups = [...new Set(situationList.map((s) => s.target))].sort((a, b) => Number(b === "MT") - Number(a === "MT")).map((target) => ({
     target,
     label: targets?.find((t) => t.code === target)?.label ?? target,
@@ -341,22 +354,27 @@ export default function OperatorPage() {
               </div>
             )}
 
-            {/* 예방보전 needs a short note on the planned work; every other call is line → situation → CALL. No photos. */}
-            {situations.includes("MT_PREVENTIVE") && (
-              <div className="field">
-                <label htmlFor="desc">
-                  예방보전 안내<span className="en" style={{ fontWeight: 500, color: "var(--ink-3)", fontSize: 14, marginLeft: 6 }}>100자 이내</span>
-                </label>
-                <textarea
-                  id="desc"
-                  className="textarea"
-                  maxLength={100}
-                  placeholder="예) 3번 로봇 정기 점검, 14:00~16:00 라인 정지"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                />
-              </div>
-            )}
+            {/* Optional comment (plant 2026-10-13); 예방보전 needs a short note on the planned work. No photos. */}
+            <div className="field">
+              <label htmlFor="desc">
+                {situations.includes("MT_PREVENTIVE") ? "예방보전 안내" : "내용"}
+                <span className="en" style={{ fontWeight: 500, color: "var(--ink-3)", fontSize: 14, marginLeft: 6 }}>
+                  {situations.includes("MT_PREVENTIVE") ? "100자 이내" : "선택 · Comment"}
+                </span>
+              </label>
+              <textarea
+                id="desc"
+                className="textarea"
+                maxLength={situations.includes("MT_PREVENTIVE") ? 100 : 500}
+                placeholder={
+                  situations.includes("MT_PREVENTIVE")
+                    ? "예) 3번 로봇 정기 점검, 14:00~16:00 라인 정지"
+                    : "추가 설명 (선택) — 비워두면 선택한 상황이 내용이 됩니다"
+                }
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </div>
 
             {validation && <div className="alert alert-warn">{validation}</div>}
             {state.kind === "error" && (
