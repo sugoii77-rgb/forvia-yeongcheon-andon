@@ -1,12 +1,8 @@
-import { getSessionUser } from "@/lib/server/auth";
-import { CALL_ROLES } from "@/lib/domain";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Start page of the home-screen icon (web app manifest start_url): GAP leaders / supervisors straight to
-// the call screen, other logged-in users to their department's ANDONs, everybody else to the menu.
-export async function GET(req: Request) {
-  const user = await getSessionUser(req).catch(() => null);
-  const to = user?.active ? (CALL_ROLES.includes(user.role) ? "/operator" : "/respond") : "/";
-  return new Response(null, { status: 303, headers: { Location: to, "Cache-Control": "no-store" } });
+// Start page of icons installed before 2026-10-13 (old manifest start_url). Plant request 2026-10-13: the
+// app opens on the main menu for everybody; the call screen is one tap away (ANDON 호출).
+export async function GET() {
+  return new Response(null, { status: 303, headers: { Location: "/", "Cache-Control": "no-store" } });
 }

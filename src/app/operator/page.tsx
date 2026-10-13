@@ -148,12 +148,19 @@ export default function OperatorPage() {
     : [];
 
   const mine = (myLines ?? []).map((c) => meta?.lines.find((l) => l.code === c)).filter((l): l is NonNullable<typeof l> => !!l);
-  // a remembered line outside "my lines" keeps the full list open, so the choice stays visible
-  const allOpen = mine.length === 0 || showAllLines || (!!lineCode && !mine.some((l) => l.code === lineCode));
+  // Plant request 2026-10-13: a UAP SV / GL always starts from their own lines — the other lines stay folded
+  // (people without own lines, e.g. the UAP team leader, see every line).
+  const allOpen = mine.length === 0 || showAllLines;
+  const startChecked = useRef(false);
   useEffect(() => {
-    // exactly one own line and nothing chosen yet: choose it
-    if (!lineCode && mine.length === 1) setLineCode(mine[0].code);
-  }, [lineCode, mine, setLineCode]);
+    if (startChecked.current || myLines === null || !meta) return;
+    startChecked.current = true;
+    // a line remembered on this device that is not one of my lines is dropped; exactly one own line is chosen
+    if (mine.length > 0 && lineCode && !mine.some((l) => l.code === lineCode)) {
+      setLineCode(mine.length === 1 ? mine[0].code : "");
+      setProcessId("");
+    } else if (!lineCode && mine.length === 1) setLineCode(mine[0].code);
+  }, [lineCode, mine, myLines, meta, setLineCode, setProcessId]);
   const lineButton = (l: { code: string; name: string }) => (
     <button
       key={l.code}
