@@ -102,7 +102,7 @@ async function main() {
   const lineSv = Number((await db.get("SELECT user_id FROM line_assignment WHERE line_code = 'AP1-MAIN1' AND assignment_role = 'SUPERVISOR' AND active = 1"))!.user_id);
   check(!!sv && sv.members.length > 0 && sv.defaultMemberIds!.includes(lineSv), "UAP target: production people, the line's supervisor pre-chosen");
   const sitTarget = (code: string) => (t2.situations as { code: string; target: string }[]).find((x) => x.code === code)?.target;
-  check((t2.situations as unknown[]).length === 23 && sitTarget("MT_ROBOT") === "MT" && sitTarget("SQA_PART") === "QC" && sitTarget("ME_TOOLING") === "UAP" && sitTarget("MT_PREVENTIVE") === "MT", "23 situations: SQA → QC, ME situations → UAP, 예방보전 → MT");
+  check((t2.situations as unknown[]).length === 17 && sitTarget("MT_ROBOT") === "MT" && sitTarget("SQA_PART") === "QC" && sitTarget("ME_TOOLING") === undefined && sitTarget("SV_MANPOWER") === undefined && sitTarget("MT_PREVENTIVE") === "MT", "17 situations: SQA → QC, 예방보전 → MT, no UAP situations (2026-10-13)");
   const sit = await (async () => {
     const f = new FormData();
     f.set("lineCode", "AP1-MAIN1");
@@ -110,12 +110,12 @@ async function main() {
     f.set("categoryCode", "MAINTENANCE");
     f.set("description", "[TEST] call: situations + SV");
     f.set("clientRequestId", `call-sit-${Date.now()}`);
-    for (const x of ["MT_ROBOT", "SV_MANPOWER"]) f.append("situations", x);
+    for (const x of ["MT_ROBOT", "MT_SENSOR"]) f.append("situations", x);
     for (const x of ["MT", "SV"]) f.append("departments", x); // "SV" = older name of the UAP target
     for (const x of [mt.id, lineSv]) f.append("recipients", String(x));
     return gap.request("POST", "/api/andons", f);
   })();
-  check(sit.status === 201 && sit.body.event.situations.join() === "Robot Fault,인원 부족", `situations stored with the event (${sit.body.event?.situations})`);
+  check(sit.status === 201 && sit.body.event.situations.join() === "Robot Fault,Sensor Fault", `situations stored with the event (${sit.body.event?.situations})`);
   check(sit.body.event.departments.map((x: { label: string }) => x.label).join() === "MT · 보전,UAP · 생산", `MT + UAP (via the older "SV" name) called (${sit.body.event?.departmentLabel})`);
   await transition(mt.client, sit.body.event.id, "CLOSE", "[TEST] cleanup");
   const badSit = await createAndon("TGDI1", "WCC Final Inspection", "QUALITY", "[TEST] call: bad situation", gap, undefined, { departments: ["QC"] });
@@ -128,6 +128,10 @@ async function main() {
   f2.append("situations", "NOPE");
   const rb = await gap.request("POST", "/api/andons", f2);
   check(rb.status === 400 && rb.body.code === "INVALID_SITUATION", `unknown situation → 400 (${rb.body.code})`);
+  f2.set("situations", "SV_MANPOWER");
+  f2.set("clientRequestId", `call-retired-${Date.now()}`);
+  const rr = await gap.request("POST", "/api/andons", f2);
+  check(rr.status === 400 && rr.body.code === "INVALID_SITUATION", `retired UAP situation → 400 (${rr.body.code})`);
   const f3 = new FormData();
   for (const [k, v] of Object.entries({ lineCode: "TGDI1", processId: String(badSit.body.event.processId), categoryCode: "QUALITY", description: "[TEST] y", clientRequestId: `call-sv-${Date.now()}` })) f3.set(k, v);
   f3.append("departments", "UAP");

@@ -215,6 +215,8 @@ export interface CallSituation {
   nameKo: string;
   target: string;
   category: string;
+  /** no longer offered on the call screen; the name is kept for past ANDONs */
+  retired?: boolean;
 }
 
 /** Label of the SV call target (production supervisors; their department is UAP). */

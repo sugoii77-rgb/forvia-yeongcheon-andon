@@ -47,7 +47,7 @@ export const DEPARTMENTS = [
  * call target (department; SV = the line's supervisor) and suggests the issue category. Code-defined
  * (not stored in the DB); events store the chosen codes (andon_event.situations, v9).
  */
-export const CALL_SITUATIONS: { code: string; nameKo: string; target: string; category: string }[] = [
+export const CALL_SITUATIONS: { code: string; nameKo: string; target: string; category: string; retired?: boolean }[] = [
   { code: "QC_MISSING", nameKo: "누락", target: "QC", category: "QUALITY" },
   { code: "QC_WELD", nameKo: "용접불량", target: "QC", category: "QUALITY" },
   { code: "QC_APPEARANCE", nameKo: "외관불량", target: "QC", category: "QUALITY" },
@@ -63,18 +63,19 @@ export const CALL_SITUATIONS: { code: string; nameKo: string; target: string; ca
   { code: "MT_SENSOR", nameKo: "Sensor Fault", target: "MT", category: "MAINTENANCE" },
   // registered by UAP, yellow at once (planned work), text only, never escalated (2026-10-08)
   { code: "MT_PREVENTIVE", nameKo: "예방보전", target: "MT", category: "MAINTENANCE" },
-  // ME (IPL) is not called directly (2026-10-08): production handles these, ME is told at the 2-hour escalation
-  { code: "ME_CONDITION", nameKo: "공정조건 이상", target: "UAP", category: "PRODUCTION" },
-  { code: "ME_CYCLE_TIME", nameKo: "싸이클타임 불량", target: "UAP", category: "PRODUCTION" },
-  { code: "ME_TOOLING", nameKo: "치공구 문제", target: "UAP", category: "PRODUCTION" },
-  { code: "ME_NEW_ISSUE", nameKo: "신규 문제 원인 미확정", target: "UAP", category: "PRODUCTION" },
+  // ME (IPL) is not called directly (2026-10-08): production handles these, ME is told at the 2-hour escalation.
+  // UAP situations removed from the call screen (plant 2026-10-13) — kept (retired) so past ANDONs keep their names.
+  { code: "ME_CONDITION", nameKo: "공정조건 이상", target: "UAP", category: "PRODUCTION", retired: true },
+  { code: "ME_CYCLE_TIME", nameKo: "싸이클타임 불량", target: "UAP", category: "PRODUCTION", retired: true },
+  { code: "ME_TOOLING", nameKo: "치공구 문제", target: "UAP", category: "PRODUCTION", retired: true },
+  { code: "ME_NEW_ISSUE", nameKo: "신규 문제 원인 미확정", target: "UAP", category: "PRODUCTION", retired: true },
   // 자재 결품: in-house part (자작품) or purchased part (외주품) — decides who is told at completion
   { code: "PCL_SHORTAGE_INHOUSE", nameKo: "자재 결품 (자작품)", target: "PCL", category: "MATERIAL" },
   { code: "PCL_SHORTAGE_PURCHASED", nameKo: "자재 결품 (외주품)", target: "PCL", category: "MATERIAL" },
   { code: "PCL_WRONG_INPUT", nameKo: "잘못 투입", target: "PCL", category: "MATERIAL" },
   { code: "PCL_FIFO", nameKo: "FIFO 문제", target: "PCL", category: "MATERIAL" },
-  { code: "SV_MANPOWER", nameKo: "인원 부족", target: "UAP", category: "PRODUCTION" },
-  { code: "SV_METHOD", nameKo: "작업방법 문제", target: "UAP", category: "PRODUCTION" },
+  { code: "SV_MANPOWER", nameKo: "인원 부족", target: "UAP", category: "PRODUCTION", retired: true },
+  { code: "SV_METHOD", nameKo: "작업방법 문제", target: "UAP", category: "PRODUCTION", retired: true },
 ];
 
 export const LEGACY_DEPARTMENT_SUCCESSORS: Record<string, string> = {

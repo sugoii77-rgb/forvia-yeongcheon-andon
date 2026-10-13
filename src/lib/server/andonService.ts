@@ -405,7 +405,7 @@ export async function createEvent(input: CreateAndonInput): Promise<{ event: And
   if (!cat) throw new AndonError(400, "이상 유형 선택이 올바르지 않습니다.", "INVALID_CATEGORY");
   const call = input.departments ? await validateCall(input.departments, input.recipientIds ?? []) : null;
   const situations = [...new Set((input.situations ?? []).map(String))];
-  if (situations.some((c) => !CALL_SITUATIONS.some((s) => s.code === c))) throw new AndonError(400, "상황 선택이 올바르지 않습니다.", "INVALID_SITUATION");
+  if (situations.some((c) => !CALL_SITUATIONS.some((s) => s.code === c && !s.retired))) throw new AndonError(400, "상황 선택이 올바르지 않습니다.", "INVALID_SITUATION");
   // 예방보전 (preventive maintenance): planned MT work registered by UAP — yellow at once, short text only
   const preventive = situations.includes("MT_PREVENTIVE");
   if (preventive && description.length > 100) throw new AndonError(400, "예방보전 안내는 100자 이내로 입력하세요.", "DESCRIPTION_TOO_LONG");

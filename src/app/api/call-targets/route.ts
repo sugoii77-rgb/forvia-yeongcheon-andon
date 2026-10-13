@@ -29,6 +29,6 @@ export async function GET(req: Request) {
       )
     ).map((r) => r.line_code as string);
     const line = new URL(req.url).searchParams.get("line") ?? undefined;
-    return Response.json({ departments: await callTargets(line), categoryDefaults, situations: CALL_SITUATIONS, myLines }, { headers: { "Cache-Control": "no-store" } });
+    return Response.json({ departments: await callTargets(line), categoryDefaults, situations: CALL_SITUATIONS.filter((s) => !s.retired), myLines }, { headers: { "Cache-Control": "no-store" } });
   });
 }
