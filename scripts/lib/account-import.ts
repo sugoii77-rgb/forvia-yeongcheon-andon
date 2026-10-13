@@ -44,6 +44,7 @@ export function departmentOf(text: string): string | null {
   if (/^(PC&L|PCL|PC&L|물류|LOGIS)/.test(t)) return "PCL";
   if (/^(SQA|외주품질)/.test(t)) return "QC"; // SQA is part of QC (2026-10-08)
   if (/^(QC|품질|QUAL)/.test(t)) return "QC";
+  if (/^(HSE|안전)/.test(t)) return "HSE"; // 2026-10-13
   if (/^(ME|생산기술|IPL)/.test(t)) return "ME"; // IPL is the plant's name for the ME team (2026-10-13)
   return null;
 }

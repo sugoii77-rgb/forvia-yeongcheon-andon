@@ -117,9 +117,9 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
   const e = data.event;
   // the server decides per action (a QC event is closed by UAP); older servers: by status only
   const actions = data.viewer?.actions ?? allowedActions(e.status);
-  const closeByUap = allowedActions(e.status).includes("CLOSE") && !actions.includes("CLOSE") && e.departments.some((d) => d.code === "QC" || d.code === "PCL");
+  const closeByUap = allowedActions(e.status).includes("CLOSE") && !actions.includes("CLOSE") && e.departments.some((d) => d.code === "QC" || d.code === "PCL" || d.code === "HSE");
   // Equipment (MT) events: two steps for MT — 수리 시작 (yellow) → 수리 완료 (green) (plant meeting 2026-10-08)
-  const repair = e.departments.some((d) => d.code === "MT") && !e.departments.some((d) => d.code === "QC" || d.code === "PCL");
+  const repair = e.departments.some((d) => d.code === "MT") && !e.departments.some((d) => d.code === "QC" || d.code === "PCL" || d.code === "HSE");
   const end = e.closedAt ? new Date(e.closedAt).getTime() : now;
   const elapsed = (end - new Date(e.createdAt).getTime()) / 1000;
   const eligible = data.eligibleResponders;

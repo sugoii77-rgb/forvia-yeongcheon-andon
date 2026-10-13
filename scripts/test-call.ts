@@ -255,7 +255,7 @@ async function main() {
 
   // HSE (2026-10-13): HSE + every plant manager + every team leader + the line's 슈퍼, whoever was chosen
   const hse = await registerAccount("HSE", "call-hse");
-  const hseCall = await callWith("SAFETY", ["HSE"], [hse.id], ["HSE_SAFETY"], "[TEST] 안전 이상");
+  const hseCall = await callWith("SAFETY", ["HSE", "UAP"], [hse.id], ["HSE_SAFETY"], "[TEST] 안전 이상");
   check(hseCall.status === 201, `HSE call accepted (${hseCall.status} ${hseCall.body.code ?? ""})`);
   const mustGet = (await db.all("SELECT name FROM app_user WHERE active = 1 AND (role = 'PLANT_MANAGER' OR team_leader = 1)")).map((r) => r.name as string);
   let hseNotes: string[] = [];
@@ -267,7 +267,11 @@ async function main() {
     hseNotes.includes(hse.name) && hseNotes.includes(frtSvName) && mustGet.length > 0 && mustGet.every((n) => hseNotes.includes(n)) && !hseNotes.includes(pcl.name),
     `HSE call → HSE + ${mustGet.length} plant managers / team leaders + line 슈퍼 (${hseNotes.length})`,
   );
-  await transition(hse.client, hseCall.body.event.id, "CLOSE", "[TEST] cleanup");
+  check((await transition(hse.client, hseCall.body.event.id, "ACKNOWLEDGE")).body.event?.status === "ACKNOWLEDGED", "HSE acknowledges its call");
+  const hseClose = await transition(hse.client, hseCall.body.event.id, "CLOSE", "[TEST] HSE tries to close");
+  check(hseClose.status === 403, `HSE cannot close its own call — UAP does (${hseClose.status})`);
+  const uapClose = await transition(gap, hseCall.body.event.id, "CLOSE", "[TEST] 안전 조치 확인");
+  check(uapClose.body.event?.status === "CLOSED", `UAP closes the HSE call (${uapClose.status} ${uapClose.body.code ?? ""} ${uapClose.body.error ?? ""})`);
 
   console.log("APPEND-ONLY");
   let blocked = 0;

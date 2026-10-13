@@ -106,9 +106,9 @@ async function withDepartments(events: AndonEvent[]): Promise<AndonEvent[]> {
 export async function actionDepartmentCodes(eventId: string, fallback: string, action: TransitionAction): Promise<string[]> {
   const deps = await eventDepartmentCodes(eventId, fallback);
   if (action === "CLOSE") {
-    // QC and PC&L events are closed by UAP (2026-10-07 / 08); MT closes its own repair
+    // QC, PC&L and HSE events are closed by UAP (2026-10-07 / 08 / 13); MT closes its own repair
     const effective = await Promise.all(deps.map((d) => effectiveDepartment(d)));
-    if (effective.includes("QC") || effective.includes("PCL")) return ["UAP"];
+    if (effective.includes("QC") || effective.includes("PCL") || effective.includes("HSE")) return ["UAP"];
   }
   return deps;
 }
