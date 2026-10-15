@@ -107,6 +107,9 @@ export async function actionDepartmentCodes(eventId: string, fallback: string, a
   const deps = await eventDepartmentCodes(eventId, fallback);
   if (action === "CLOSE") {
     // Every ANDON is closed by UAP (production confirms): QC / PC&L (2026-10-07 / 08), HSE and MT (2026-10-13 / 15)
+    // — except 예방보전 (planned MT work): MT closes it (2026-10-15)
+    const row = (await db.get("SELECT situations FROM andon_event WHERE id = ?", eventId)) as { situations: string | null } | undefined;
+    if (row?.situations?.includes('"MT_PREVENTIVE"')) return ["MT"];
     return ["UAP"];
   }
   return deps;

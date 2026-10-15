@@ -119,7 +119,8 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
   const actions = data.viewer?.actions ?? allowedActions(e.status);
   const closeByUap = allowedActions(e.status).includes("CLOSE") && !actions.includes("CLOSE") && e.departments.some((d) => d.code !== "UAP");
   // Equipment (MT) events: MT 수리 시작 (yellow) and repair notes; UAP closes (green) — plant 2026-10-15
-  const repair = e.departments.some((d) => d.code === "MT") && !e.departments.some((d) => d.code === "QC" || d.code === "PCL" || d.code === "HSE");
+  const preventive = e.situations?.includes("예방보전") ?? false; // MT closes its planned work itself
+  const repair = !preventive && e.departments.some((d) => d.code === "MT") && !e.departments.some((d) => d.code === "QC" || d.code === "PCL" || d.code === "HSE");
   const end = e.closedAt ? new Date(e.closedAt).getTime() : now;
   const elapsed = (end - new Date(e.createdAt).getTime()) / 1000;
   const eligible = data.eligibleResponders;
@@ -255,7 +256,7 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
               )}
               {!mode && actions.includes("CLOSE") && (
                 <button className="btn btn-close btn-big" style={{ flex: 1 }} disabled={busy} onClick={() => setMode("CLOSE")}>
-                  {repair ? "수리 완료 확인 (CLOSE)" : "CLOSE · 완료"}
+                  {repair ? "수리 완료 확인 (CLOSE)" : preventive ? "예방보전 완료" : "CLOSE · 완료"}
                 </button>
               )}
               {mode && (

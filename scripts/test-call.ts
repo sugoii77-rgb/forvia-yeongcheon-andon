@@ -206,6 +206,10 @@ async function main() {
   const processFrt = (await fetch(`${BASE}/api/meta`).then((r) => r.json())).processes.find((x: { lineCode: string }) => x.lineCode === "AP1-FRT").id;
   const pv = await callWith("MAINTENANCE", ["MT"], [mt.id], ["MT_PREVENTIVE"], "[TEST] 3번 로봇 정기 점검");
   check(pv.status === 201 && pv.body.event.status === "ACKNOWLEDGED", `예방보전: registered by UAP, yellow at once (${pv.body.event?.status})`);
+  const gapClosesPv = await transition(gap, pv.body.event.id, "CLOSE", "[TEST] UAP tries");
+  check(gapClosesPv.status === 403, `예방보전 is closed by MT, not UAP (${gapClosesPv.status})`);
+  const pv2 = await callWith("MAINTENANCE", ["MT"], [mt.id], ["MT_PREVENTIVE"], "[TEST] 2번 로봇 점검");
+  check((await transition(mt.client, pv2.body.event.id, "CLOSE", "[TEST] 점검 완료")).body.event?.status === "CLOSED", "MT closes 예방보전");
   const pvLong = await callWith("MAINTENANCE", ["MT"], [mt.id], ["MT_PREVENTIVE"], "x".repeat(101));
   check(pvLong.status === 400 && pvLong.body.code === "DESCRIPTION_TOO_LONG", "예방보전 text is limited to 100 characters");
   await db.run("UPDATE andon_event SET created_at = ? WHERE id = ?", new Date(Date.now() - 3 * 3600_000).toISOString(), pv.body.event.id);
