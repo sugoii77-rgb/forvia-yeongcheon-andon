@@ -117,8 +117,8 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
   const e = data.event;
   // the server decides per action (a QC event is closed by UAP); older servers: by status only
   const actions = data.viewer?.actions ?? allowedActions(e.status);
-  const closeByUap = allowedActions(e.status).includes("CLOSE") && !actions.includes("CLOSE") && e.departments.some((d) => d.code === "QC" || d.code === "PCL" || d.code === "HSE");
-  // Equipment (MT) events: two steps for MT — 수리 시작 (yellow) → 수리 완료 (green) (plant meeting 2026-10-08)
+  const closeByUap = allowedActions(e.status).includes("CLOSE") && !actions.includes("CLOSE") && e.departments.some((d) => d.code !== "UAP");
+  // Equipment (MT) events: MT 수리 시작 (yellow) and repair notes; UAP closes (green) — plant 2026-10-15
   const repair = e.departments.some((d) => d.code === "MT") && !e.departments.some((d) => d.code === "QC" || d.code === "PCL" || d.code === "HSE");
   const end = e.closedAt ? new Date(e.closedAt).getTime() : now;
   const elapsed = (end - new Date(e.createdAt).getTime()) / 1000;
@@ -220,13 +220,13 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
               </div>
             )}
             {viewer?.canRespond && closeByUap && (
-              <div className="alert alert-warn">품질(QC) 건의 최종 완료(Close)는 생산(UAP)이 확인 후 처리합니다. 조치 내용을 입력해 주세요.</div>
+              <div className="alert alert-warn">최종 완료(Close)는 생산(UAP)이 확인 후 처리합니다. {repair ? "수리 내용" : "조치 내용"}을 입력해 주세요.</div>
             )}
             {eligible.length === 0 && <div className="alert alert-error">이 부서에 등록된 담당자가 없습니다 (기준정보 확인 필요).</div>}
 
             {viewer?.canRespond && mode && (
               <div className="field">
-                <label htmlFor="comment">{mode === "CLOSE" ? (repair ? "수리 내용" : "시정 조치 내용 (Corrective action)") : "조치 내용 (Action note)"}</label>
+                <label htmlFor="comment">{mode === "CLOSE" ? (repair ? "수리 확인 내용" : "시정 조치 내용 (Corrective action)") : repair ? "수리 내용" : "조치 내용 (Action note)"}</label>
                 <textarea
                   id="comment"
                   className="textarea"
@@ -248,14 +248,14 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
                   {busy ? "처리 중…" : repair ? "수리 시작" : "ACKNOWLEDGE · 접수"}
                 </button>
               )}
-              {!mode && !repair && actions.includes("ACTION") && (
+              {!mode && actions.includes("ACTION") && (
                 <button className="btn btn-action btn-big" style={{ flex: 1 }} disabled={busy} onClick={() => setMode("ACTION")}>
-                  ACTION · 조치 입력
+                  {repair ? "수리 내용 입력" : "ACTION · 조치 입력"}
                 </button>
               )}
               {!mode && actions.includes("CLOSE") && (
                 <button className="btn btn-close btn-big" style={{ flex: 1 }} disabled={busy} onClick={() => setMode("CLOSE")}>
-                  {repair ? "수리 완료" : "CLOSE · 완료"}
+                  {repair ? "수리 완료 확인 (CLOSE)" : "CLOSE · 완료"}
                 </button>
               )}
               {mode && (
@@ -266,7 +266,7 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
                     disabled={busy}
                     onClick={() => run(mode)}
                   >
-                    {busy ? "저장 중…" : mode === "CLOSE" ? (repair ? "수리 완료 저장" : "완료 저장 (CLOSE)") : "조치 저장 (ACTION)"}
+                    {busy ? "저장 중…" : mode === "CLOSE" ? (repair ? "수리 완료 확인 저장" : "완료 저장 (CLOSE)") : repair ? "수리 내용 저장" : "조치 저장 (ACTION)"}
                   </button>
                   <button className="btn btn-big" style={{ flex: 1 }} disabled={busy} onClick={() => setMode(null)}>
                     취소

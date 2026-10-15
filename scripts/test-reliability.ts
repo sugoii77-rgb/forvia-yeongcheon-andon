@@ -68,16 +68,18 @@ async function main() {
   check(none.status === 201 && none.body.event?.photoFile === null && !none.body.photoWarning, "no photo: created, no warning");
 
   // Close the test events (category MAINTENANCE → MT) so they do not stay RED on the dashboard.
+  // MT acknowledges, UAP closes (every ANDON is closed by UAP since 2026-10-15)
   const mt = await registerAccount("MT", "reliability");
+  const uap = await callerClient();
   for (const id of created) {
-    const t = (action: string, comment?: string) =>
+    const t = (client: { headers(): Record<string, string> }, action: string, comment?: string) =>
       fetch(`${BASE}/api/andons/${id}/transition`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...mt.client.headers() },
+        headers: { "Content-Type": "application/json", ...client.headers() },
         body: JSON.stringify({ action, comment }),
       });
-    await t("ACKNOWLEDGE");
-    await t("CLOSE", "[TEST] reliability test cleanup");
+    await t(mt.client, "ACKNOWLEDGE");
+    await t(uap, "CLOSE", "[TEST] reliability test cleanup");
   }
   const board = await fetch(`${BASE}/api/andons?scope=active`).then((r) => r.json());
   check(!board.events.some((e: { id: string }) => created.includes(e.id)), `test events closed again (${created.length})`);

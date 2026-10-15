@@ -17,7 +17,7 @@ import { db, nowIso } from "./db.ts";
 import { CALL_SITUATIONS } from "./masterData.ts";
 import { AndonError, type AuditInfo } from "./errors.ts";
 import { shiftSnapshotForLine } from "./shiftService.ts";
-import { departmentAliases, departmentLabelMap, effectiveDepartment, resolveResponsibility, validateResponder } from "./routingService.ts";
+import { departmentAliases, departmentLabelMap, resolveResponsibility, validateResponder } from "./routingService.ts";
 
 export { AndonError, type AuditInfo };
 
@@ -106,9 +106,8 @@ async function withDepartments(events: AndonEvent[]): Promise<AndonEvent[]> {
 export async function actionDepartmentCodes(eventId: string, fallback: string, action: TransitionAction): Promise<string[]> {
   const deps = await eventDepartmentCodes(eventId, fallback);
   if (action === "CLOSE") {
-    // QC, PC&L and HSE events are closed by UAP (2026-10-07 / 08 / 13); MT closes its own repair
-    const effective = await Promise.all(deps.map((d) => effectiveDepartment(d)));
-    if (effective.includes("QC") || effective.includes("PCL") || effective.includes("HSE")) return ["UAP"];
+    // Every ANDON is closed by UAP (production confirms): QC / PC&L (2026-10-07 / 08), HSE and MT (2026-10-13 / 15)
+    return ["UAP"];
   }
   return deps;
 }

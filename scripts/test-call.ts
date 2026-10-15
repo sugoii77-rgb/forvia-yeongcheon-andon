@@ -88,7 +88,8 @@ async function main() {
   await sleep(1500);
   const n2 = (await detail(noPeople.body.event.id)).body.notifications;
   check(n2.length === 1 && n2[0].status === "FAILED", "no chosen people → one FAILED 'no recipients' log, nobody messaged");
-  await transition(mt.client, noPeople.body.event.id, "CLOSE", "[TEST] cleanup");
+  await transition(mt.client, noPeople.body.event.id, "ACKNOWLEDGE");
+  await transition(gap, noPeople.body.event.id, "CLOSE", "[TEST] cleanup");
 
   const fallback = await createAndon("TGDI1", "WCC Final Inspection", "QUALITY", "[TEST] call: routing fallback", gap);
   check(fallback.status === 201 && fallback.body.event.departmentCode === "QC" && fallback.body.event.departments.length === 1, "without departments the routing rule decides (QUALITY → QC)");
@@ -117,7 +118,8 @@ async function main() {
   })();
   check(sit.status === 201 && sit.body.event.situations.join() === "설비 고장,공정불량", `situations stored with the event (${sit.body.event?.situations})`);
   check(sit.body.event.departments.map((x: { label: string }) => x.label).join() === "MT · 보전,UAP · 생산", `MT + UAP (via the older "SV" name) called (${sit.body.event?.departmentLabel})`);
-  await transition(mt.client, sit.body.event.id, "CLOSE", "[TEST] cleanup");
+  await transition(mt.client, sit.body.event.id, "ACKNOWLEDGE");
+  await transition(gap, sit.body.event.id, "CLOSE", "[TEST] cleanup");
   const badSit = await createAndon("TGDI1", "WCC Final Inspection", "QUALITY", "[TEST] call: bad situation", gap, undefined, { departments: ["QC"] });
   check(badSit.status === 201, "situations are optional");
   await transition(qc1.client, badSit.body.event.id, "ACKNOWLEDGE");
@@ -160,7 +162,9 @@ async function main() {
   check((await transition(lead.client, qcUap.body.event.id, "CLOSE", "[TEST] UAP closes")).status === 200, "a UAP member closes the QC event");
   const mtEv = await createAndon("TGDI1", "WCC Final Inspection", "MAINTENANCE", "[TEST] call: MT repair", gap, undefined, { departments: ["MT"], recipients: [mt.id] });
   await transition(mt.client, mtEv.body.event.id, "ACKNOWLEDGE");
-  check((await transition(mt.client, mtEv.body.event.id, "CLOSE", "[TEST] repaired")).status === 200, "MT closes its own repair (수리 완료)");
+  check((await transition(mt.client, mtEv.body.event.id, "CLOSE", "[TEST] repaired")).status === 403, "MT cannot close its own repair (2026-10-15: UAP closes)");
+  check((await transition(mt.client, mtEv.body.event.id, "ACTION", "[TEST] 센서 교체")).status === 200, "MT records the repair (ACTION)");
+  check((await transition(gap, mtEv.body.event.id, "CLOSE", "[TEST] 수리 확인")).status === 200, "UAP closes the MT event (수리 완료 확인)");
 
   // 2-hour escalation: plant manager + team leaders (PC&L / QC / MT / UAP), once, only when NOT completed
   const pm = await registerAccount("UAP", "pm");
@@ -170,7 +174,7 @@ async function main() {
   const late = await createAndon("TGDI1", "WCC Final Inspection", "QUALITY", "[TEST] call: escalation", gap, undefined, { departments: ["QC"], recipients: [qc1.id] });
   const closedLate = await createAndon("TGDI1", "WCC Final Inspection", "MAINTENANCE", "[TEST] call: closed in time", gap, undefined, { departments: ["MT"], recipients: [mt.id] });
   await transition(mt.client, closedLate.body.event.id, "ACKNOWLEDGE");
-  await transition(mt.client, closedLate.body.event.id, "CLOSE", "[TEST] done");
+  await transition(gap, closedLate.body.event.id, "CLOSE", "[TEST] done");
   const fresh = await createAndon("TGDI1", "WCC Final Inspection", "QUALITY", "[TEST] call: not yet 2 h", gap, undefined, { departments: ["QC"], recipients: [qc1.id] });
   const back = new Date(Date.now() - 2 * 3600_000 - 60_000).toISOString();
   for (const id of [late.body.event.id, closedLate.body.event.id]) await db.run("UPDATE andon_event SET created_at = ? WHERE id = ?", back, id);
@@ -241,11 +245,11 @@ async function main() {
   const pur = await closeNames("PCL_SHORTAGE_PURCHASED");
   check(pur.notes.includes(frtSvName) && !pur.notes.includes(pcl.name) && !pur.notes.includes(pcl2.name), `외주품 completion → line UAP only, PC&L not told (${pur.notes.length})`);
 
-  // MT: 수리 시작 (yellow) → 수리 완료 by MT (green); notice to all of MT + the line's UAP (SV + GL)
+  // MT: 수리 시작 (yellow) → UAP closes (green, 2026-10-15); notice to all of MT + the line's UAP (SV + GL)
   const mt2 = await registerAccount("MT", "call-mt2");
   const rep = await callWith("MAINTENANCE", ["MT"], [mt.id], ["MT_BREAKDOWN"], "[TEST] 설비 고장");
   check((await transition(mt.client, rep.body.event.id, "ACKNOWLEDGE")).body.event.status === "ACKNOWLEDGED", "MT 수리 시작 → yellow");
-  check((await transition(mt.client, rep.body.event.id, "CLOSE", "[TEST] 로봇 리셋")).body.event.status === "CLOSED", "MT 수리 완료 → green (closed by MT)");
+  check((await transition(gap, rep.body.event.id, "CLOSE", "[TEST] 로봇 리셋 확인")).body.event?.status === "CLOSED", "UAP 수리 완료 확인 → green");
   let repNotes: string[] = [];
   for (let i = 0; i < 20 && repNotes.length === 0; i++) {
     await sleep(250);
