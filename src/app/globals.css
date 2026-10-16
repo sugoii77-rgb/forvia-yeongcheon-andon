@@ -399,6 +399,24 @@ table.table { width: 100%; border-collapse: collapse; background: #fff; font-siz
 .pm-action { background: var(--yellow); color: #231a00; border: 2px solid #fff0b3; box-shadow: 0 0 0 3px rgba(255, 205, 40, 0.9), 0 0 20px 5px rgba(245, 184, 0, 0.45); z-index: 2; }
 .pm-done { background: #12452b; color: #e3ffef; border: 2px solid #3ccf7f; box-shadow: 0 0 0 2px rgba(60, 207, 127, 0.55); z-index: 1; justify-content: center; }
 .pm-done .pm-state { color: #b8f5d2; }
+/* green ceremony: the tile pops and glows, confetti bursts out of it (pm-celebrate, about 5–10 s) */
+.pm-cell:has(.pm-celebrate) { z-index: 8; }
+.pm-celebrate { overflow: visible; background: #1f9d55; color: #fff; border-color: #b9ffd6; animation: pm-cele-pop 0.8s ease-in-out infinite; }
+@keyframes pm-cele-pop {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 3px #7dffb3, 0 0 18px 6px rgba(60, 207, 127, 0.7); }
+  50% { transform: scale(1.07); box-shadow: 0 0 0 5px #d6ffe6, 0 0 46px 18px rgba(60, 207, 127, 0.95); }
+}
+.pm-celebrate > .pm-name, .pm-celebrate > .pm-state { position: relative; z-index: 1; text-shadow: 0 1px 4px rgba(0, 40, 15, 0.9); }
+.pm-cele-burst { position: absolute; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; }
+.pm-cele-burst i { position: absolute; left: -5px; top: -5px; width: 10px; height: 14px; border-radius: 2px; background: #ffd34c; opacity: 0;
+  animation: pm-confetti 1.5s cubic-bezier(0.2, 0.7, 0.3, 1) var(--d) infinite; }
+.pm-cele-burst i:nth-child(4n + 1) { background: #3ccf7f; }
+.pm-cele-burst i:nth-child(4n + 2) { background: #00a9eb; }
+.pm-cele-burst i:nth-child(4n + 3) { background: #ffffff; }
+@keyframes pm-confetti {
+  0% { transform: rotate(var(--a)) translateY(0) rotate(0deg); opacity: 1; }
+  100% { transform: rotate(var(--a)) translateY(calc(var(--pmu) * -8)) rotate(320deg); opacity: 0; }
+}
 .fc-done { color: #7fd3a2; }
 .fs-done h3 { margin: 6px 0; font-size: 15px; color: #7fd3a2; letter-spacing: 0.04em; }
 .fs-doneitem { border-left-color: #3ccf7f !important; opacity: 0.85; }
@@ -498,7 +516,7 @@ table.table { width: 100%; border-collapse: collapse; background: #fff; font-siz
   .pm-time { font-size: clamp(13px, calc(var(--pmu) * 1.3), 26px); }
 }
 
-@media (prefers-reduced-motion: reduce) { .pm-open, .fs-open, .live-dot { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .pm-open, .fs-open, .live-dot, .pm-celebrate, .pm-cele-burst i { animation: none; } }
 /* ordinary desktop / laptop (e.g. 1366 × 768): one-line header, narrower side panel */
 @media (max-width: 1500px) and (min-width: 1101px) {
   .floor-head { gap: 8px; padding: 6px 12px; flex-wrap: nowrap; }

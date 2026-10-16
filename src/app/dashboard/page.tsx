@@ -21,6 +21,10 @@ interface BoardResponse {
 
 // 5 s (2026-10-08): the shop-floor PC runs on LTE — about 2.5× less data and server requests than 2 s
 const POLL_MS = 5000;
+// Green ceremony (plant 2026-10-16): a line that has just been completed celebrates. Seen within one poll,
+// so the effect runs CELEBRATE_MS + up to one poll interval after the close.
+const CELEBRATE_MS = 5000;
+const CONFETTI = Array.from({ length: 14 }, (_, i) => i);
 const STALE_MS = 20000; // ~3 missed updates before the "disconnected" warning
 const META_MS = 5 * 60_000;
 
@@ -59,9 +63,17 @@ function LineTile({ line, st, now, compact, sub, tone }: { line: MapLine; st: Li
   }
   const e = st.lead!;
   if (st.state === "DONE") {
-    // completed within 24 h: green, compact — name + completion time
+    // completed within 24 h: green, compact — name + completion time; just completed: a short ceremony
+    const celebrate = now - Date.parse(e.closedAt!) < CELEBRATE_MS + POLL_MS;
     return (
-      <Link href={`/respond/${encodeURIComponent(e.id)}`} className={`pm-line pm-done${compact ? " pm-chip" : ""}`} data-line={line.code} data-state="DONE" title={`${line.name} · 완료 ${fmtTime(e.closedAt!)}`}>
+      <Link href={`/respond/${encodeURIComponent(e.id)}`} className={`pm-line pm-done${celebrate ? " pm-celebrate" : ""}${compact ? " pm-chip" : ""}`} data-line={line.code} data-state="DONE" title={`${line.name} · 완료 ${fmtTime(e.closedAt!)}`}>
+        {celebrate && (
+          <span className="pm-cele-burst" aria-hidden>
+            {CONFETTI.map((i) => (
+              <i key={i} style={{ "--a": `${i * (360 / CONFETTI.length)}deg`, "--d": `${(i % 3) * 0.18}s` } as CSSProperties} />
+            ))}
+          </span>
+        )}
         <span className="pm-name">{line.name}</span>
         <span className="pm-state">✔ 완료 {fmtTime(e.closedAt!)}{e.closedBy ? ` · ${e.closedBy}` : ""}</span>
       </Link>
