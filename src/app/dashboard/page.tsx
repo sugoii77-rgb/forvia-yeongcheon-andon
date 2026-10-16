@@ -5,8 +5,9 @@
 // line, problem category, state, elapsed time and — since 2026-10-08 (plant request) — the NAME of the
 // person who acknowledged / completed it. Never contact data.
 import Link from "next/link";
+import type { CSSProperties } from "react";
 import { fmtTime, usePolling, useServerNow } from "@/lib/client";
-import { MAP_FRAME, MAP_LANDMARKS, MAP_ZONES } from "@/config/plantLayout";
+import { MAP_FRAME, MAP_ZONES } from "@/config/plantLayout";
 import { STATUS_LABEL, type AndonEvent, type MasterData } from "@/lib/domain";
 import { CATEGORY_LEGEND, categoryKey, displayLines, stationState, elapsedSeconds, formatElapsed, lineStates, placeLines, shiftLabel, sortActive, sortDone, type LineState, type MapLine } from "@/lib/plantMap";
 
@@ -34,7 +35,14 @@ const kstClock = new Intl.DateTimeFormat("ko-KR", {
   hour12: false,
 });
 
-const pct = (b: { x: number; y: number; w: number; h: number }) => ({ left: `${b.x}%`, top: `${b.y}%`, width: `${b.w}%`, height: `${b.h}%` });
+// The big screen shows only the production building (plant 2026-10-16): warehouses / QC lab / maintenance are
+// left out and the building outline (MAP_FRAME) is stretched to the whole map area — tiles and text grow with it.
+const F = MAP_FRAME;
+const fit = (b: { x: number; y: number; w: number; h: number }) => ({ x: ((b.x - F.x) / F.w) * 100, y: ((b.y - F.y) / F.h) * 100, w: (b.w / F.w) * 100, h: (b.h / F.h) * 100 });
+const pct = (raw: { x: number; y: number; w: number; h: number }) => {
+  const b = fit(raw);
+  return { left: `${b.x}%`, top: `${b.y}%`, width: `${b.w}%`, height: `${b.h}%` };
+};
 const stateText = (s: LineState) =>
   s.state === "OPEN"
     ? "발생 OPEN"
@@ -124,25 +132,20 @@ export default function PlantMapPage() {
             ⚠ 서버 연결 끊김 · 마지막 갱신 {lastSuccess ? fmtTime(new Date(lastSuccess).toISOString()) : "-"}
           </span>
         ) : (
-          <span className="conn conn-ok">● LIVE</span>
+          <span className="conn conn-ok"><i className="live-dot" aria-hidden /> LIVE</span>
         )}
       </header>
 
       <div className="floor-body">
         <section className="pm-wrap" aria-label="Plant map">
-          <div className={`pm${active.length > 0 ? " pm-has-alarm" : ""}`}>
+          <div className={`pm${active.length > 0 ? " pm-has-alarm" : ""}`} style={{ "--pmu": `${100 / F.w}cqw` } as CSSProperties}>
             <div className="pm-frame" style={pct(MAP_FRAME)} aria-hidden />
             {MAP_ZONES.map((z) => (
               <div key={z.id} className={`pm-zone pm-zone-${z.tone}`} style={pct(z)} />
             ))}
             {MAP_ZONES.filter((z) => z.title).map((z) => (
-              <div key={`${z.id}-t`} className={`pm-zone-title pm-zone-title-${z.tone}`} style={{ left: `${z.x}%`, width: `${z.w}%`, top: `${z.titleY}%` }}>
+              <div key={`${z.id}-t`} className={`pm-zone-title pm-zone-title-${z.tone}`} style={{ left: `${fit(z).x}%`, width: `${fit(z).w}%`, top: `${(((z.titleY ?? 0) - F.y) / F.h) * 100}%` }}>
                 {z.title}
-              </div>
-            ))}
-            {MAP_LANDMARKS.map((l) => (
-              <div key={l.id} className={`pm-landmark${l.vertical ? " pm-vertical" : ""}`} style={pct(l)}>
-                <span>{l.label}</span>
               </div>
             ))}
             {stations.map((s) => (

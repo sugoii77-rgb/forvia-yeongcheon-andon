@@ -271,6 +271,10 @@ table.table { width: 100%; border-collapse: collapse; background: #fff; font-siz
 .counter-GREEN { background: var(--green); }
 
 .conn { font-size: 14px; padding: 6px 12px; border-radius: 999px; font-weight: 700; }
+/* LIVE (plant 2026-10-16): larger, with a red bead lamp blinking while the board is connected */
+.floor .conn-ok { font-size: 22px; padding: 6px 18px 6px 14px; display: inline-flex; align-items: center; gap: 10px; letter-spacing: 0.08em; font-weight: 900; }
+.live-dot { width: 18px; height: 18px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #ffb3b8 0 18%, #ff2a3a 45%, #a3000c 100%); box-shadow: 0 0 10px 3px rgba(255, 42, 58, 0.75); animation: live-blink 1.2s ease-in-out infinite; }
+@keyframes live-blink { 0%, 100% { opacity: 1; box-shadow: 0 0 12px 4px rgba(255, 42, 58, 0.85); } 50% { opacity: 0.25; box-shadow: 0 0 0 0 rgba(255, 42, 58, 0); } }
 .conn-ok { background: rgba(31, 157, 85, 0.2); color: #6fe3a0; }
 .conn-bad { background: var(--red); color: #fff; animation: blink 1s steps(2) infinite; }
 
@@ -377,7 +381,7 @@ table.table { width: 100%; border-collapse: collapse; background: #fff; font-siz
 .pm-unlinked.pm-tone-SUB { border-color: #48431f; color: #7c7448; }
 .pm-zone-title-AQ { color: #b07a8e; }
 .pm-zone-title-AP { color: #6f9fc4; }
-.pm-zone-title { text-align: center; font-size: clamp(11px, calc(var(--pmu) * 1), 18px); font-weight: 800; letter-spacing: 0.25em; color: #7b8698; line-height: 1; }
+.pm-zone-title { text-align: center; font-size: clamp(11px, calc(var(--pmu) * 1), 20px); font-weight: 800; letter-spacing: 0.25em; color: #7b8698; line-height: 1; }
 .pm-landmark { border: 1px dashed #2a313c; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #4c5563; font-size: clamp(9px, calc(var(--pmu) * 0.75), 13px); font-weight: 700; letter-spacing: 0.08em; text-align: center; padding: 2px; }
 .pm-vertical span { writing-mode: vertical-rl; transform: rotate(180deg); }
 .pm-cell { padding: calc(var(--pmu) * 0.25); container-type: size; }
@@ -386,9 +390,9 @@ table.table { width: 100%; border-collapse: collapse; background: #fff; font-siz
 .pm-line { width: 100%; height: 100%; border-radius: 7px; display: flex; flex-direction: column; overflow: hidden; text-decoration: none; color: inherit; position: relative; padding: calc(var(--pmu) * 0.35) calc(var(--pmu) * 0.45); gap: 2px; }
 .pm-normal { background: #151b23; border: 1px solid #263040; border-left: 4px solid #1f5c3a; justify-content: center; }
 .pm-normal .pm-name { color: #a7b2c3; }
-.pm-sub { font-size: clamp(9px, calc(var(--pmu) * 0.72), 14px); font-weight: 700; color: #7d889a; line-height: 1.2; word-break: keep-all; }
+.pm-sub { font-size: clamp(9px, calc(var(--pmu) * 0.72), 16px); font-weight: 700; color: #7d889a; line-height: 1.2; word-break: keep-all; }
 .pm-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 4px; }
-.pm-name { font-weight: 900; font-size: clamp(12px, calc(var(--pmu) * 1.25), 24px); line-height: 1.1; letter-spacing: 0.01em; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); word-break: keep-all; overflow-wrap: break-word; min-width: 0; }
+.pm-name { font-weight: 900; font-size: clamp(12px, calc(var(--pmu) * 1.3), 30px); line-height: 1.1; letter-spacing: 0.01em; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); word-break: keep-all; overflow-wrap: break-word; min-width: 0; }
 /* abnormal lines are HIGHLIGHTED in place: solid colour + bright ring + glow; normal tiles dim while any
    ANDON is active, so the eye goes straight to the abnormal location */
 .pm-open { background: var(--red); color: #fff; border: 2px solid #ffb3b9; box-shadow: 0 0 0 3px rgba(255, 70, 85, 0.95), 0 0 26px 8px rgba(229, 32, 46, 0.6); animation: pm-pulse 2.4s ease-in-out infinite; z-index: 3; }
@@ -401,9 +405,12 @@ table.table { width: 100%; border-collapse: collapse; background: #fff; font-siz
 /* an active ANDON dims the background only a little — line names must stay readable */
 .pm-has-alarm .pm-normal { opacity: 0.8; transition: opacity 0.4s; }
 .pm-has-alarm .pm-unlinked, .pm-has-alarm .pm-zone-title, .pm-has-alarm .pm-landmark { opacity: 0.45; transition: opacity 0.4s; }
+/* narrow tiles (cqi = the tile's own width): long words and the elapsed time still fit on one line */
+.pm-cell .pm-name { font-size: min(clamp(12px, calc(var(--pmu) * 1.3), 30px), 18cqi); letter-spacing: -0.03em; }
+.pm-cell .pm-time { font-size: min(clamp(14px, calc(var(--pmu) * 1.5), 36px), 17cqi); white-space: nowrap; }
 .pm-cat { font-size: clamp(10px, calc(var(--pmu) * 0.8), 15px); font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; }
 .pm-desc { font-size: clamp(9px, calc(var(--pmu) * 0.72), 14px); line-height: 1.2; opacity: 0.95; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.pm-time { font-size: clamp(14px, calc(var(--pmu) * 1.45), 30px); font-weight: 900; font-variant-numeric: tabular-nums; line-height: 1; margin-top: auto; }
+.pm-time { font-size: clamp(14px, calc(var(--pmu) * 1.5), 36px); font-weight: 900; font-variant-numeric: tabular-nums; line-height: 1; margin-top: auto; }
 .pm-state { font-size: clamp(9px, calc(var(--pmu) * 0.7), 13px); font-weight: 800; opacity: 0.9; }
 .pm-badge { flex: none; min-width: 1.6em; height: 1.6em; padding: 0 0.35em; border-radius: 999px; background: #0b0e13; color: #fff; font-size: clamp(10px, calc(var(--pmu) * 0.8), 15px); font-weight: 900; display: flex; align-items: center; justify-content: center; }
 @keyframes pm-pulse-narrow {
@@ -491,7 +498,7 @@ table.table { width: 100%; border-collapse: collapse; background: #fff; font-siz
   .pm-time { font-size: clamp(13px, calc(var(--pmu) * 1.3), 26px); }
 }
 
-@media (prefers-reduced-motion: reduce) { .pm-open, .fs-open { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .pm-open, .fs-open, .live-dot { animation: none; } }
 /* ordinary desktop / laptop (e.g. 1366 × 768): one-line header, narrower side panel */
 @media (max-width: 1500px) and (min-width: 1101px) {
   .floor-head { gap: 8px; padding: 6px 12px; flex-wrap: nowrap; }
