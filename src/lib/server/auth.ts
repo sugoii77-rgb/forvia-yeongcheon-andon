@@ -370,3 +370,13 @@ export async function changePassword(req: Request, input: PasswordChangeInput, a
   });
   console.info(`[auth] user #${user.id} changed password`);
 }
+
+/**
+ * Plant data is for registered accounts only (plant 2026-10-19): the board, ANDON details, master data,
+ * statistics and photos answer 401 without an active session — a link or QR code alone shows nothing.
+ */
+export async function requireSignedIn(req: Request): Promise<PublicUser> {
+  const user = await getSessionUser(req);
+  if (!user || !user.active) throw new AndonError(401, "로그인이 필요합니다.", "AUTH_REQUIRED");
+  return user;
+}

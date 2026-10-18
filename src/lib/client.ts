@@ -149,6 +149,11 @@ export function usePolling<T>(url: string | null, intervalMs: number): PollState
       }
     } catch (err) {
       setError((err as Error).message);
+      // session ended (or never existed): plant data needs a login (2026-10-19) → login, then back here
+      if (err instanceof ApiError && err.status === 401 && typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- full reload drops all stale state
+        window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+      }
     } finally {
       inFlight.current = false;
     }

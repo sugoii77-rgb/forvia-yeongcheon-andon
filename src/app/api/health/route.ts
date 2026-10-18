@@ -6,6 +6,8 @@ export async function GET() {
   try {
     const info = await db.info();
     const r = (await db.get("SELECT COUNT(*) AS n FROM andon_event")) as { n: number };
+    // On Vercel (public internet) only "ok" — the DB host and the event count are not for strangers.
+    if (process.env.VERCEL) return Response.json({ ok: true, time: new Date().toISOString() });
     return Response.json({ ok: true, db: info.label, backend: info.kind, events: r.n, time: new Date().toISOString() });
   } catch (err) {
     console.error("[health] DB check failed", err);

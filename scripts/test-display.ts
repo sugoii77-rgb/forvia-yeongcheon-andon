@@ -10,6 +10,7 @@ import { LINES } from "../src/lib/server/masterData.ts";
 import { MAP_LANDMARKS, MAP_ZONES, STATION_CELLS, UNMAPPED_LINES, stationBox } from "../src/config/plantLayout.ts";
 import { CATEGORY_LEGEND, categoryKey, displayLines, stationState, elapsedSeconds, formatElapsed, lineStates, placeLines, shiftLabel, sortActive } from "../src/lib/plantMap.ts";
 import type { AndonEvent, AndonStatus } from "../src/lib/domain.ts";
+import "./lib/testkit.ts"; // its fetch wrapper signs the board / meta reads in (data needs a login since 2026-10-19)
 
 let failures = 0;
 function check(cond: unknown, label: string) {

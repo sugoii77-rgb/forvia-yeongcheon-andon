@@ -137,7 +137,8 @@ export async function createAndon(
   return client.request("POST", "/api/andons", f);
 }
 
-export const detail = (id: string, client = new Client("viewer")) => client.request("GET", `/api/andons/${id}`);
+/** ANDON detail, read by the shared signed-in reader account unless a client is given (data needs a login). */
+export const detail = async (id: string, client?: Client) => (client ?? (await readerClient())).request("GET", `/api/andons/${id}`);
 
 export function transition(client: Client, id: string, action: string, comment?: string, extra: Record<string, unknown> = {}) {
   return client.request("POST", `/api/andons/${id}/transition`, { action, comment, ...extra });
@@ -150,3 +151,24 @@ export function finish(): never {
   console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);
   process.exit(failures === 0 ? 0 : 1);
 }
+
+// Plant data needs a login (2026-10-19). Plain fetch() calls of the test scripts to the server's data
+// APIs (board, meta, details, stats) get the session of one throw-away reader account; Client requests
+// (they always send x-andon-device) keep their own cookie — an anonymous Client stays anonymous.
+const realFetch = globalThis.fetch;
+let reader: Promise<TestAccount> | null = null;
+/** One throw-away signed-in UAP account per test run, for reading plant data. */
+export async function readerClient(): Promise<Client> {
+  reader ??= registerAccount("UAP", "reader");
+  return (await reader).client;
+}
+globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+  const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+  const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
+  if (method === "GET" && url.startsWith(`${BASE}/api/`) && !url.startsWith(`${BASE}/api/auth/`) && !headers.has("x-andon-device") && !headers.has("cookie")) {
+    headers.set("cookie", (await readerClient()).cookie ?? "");
+    return realFetch(input, { ...init, headers });
+  }
+  return realFetch(input, init);
+}) as typeof fetch;

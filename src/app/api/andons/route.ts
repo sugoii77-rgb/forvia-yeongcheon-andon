@@ -3,13 +3,14 @@ import { notifyAndonCreated } from "@/lib/server/notifications";
 import { deletePhoto, savePhoto } from "@/lib/server/photos";
 import { after } from "next/server";
 import { handle, requestAudit } from "@/lib/server/http";
-import { assertSameOrigin, getSessionUser } from "@/lib/server/auth";
+import { assertSameOrigin, getSessionUser, requireSignedIn } from "@/lib/server/auth";
 import { CALL_ROLES } from "@/lib/domain";
 import { publicShift } from "@/lib/server/shiftService";
 import { maybeRunEscalations } from "@/lib/server/escalation";
 
 export async function GET(req: Request) {
   return handle("GET /api/andons", async () => {
+    await requireSignedIn(req);
     const q = new URL(req.url).searchParams;
     const scope = (q.get("scope") ?? "board") as ListOptions["scope"];
     // mine=1: only events of the logged-in user's department (decided on the server from the session).

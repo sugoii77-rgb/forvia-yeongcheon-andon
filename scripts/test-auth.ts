@@ -126,6 +126,24 @@ async function main() {
   for (let i = 0; i < 6; i++) tries.push((await login(new Client("bf"), victim.email, "wrongpass1")).status);
   check(tries.slice(0, 5).every((s) => s === 401) && tries[5] === 429, `6th wrong password within 15 min → 429 (${tries.join(",")})`);
 
+  // ------------------------------------------------------------ DATA ACCESS (2026-10-19)
+  console.log("DATA ACCESS — registered accounts only");
+  const anonData = new Client("anon-data");
+  for (const url of ["/api/andons?scope=board", "/api/andons?scope=all", "/api/stats?days=7", "/api/andons/AND-20990101-001", "/api/photos/x.jpg"]) {
+    check((await anonData.request("GET", url)).status === 401, `no login → 401: GET ${url}`);
+  }
+  for (const page of ["/", "/dashboard", "/dashboard/list", "/history", "/respond", "/respond/AND-20990101-001", "/operator", "/me", "/admin/setup"]) {
+    const r = await fetch(`${BASE}${page}`, { redirect: "manual", headers: { "x-andon-device": "dev-test-anon-page" } });
+    const to = r.headers.get("location") ?? "";
+    check(r.status >= 300 && r.status < 400 && new URL(to, BASE).pathname === "/login", `no login → login page: ${page} (${r.status} ${to})`);
+  }
+  for (const page of ["/login", "/help", "/manual.html", "/reset"]) {
+    const r = await fetch(`${BASE}${page}`, { redirect: "manual", headers: { "x-andon-device": "dev-test-anon-page" } });
+    check(r.status === 200, `public without login: ${page} (${r.status})`);
+  }
+  const reader = await registerAccount("UAP", "auth-reader");
+  check((await reader.client.request("GET", "/api/andons?scope=board")).status === 200, "signed in → board 200");
+
   // ------------------------------------------------------------ AUTHORIZATION & ROUTING
   console.log("AUTHORIZATION & ROUTING");
   const qc = await registerAccount("QC", "auth-qc");
@@ -180,12 +198,12 @@ async function main() {
 
   // ------------------------------------------------------------ cleanup: close the events
   const closers: Record<string, Client> = { QC: qc.client, MT: mt.client, PCL: pcl.client };
-  const uapCloser = await callerClient(); // a QC event is closed by UAP (plant meeting 2026-10-07)
+  const uapCloser = await callerClient(); // every ANDON is closed by UAP (2026-10-07; MT / HSE since 2026-10-15)
   for (const id of created) {
     const d = (await detail(id)).body;
     const c = closers[d.responsibility.effectiveDepartmentCode];
     if (d.event.status === "OPEN") await transition(c, id, "ACKNOWLEDGE");
-    await transition(["QC", "PCL"].includes(d.responsibility.effectiveDepartmentCode) ? uapCloser : c, id, "CLOSE", "[TEST] auth test cleanup");
+    await transition(uapCloser, id, "CLOSE", "[TEST] auth test cleanup");
   }
   const open = (await fetch(`${BASE}/api/andons?scope=active`).then((r) => r.json())).events.filter((e: { id: string }) => created.includes(e.id));
   check(open.length === 0, `test events closed again (${created.length})`);

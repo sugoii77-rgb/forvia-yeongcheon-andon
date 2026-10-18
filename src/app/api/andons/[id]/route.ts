@@ -1,17 +1,17 @@
 import { actionDepartmentCodes, getEvent, getNotifications, getTransitions, AndonError } from "@/lib/server/andonService";
 import { eligibleResponders, eventResponsibility, validateResponder } from "@/lib/server/routingService";
 import { allowedActions, type TransitionAction } from "@/lib/domain";
-import { getSessionUser } from "@/lib/server/auth";
+import { requireSignedIn } from "@/lib/server/auth";
 import { handle } from "@/lib/server/http";
 
 export async function GET(req: Request, ctx: RouteContext<"/api/andons/[id]">) {
   return handle("GET /api/andons/[id]", async () => {
+    const viewer = await requireSignedIn(req);
     const { id } = await ctx.params;
     const event = await getEvent(id);
     if (!event) throw new AndonError(404, "ANDON을 찾을 수 없습니다.", "NOT_FOUND");
     const responsibility = await eventResponsibility(id);
     const eligible = await eligibleResponders(event.departments.map((d) => d.code));
-    const viewer = await getSessionUser(req);
     // What the viewer may do now (server decides): e.g. on a QC event only UAP may CLOSE.
     const viewerActions: TransitionAction[] = [];
     if (viewer) {
