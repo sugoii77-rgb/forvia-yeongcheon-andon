@@ -37,6 +37,8 @@ export const DEPARTMENTS = [
   { code: "PCL", displayCode: "PC&L", nameKo: "물류", nameEn: "Production Control & Logistics", sortOrder: 5 },
   // HSE (안전) callable under PC&L (plant 2026-10-13); production DB: work/hse-department.mjs
   { code: "HSE", displayCode: "HSE", nameKo: "안전", nameEn: "Health, Safety & Environment", sortOrder: 6 },
+  // FES (plant 2026-10-20): view-only accounts, no notifications — never a call target or escalation receiver
+  { code: "FES", displayCode: "FES", nameKo: "FES", nameEn: "FES", sortOrder: 7 },
 ];
 
 /**
