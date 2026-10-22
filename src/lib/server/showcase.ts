@@ -1,4 +1,4 @@
-// Temporary showcase mode (plant request 2026-10-22, EVP tour 2026-10-23 08:00–12:00 KST).
+// Temporary showcase mode (plant request 2026-10-22, EVP tour; started early by request: 2026-10-22 23:00 – 2026-10-23 12:00 KST).
 // DISPLAY ONLY — nothing in the database changes, every record stays and comes back when the window ends:
 //  - board / history lists and statistics leave out ANDONs that ran (or have been running) over 2 h
 //  - the shop-floor side list shows at most 6 items, none over 1 h (the client reads `showcase` on the board)
@@ -6,7 +6,7 @@
 // Local tests may set SHOWCASE_WINDOW="<from ISO>,<to ISO>".
 import type { AndonEvent } from "../domain.ts";
 
-const WINDOW = (process.env.SHOWCASE_WINDOW ?? "2026-10-22T23:00:00.000Z,2026-10-23T03:00:00.000Z").split(",");
+const WINDOW = (process.env.SHOWCASE_WINDOW ?? "2026-10-22T14:00:00.000Z,2026-10-23T03:00:00.000Z").split(",");
 export const SHOWCASE_HIDE_OVER_MS = 2 * 3600_000;
 export const SHOWCASE_LIST = { maxAgeMs: 3600_000, max: 6 };
 
