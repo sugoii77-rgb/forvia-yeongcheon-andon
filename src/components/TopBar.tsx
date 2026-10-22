@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMe } from "@/lib/client";
+import { PushAutoHeal } from "@/components/PushNotify";
 
 const LINKS = [
   { href: "/operator", label: "ANDON 호출" },
@@ -16,6 +17,7 @@ export function TopBar() {
   const { user, loaded } = useMe();
   return (
     <header className="topbar">
+      <PushAutoHeal signedIn={!!user?.active} />
       <Link href="/" className="brand">
         DIGITAL ANDON<small>Yeongcheon</small>
       </Link>

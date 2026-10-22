@@ -8,6 +8,49 @@ interface PushStatus {
   configured: boolean;
   publicKey: string | null;
   devices: number;
+  thisDevice?: boolean;
+}
+
+/** Set when the person turns this device's alerts off on purpose: the auto re-registration leaves it off. */
+const OFF_KEY = "andon.push.off";
+const storage = {
+  get: (k: string) => { try { return localStorage.getItem(k); } catch { return null; } },
+  set: (k: string, v: string | null) => { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch { /* private mode */ } },
+};
+
+/**
+ * Self-healing push (plant 2026-10-22): phones drop their push registration now and then (site data
+ * cleared, notification permission reset, app icon made again); the server then removes the device and
+ * the person only gets the silent KakaoTalk memo. Whenever a signed-in page opens and notifications are
+ * already ALLOWED on this phone, the registration is checked and quietly renewed — no button needed.
+ * Never asks for permission, never runs after "이 기기 알림 끄기", at most every 10 minutes.
+ */
+export function PushAutoHeal({ signedIn }: { signedIn: boolean }) {
+  useEffect(() => {
+    if (!signedIn || detectEnv() !== "ok" || Notification.permission !== "granted" || storage.get(OFF_KEY) === "1") return;
+    try {
+      const last = Number(sessionStorage.getItem("andon.push.heal") ?? 0);
+      if (Date.now() - last < 10 * 60_000) return;
+      sessionStorage.setItem("andon.push.heal", String(Date.now()));
+    } catch { /* storage blocked: check anyway */ }
+    (async () => {
+      const reg = (await navigator.serviceWorker.getRegistration("/")) ?? (await navigator.serviceWorker.register("/sw.js", { scope: "/" }));
+      await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      const status = await api<PushStatus>(`/api/notify/push${sub ? `?endpoint=${encodeURIComponent(sub.endpoint)}` : ""}`);
+      if (!status.configured || !status.publicKey || (sub && status.thisDevice)) return; // registered: nothing to do
+      // the server no longer knows this device (dead registration) or there is none: start a fresh one
+      if (sub) await sub.unsubscribe().catch(() => false);
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(status.publicKey) });
+      await api("/api/notify/push/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscription: sub.toJSON() }),
+      });
+      console.info("[push] this device was re-registered for ANDON alerts");
+    })().catch((err) => console.warn("[push] auto re-registration failed", err));
+  }, [signedIn]);
+  return null;
 }
 
 type Env = "ok" | "unsupported" | "ios-browser" | "in-app";
@@ -75,6 +118,7 @@ export function PushNotify() {
 
   async function turnOn() {
     if (!status?.publicKey) return;
+    storage.set(OFF_KEY, null);
     setBusy("on");
     setMsg(null);
     try {
@@ -129,6 +173,7 @@ export function PushNotify() {
     setMsg(null);
     try {
       await pushOffBeforeLogout();
+      storage.set(OFF_KEY, "1"); // turned off on purpose: the automatic re-registration leaves it off
       setMsg({ ok: true, text: "이 기기의 알림을 껐습니다." });
     } finally {
       setBusy(null);

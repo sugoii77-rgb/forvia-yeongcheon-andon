@@ -13,6 +13,7 @@ import webpush from "web-push";
 import { getSessionUser } from "./auth.ts";
 import { db, nowIso } from "./db.ts";
 import { AndonError } from "./errors.ts";
+import { sendKakaoMemoTo } from "./kakaoNotify.ts";
 
 export interface PushMessage {
   title: string;
@@ -78,13 +79,17 @@ export interface PushStatus {
   publicKey: string | null;
   /** Devices of this user with push turned on. */
   devices: number;
+  /** ?endpoint=… given: whether that device is still registered for this user (else the app re-registers it). */
+  thisDevice?: boolean;
 }
 
 export async function pushStatusFor(req: Request): Promise<PushStatus> {
   const user = await requireUser(req);
   const v = vapidKeys();
   const row = await db.get("SELECT COUNT(*) AS n FROM push_subscription WHERE user_id = ?", user.id);
-  return { configured: !!v, publicKey: v?.publicKey ?? null, devices: Number(row?.n ?? 0) };
+  const endpoint = new URL(req.url).searchParams.get("endpoint");
+  const thisDevice = endpoint ? !!(await db.get("SELECT 1 FROM push_subscription WHERE user_id = ? AND endpoint = ?", user.id, endpoint)) : undefined;
+  return { configured: !!v, publicKey: v?.publicKey ?? null, devices: Number(row?.n ?? 0), ...(thisDevice === undefined ? {} : { thisDevice }) };
 }
 
 /** Body = the browser's PushSubscription.toJSON(). Re-subscribing the same device moves it to this user. */
@@ -147,6 +152,7 @@ export async function sendPushTo(userId: number, m: PushMessage): Promise<{ sent
         });
         if (res.status === 404 || res.status === 410) {
           await db.run("DELETE FROM push_subscription WHERE id = ?", s.id);
+          await tellPushLost(userId);
           throw new Error(`device gone (${res.status}) — removed`);
         }
         if (!res.ok) throw new Error(`push service ${res.status}`);
@@ -159,6 +165,26 @@ export async function sendPushTo(userId: number, m: PushMessage): Promise<{ sent
     }),
   );
   return { sent, devices: subs.length, error: lastError };
+}
+
+/**
+ * The phone dropped its push registration (cleared site data, notification permission reset, app icon
+ * re-made, …): without a device left, ANDON alerts only reach the SILENT KakaoTalk memo. Tell the person
+ * once, at the moment the last device is removed (plant 2026-10-22: alerts "missing" on Chrome phones).
+ * Opening the app re-registers the device by itself (PushAutoHeal). Never throws.
+ */
+async function tellPushLost(userId: number): Promise<void> {
+  try {
+    if (await db.get("SELECT 1 FROM push_subscription WHERE user_id = ?", userId)) return; // another device still rings
+    const base = (process.env.APP_BASE_URL || "https://forvia-yeongcheon-andon.vercel.app").replace(/\/$/, "");
+    await sendKakaoMemoTo(
+      userId,
+      "[DIGITAL ANDON] 휴대폰 알림이 꺼졌습니다\n이 휴대폰에서 ANDON 알림음이 더 이상 울리지 않습니다 (휴대폰에서 알림 등록이 해제됨).\n\nANDON 앱(아이콘)을 한 번 열면 자동으로 다시 켜집니다.\n그래도 안 되면: 이름 ⚙ → 내 정보 → [이 기기 알림 켜기]",
+      `${base}/me`,
+    );
+  } catch (err) {
+    console.warn(`[push] lost-device notice for user #${userId} not sent: ${(err as Error).message}`);
+  }
 }
 
 export async function sendPushTest(req: Request): Promise<{ sent: number; devices: number }> {

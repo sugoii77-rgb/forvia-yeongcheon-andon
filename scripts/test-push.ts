@@ -188,6 +188,39 @@ try {
     assert.deepEqual(await subs(alice.id), [pcA.endpoint]);
   });
 
+  await check("status ?endpoint= says whether THIS device is still registered (auto re-registration, 2026-10-22)", async () => {
+    assert.equal((await wp.pushStatusFor(req(`/api/notify/push?endpoint=${encodeURIComponent(pcA.endpoint)}`, alice.cookie))).thisDevice, true);
+    assert.equal((await wp.pushStatusFor(req(`/api/notify/push?endpoint=${encodeURIComponent(phoneA.endpoint)}`, alice.cookie))).thisDevice, false);
+    assert.equal((await wp.pushStatusFor(req("/api/notify/push", alice.cookie))).thisDevice, undefined);
+  });
+
+  await check("last device gone → the person is told once (KakaoTalk notice tried, never throws); not while another device rings", async () => {
+    const carol = await newUser("[TEST] Push C", effDept);
+    const only = newDevice();
+    await wp.subscribeFor(req("/x", carol.cookie), subJson(only));
+    const warns: string[] = [];
+    const warn = console.warn;
+    console.warn = (...a: unknown[]) => void warns.push(a.join(" "));
+    try {
+      only.status = 410;
+      const r = await wp.sendPushTo(carol.id, { title: "t", body: "b", link: BASE });
+      assert.equal(r.sent, 0);
+      assert.deepEqual(await subs(carol.id), []);
+      assert.equal(warns.filter((w) => w.includes(`lost-device notice for user #${carol.id}`)).length, 1, "notice tried once (no Kakao link in the test → logged)");
+      warns.length = 0;
+      const two = newDevice(), three = newDevice();
+      await wp.subscribeFor(req("/x", carol.cookie), subJson(two));
+      await wp.subscribeFor(req("/x", carol.cookie), subJson(three));
+      two.status = 410;
+      await wp.sendPushTo(carol.id, { title: "t", body: "b", link: BASE });
+      assert.deepEqual(await subs(carol.id), [three.endpoint]);
+      assert.equal(warns.filter((w) => w.includes("lost-device notice")).length, 0, "another device still rings → no notice");
+    } finally {
+      console.warn = warn;
+      await db.run("UPDATE app_user SET active = 0 WHERE id = ?", carol.id); // not a recipient in the checks below
+    }
+  });
+
   await check("push service error does not throw from notifyAndonCreated (logged FAILED)", async () => {
     pcA.status = 500;
     const ev = await mk("[TEST] 푸시 실패");
