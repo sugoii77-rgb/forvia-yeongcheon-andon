@@ -17,6 +17,8 @@ interface BoardResponse {
   counts: { open: number; inProgress: number; closedToday: number; createdToday: number };
   serverTime: string;
   shift?: PublicShift;
+  /** EVP tour showcase window (server): the side list shows at most `max` items, none older than `maxAgeMs` */
+  showcase?: { maxAgeMs: number; max: number };
 }
 
 // 5 s (2026-10-08): the shop-floor PC runs on LTE — about 2.5× less data and server requests than 2 s
@@ -123,6 +125,12 @@ export default function PlantMapPage() {
   const actionLines = shownStates.filter((x) => x?.state === "ACTION").length;
   const normalLines = shownStates.filter((x) => !x || x.state === "DONE").length;
   const doneEvents = sortDone(events);
+  // side list: normally every active ANDON + the completed ones of 24 h; in the showcase window at most
+  // `max` items (active first), none that ran over `maxAgeMs`
+  const sc = data?.showcase;
+  const ranMs = (e: AndonEvent) => (e.closedAt ? Date.parse(e.closedAt) : now) - Date.parse(e.createdAt);
+  const sideActive = sc ? active.filter((e) => ranMs(e) <= sc.maxAgeMs).slice(0, sc.max) : active;
+  const sideDone = sc ? doneEvents.filter((e) => ranMs(e) <= sc.maxAgeMs).slice(0, Math.max(0, sc.max - sideActive.length)) : doneEvents;
 
   return (
     <main className="floor">
@@ -176,7 +184,7 @@ export default function PlantMapPage() {
 
         <aside className="floor-side">
           <h2>
-            ACTIVE ANDON <span className="fs-n">{data ? active.length : "-"}</span>
+            ACTIVE ANDON <span className="fs-n">{data ? sideActive.length : "-"}</span>
           </h2>
           <div className="fs-legend" aria-label="테두리 색 = 이상 유형">
             <span className="fs-legend-t">테두리 = 유형</span>
@@ -184,9 +192,9 @@ export default function PlantMapPage() {
               <span key={c.key} className={`fs-lg pm-c-${c.key}`}>{c.label}</span>
             ))}
           </div>
-          {data && active.length === 0 && <div className="fs-clear">✔ 진행 중인 ANDON 없음</div>}
+          {data && sideActive.length === 0 && <div className="fs-clear">✔ 진행 중인 ANDON 없음</div>}
           <ol className="fs-list">
-            {active.map((e) => (
+            {sideActive.map((e) => (
               <li key={e.id}>
                 <Link href={`/respond/${encodeURIComponent(e.id)}`} className={`fs-item fs-${e.status === "OPEN" ? "open" : "action"}`}>
                   <span className="fs-line">{e.lineName}</span>
@@ -199,11 +207,11 @@ export default function PlantMapPage() {
               </li>
             ))}
           </ol>
-          {doneEvents.length > 0 && (
+          {sideDone.length > 0 && (
             <div className="fs-done">
-              <h3>완료 · 24시간 표시 ({doneEvents.length})</h3>
+              <h3>완료 · 24시간 표시 ({sideDone.length})</h3>
               <ol className="fs-list">
-                {doneEvents.map((e) => (
+                {sideDone.map((e) => (
                   <li key={e.id}>
                     <Link href={`/respond/${encodeURIComponent(e.id)}`} className="fs-item fs-doneitem">
                       <span className="fs-line">{e.lineName}</span>

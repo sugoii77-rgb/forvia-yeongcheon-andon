@@ -1,4 +1,5 @@
 // ANDON business logic. All state changes go through this module.
+import { SHOWCASE_HIDE_OVER_MS, showcaseActive } from "./showcase.ts";
 import {
   ACTIVE_STATUSES,
   TRANSITION_RULES,
@@ -594,7 +595,11 @@ export interface AndonStats {
 }
 
 export async function getStats(from: string, to: string): Promise<AndonStats> {
-  const range = "e.created_at >= ? AND e.created_at < ?";
+  // EVP tour showcase window (src/lib/server/showcase.ts): ANDONs that ran over 2 h are left out (display only)
+  const showcase = showcaseActive();
+  const range = showcase
+    ? `e.created_at >= ? AND e.created_at < ? AND (julianday(COALESCE(e.closed_at, '${new Date().toISOString()}')) - julianday(e.created_at)) * 86400000 <= ${SHOWCASE_HIDE_OVER_MS}`
+    : "e.created_at >= ? AND e.created_at < ?";
   const summary = (await db.get(`SELECT COUNT(*) AS total,
          SUM(e.status = 'OPEN') AS open,
          SUM(e.status IN ('ACKNOWLEDGED','IN_PROGRESS')) AS in_progress,

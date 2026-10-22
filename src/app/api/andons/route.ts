@@ -6,6 +6,7 @@ import { handle, requestAudit } from "@/lib/server/http";
 import { assertSameOrigin, getSessionUser, requireSignedIn } from "@/lib/server/auth";
 import { CALL_ROLES } from "@/lib/domain";
 import { publicShift } from "@/lib/server/shiftService";
+import { SHOWCASE_LIST, showcaseActive, showcaseFilter } from "@/lib/server/showcase";
 import { maybeRunEscalations } from "@/lib/server/escalation";
 
 export async function GET(req: Request) {
@@ -20,18 +21,28 @@ export async function GET(req: Request) {
       if (!user) throw new AndonError(401, "로그인이 필요합니다.", "AUTH_REQUIRED");
       responderId = user.id;
     }
-    const events = await listEvents({
+    const listed = await listEvents({
       scope,
       department: q.get("department") || undefined,
       responderId,
       limit: q.get("limit") ? Number(q.get("limit")) : undefined,
     });
+    // EVP tour showcase window: the board and the history list leave out ANDONs over 2 h (display only;
+    // a responder's own work list — mine=1 / scope=active — is never filtered)
+    const shown = (scope === "board" || scope === "all") && !responderId;
+    const events = shown ? showcaseFilter(listed) : listed;
     // serverTime lets clients correct for clock skew when showing elapsed time. The board (shop-floor
     // display) also gets the shift on duty — team + DAY/NIGHT only, or UNRESOLVED; never the anchor.
     const shift = scope === "board" ? await publicShift() : undefined;
     // The shop-floor board polls every few seconds: it also drives the 2-hour escalation check (≤ 1/min).
     if (scope === "board") after(() => maybeRunEscalations());
-    return Response.json({ events, counts: await getBoardCounts(), serverTime: new Date().toISOString(), ...(shift ? { shift } : {}) });
+    return Response.json({
+      events,
+      counts: await getBoardCounts(),
+      serverTime: new Date().toISOString(),
+      ...(shift ? { shift } : {}),
+      ...(scope === "board" && showcaseActive() ? { showcase: SHOWCASE_LIST } : {}),
+    });
   });
 }
 
