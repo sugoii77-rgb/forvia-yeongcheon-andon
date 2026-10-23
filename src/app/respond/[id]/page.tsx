@@ -290,6 +290,13 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
                 {t.userDepartmentLabel ? ` (${t.userDepartmentLabel} · ${t.userRole})` : ""} ·{" "}
                 {t.fromStatus ?? "—"} → {t.toStatus}
               </span>
+              {/* 조치 시각 = when the note was saved (plant 2026-10-24) */}
+              {t.action === "ACTION" && (
+                <div>
+                  조치 시각 <strong>{fmtDateTime(t.createdAt)}</strong>
+                  {e.acknowledgedAt && <span className="muted"> · 접수 후 {fmtDuration((new Date(t.createdAt).getTime() - new Date(e.acknowledgedAt).getTime()) / 1000)}</span>}
+                </div>
+              )}
               {(t.deviceId || t.clientIp) && (
                 <div className="muted" style={{ fontSize: 13 }}>
                   기기 {t.deviceId ? t.deviceId.slice(0, 12) : "-"}
