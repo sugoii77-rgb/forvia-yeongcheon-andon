@@ -18,7 +18,7 @@ self.addEventListener("push", (e) => {
       requireInteraction: true, // stays until tapped (desktop)
       vibrate: [400, 150, 400, 150, 400],
       icon: "/pwa/icon-192.png",
-      badge: "/pwa/icon-192.png",
+      badge: "/notify-badge.png", // status-bar icon: Android uses only its shape (alpha) — the FORVIA F, white on transparent
       data: { url: d.url || "/", ack: d.ack || null },
       // one-tap acknowledge (Android / desktop Chrome; iPhone shows no buttons — a tap opens the page)
       actions: d.ack ? [{ action: "ack", title: d.ack.title }] : [],
@@ -31,7 +31,7 @@ self.addEventListener("push", (e) => {
 async function acknowledge(n) {
   const { ack, url } = n.data || {};
   const done = (title, body, openUrl) =>
-    self.registration.showNotification(title, { body, tag: n.tag || undefined, icon: "/pwa/icon-192.png", badge: "/pwa/icon-192.png", data: { url: openUrl || url }, lang: "ko" });
+    self.registration.showNotification(title, { body, tag: n.tag || undefined, icon: "/pwa/icon-192.png", badge: "/notify-badge.png", data: { url: openUrl || url }, lang: "ko" });
   try {
     const res = await fetch(`/api/andons/${encodeURIComponent(ack.eventId)}/transition`, {
       method: "POST",
