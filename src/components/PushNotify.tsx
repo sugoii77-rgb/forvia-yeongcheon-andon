@@ -9,6 +9,7 @@ interface PushStatus {
   publicKey: string | null;
   devices: number;
   thisDevice?: boolean;
+  thisDeviceBoard?: boolean;
 }
 
 /** Set when the person turns this device's alerts off on purpose: the auto re-registration leaves it off. */
@@ -38,14 +39,15 @@ export function PushAutoHeal({ signedIn }: { signedIn: boolean }) {
       await navigator.serviceWorker.ready;
       let sub = await reg.pushManager.getSubscription();
       const status = await api<PushStatus>(`/api/notify/push${sub ? `?endpoint=${encodeURIComponent(sub.endpoint)}` : ""}`);
-      if (!status.configured || !status.publicKey || (sub && status.thisDevice)) return; // registered: nothing to do
+      // registered (as an alert device or as a board display, see /dashboard): nothing to do
+      if (!status.configured || !status.publicKey || (sub && (status.thisDevice || status.thisDeviceBoard))) return;
       // the server no longer knows this device (dead registration) or there is none: start a fresh one
       if (sub) await sub.unsubscribe().catch(() => false);
       sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(status.publicKey) });
       await api("/api/notify/push/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subscription: sub.toJSON() }),
+        body: JSON.stringify({ subscription: sub.toJSON(), kind: "ALERT" }),
       });
       console.info("[push] this device was re-registered for ANDON alerts");
     })().catch((err) => console.warn("[push] auto re-registration failed", err));
@@ -55,7 +57,7 @@ export function PushAutoHeal({ signedIn }: { signedIn: boolean }) {
 
 type Env = "ok" | "unsupported" | "ios-browser" | "in-app";
 
-function detectEnv(): Env {
+export function detectEnv(): Env {
   const ua = navigator.userAgent;
   if (/KAKAOTALK|NAVER|Instagram|FBAN|FBAV|Line\//i.test(ua)) return "in-app";
   const ios = /iPhone|iPad|iPod/i.test(ua);
@@ -65,7 +67,7 @@ function detectEnv(): Env {
   return "ok";
 }
 
-function keyBytes(b64url: string): Uint8Array<ArrayBuffer> {
+export function keyBytes(b64url: string): Uint8Array<ArrayBuffer> {
   const s = atob(b64url.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (b64url.length % 4)) % 4));
   const out = new Uint8Array(new ArrayBuffer(s.length));
   for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
@@ -143,7 +145,7 @@ export function PushNotify() {
       await api("/api/notify/push/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subscription: sub.toJSON() }),
+        body: JSON.stringify({ subscription: sub.toJSON(), kind: "ALERT" }),
       });
       await api("/api/notify/push/test", { method: "POST" }).catch(() => {});
       setMsg({ ok: true, text: "이 기기의 알림을 켰습니다. 테스트 알림을 보냈습니다 — 알림음이 울렸는지 확인하세요." });

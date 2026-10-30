@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { fmtDuration, fmtTime, usePolling, useServerNow } from "@/lib/client";
+import { useBoardPush } from "@/components/BoardPush";
 import { STATUS_LABEL, isPlaceholderProcess, signalColor, type AndonEvent } from "@/lib/domain";
 
 interface BoardResponse {
@@ -9,10 +10,10 @@ interface BoardResponse {
   serverTime: string;
 }
 
-// 5 s (2026-10-08): the shop-floor PC runs on LTE — about 2.5× less data and server requests than 2 s
-const POLL_MS = 5000;
-/** Show "disconnected" once no successful poll for this long. */
-const STALE_MS = 20000; // ~3 missed updates before the "disconnected" warning
+// Loads when the server pushes "board changed" (2026-10-29, no more 5-second polling — see ../page.tsx);
+// a slow safety load stays. Without push (permission not given yet): every 15 s.
+const PUSH_SAFETY_MS = 60_000;
+const NO_PUSH_POLL_MS = 15_000;
 
 const kstClock = new Intl.DateTimeFormat("ko-KR", {
   timeZone: "Asia/Seoul",
@@ -26,9 +27,12 @@ const kstClock = new Intl.DateTimeFormat("ko-KR", {
 });
 
 export default function DashboardListPage() {
-  const { data, lastSuccess, clockOffsetMs } = usePolling<BoardResponse>("/api/andons?scope=board", POLL_MS);
+  const push = useBoardPush();
+  const pollMs = push.state === "on" ? PUSH_SAFETY_MS : NO_PUSH_POLL_MS;
+  const { data, lastSuccess, clockOffsetMs } = usePolling<BoardResponse>("/api/andons?scope=board", pollMs);
   const now = useServerNow(clockOffsetMs);
-  const stale = lastSuccess == null || now - clockOffsetMs - lastSuccess > STALE_MS;
+  // ~2 missed safety loads before the "disconnected" warning
+  const stale = lastSuccess == null || now - clockOffsetMs - lastSuccess > 2 * pollMs + 10_000;
 
   const counts = data?.counts;
   const events = data?.events ?? [];

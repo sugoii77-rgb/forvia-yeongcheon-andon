@@ -13,7 +13,7 @@ export default function RespondListPage() {
   // Which events belong to me is decided on the server from my session (mine=1).
   const mine = !!user && user.canRespond && !allDepts;
   const url = loaded ? `/api/andons?scope=active${mine ? "&mine=1" : ""}` : null;
-  const { data, error, clockOffsetMs } = usePolling<{ events: AndonEvent[] }>(url, 3000);
+  const { data, error, clockOffsetMs } = usePolling<{ events: AndonEvent[] }>(url, 15000); // + at once on an ANDON push / back on screen (2026-10-29)
   const now = useServerNow(clockOffsetMs);
 
   return (

@@ -65,7 +65,7 @@ const ACTION_LABEL: Record<string, string> = {
 
 export default function RespondDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { data, error, clockOffsetMs, refresh } = usePolling<Detail>(`/api/andons/${encodeURIComponent(id)}`, 5000);
+  const { data, error, clockOffsetMs, refresh } = usePolling<Detail>(`/api/andons/${encodeURIComponent(id)}`, 15000); // + at once on an ANDON push / back on screen
   const now = useServerNow(clockOffsetMs);
 
   const [mode, setMode] = useState<"ACTION" | "CLOSE" | null>(null);

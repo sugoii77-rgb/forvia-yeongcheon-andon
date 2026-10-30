@@ -1,7 +1,15 @@
-// Digital ANDON service worker — phone push notifications only (no offline cache).
-// The server sends { title, body, url, tag } (src/lib/server/webPush.ts).
+// Digital ANDON service worker — push notifications only (no offline cache).
+// The server sends { title, body, url, tag } (ANDON alert) or { type: "board" } (board changed, silent)
+// (src/lib/server/webPush.ts). Every push also tells the open ANDON pages to load their data now
+// (message "andon-changed") — the pages no longer poll every few seconds (2026-10-29).
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
+
+async function tellPages() {
+  const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  for (const w of wins) w.postMessage({ type: "andon-changed" });
+  return wins;
+}
 
 self.addEventListener("push", (e) => {
   let d = {};
@@ -10,8 +18,28 @@ self.addEventListener("push", (e) => {
   } catch {
     d = { title: "Digital ANDON", body: e.data ? e.data.text() : "" };
   }
+  if (d.type === "board") {
+    // Silent while the board is on screen (Chrome allows no notification when a page of the site is
+    // visible). Otherwise the browser demands one: a quiet note that replaces itself.
+    e.waitUntil(
+      tellPages().then((wins) =>
+        wins.some((w) => w.visibilityState === "visible")
+          ? undefined
+          : self.registration.showNotification("Digital ANDON 대시보드", {
+              body: "ANDON 현황이 바뀌었습니다.",
+              tag: "andon-board",
+              silent: true,
+              icon: "/pwa/icon-192.png",
+              badge: "/notify-badge.png",
+              data: { url: "/dashboard" },
+              lang: "ko",
+            }),
+      ),
+    );
+    return;
+  }
   e.waitUntil(
-    self.registration.showNotification(d.title || "Digital ANDON", {
+    tellPages().catch(() => {}).then(() => self.registration.showNotification(d.title || "Digital ANDON", {
       body: d.body || "",
       tag: d.tag || undefined,
       renotify: !!d.tag, // a repeated tag still rings
@@ -23,7 +51,7 @@ self.addEventListener("push", (e) => {
       // one-tap acknowledge (Android / desktop Chrome; iPhone shows no buttons — a tap opens the page)
       actions: d.ack ? [{ action: "ack", title: d.ack.title }] : [],
       lang: "ko",
-    }),
+    })),
   );
 });
 

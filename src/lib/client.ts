@@ -128,7 +128,11 @@ export interface PollState<T> {
   refresh: () => void;
 }
 
-/** Polls `url` every `intervalMs`. Keeps the last good data when a poll fails. */
+/**
+ * Loads `url` now, every `intervalMs`, and at once when something changed: the service worker received an
+ * ANDON push ("andon-changed", public/sw.js) or the page comes back on screen. A hidden page does not poll
+ * (2026-10-29: fewer server requests — Vercel free tier). Keeps the last good data when a load fails.
+ */
 export function usePolling<T>(url: string | null, intervalMs: number): PollState<T> {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -161,10 +165,26 @@ export function usePolling<T>(url: string | null, intervalMs: number): PollState
 
   useEffect(() => {
     const first = setTimeout(load, 0);
-    const t = setInterval(load, intervalMs);
+    const t = setInterval(() => {
+      if (document.visibilityState !== "hidden") load();
+    }, intervalMs);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    const onMessage = (e: MessageEvent) => {
+      if (e.data?.type === "andon-changed") load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("online", load);
+    const sw = typeof navigator !== "undefined" && "serviceWorker" in navigator ? navigator.serviceWorker : null;
+    sw?.addEventListener("message", onMessage);
+    sw?.startMessages(); // addEventListener alone does not start delivery
     return () => {
       clearTimeout(first);
       clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("online", load);
+      sw?.removeEventListener("message", onMessage);
     };
   }, [load, intervalMs]);
 

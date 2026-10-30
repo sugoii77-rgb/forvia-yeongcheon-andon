@@ -277,6 +277,7 @@ table.table { width: 100%; border-collapse: collapse; background: #fff; font-siz
 @keyframes live-blink { 0%, 100% { opacity: 1; box-shadow: 0 0 12px 4px rgba(255, 42, 58, 0.85); } 50% { opacity: 0.25; box-shadow: 0 0 0 0 rgba(255, 42, 58, 0); } }
 .conn-ok { background: rgba(31, 157, 85, 0.2); color: #6fe3a0; }
 .conn-bad { background: var(--red); color: #fff; animation: blink 1s steps(2) infinite; }
+.conn-push { background: rgba(255, 196, 0, 0.18); color: #ffd666; border: 1px solid rgba(255, 196, 0, 0.5); cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; }
 
 .dash-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 14px; }
 .dash-card {

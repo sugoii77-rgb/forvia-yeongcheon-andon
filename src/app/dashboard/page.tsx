@@ -7,6 +7,7 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { fmtTime, usePolling, useServerNow } from "@/lib/client";
+import { useBoardPush } from "@/components/BoardPush";
 import { MAP_FRAME, MAP_ZONES } from "@/config/plantLayout";
 import { STATUS_LABEL, type AndonEvent, type MasterData } from "@/lib/domain";
 import { CATEGORY_LEGEND, categoryKey, displayLines, stationState, elapsedSeconds, formatElapsed, lineStates, placeLines, shiftLabel, sortActive, sortDone, type LineState, type MapLine } from "@/lib/plantMap";
@@ -19,13 +20,17 @@ interface BoardResponse {
   shift?: PublicShift;
 }
 
-// 5 s (2026-10-08): the shop-floor PC runs on LTE — about 2.5× less data and server requests than 2 s
-const POLL_MS = 5000;
-// Green ceremony (plant 2026-10-16): a line that has just been completed celebrates. Seen within one poll,
-// so the effect runs CELEBRATE_MS + up to one poll interval after the close.
+// No more 5-second polling (2026-10-29, Vercel free-tier CPU): the board loads when the server pushes "board
+// changed" (ANDON raised / acknowledged / in action / completed — useBoardPush). A slow safety load stays in
+// case a push is lost (it also keeps the shift label and the 2-hour escalation check going). A display without
+// push (permission not given yet) loads every 15 s.
+const PUSH_SAFETY_MS = 60_000;
+const NO_PUSH_POLL_MS = 15_000;
+// Green ceremony (plant 2026-10-16): a line that has just been completed celebrates — CELEBRATE_MS after the
+// close, plus the time the update needs to arrive (a push: seconds; without push: up to one load interval).
 const CELEBRATE_MS = 5000;
+const PUSH_DELAY_MS = 5000;
 const CONFETTI = Array.from({ length: 14 }, (_, i) => i);
-const STALE_MS = 20000; // ~3 missed updates before the "disconnected" warning
 const META_MS = 5 * 60_000;
 
 const kstClock = new Intl.DateTimeFormat("ko-KR", {
@@ -52,7 +57,7 @@ const stateText = (s: LineState) =>
     ? "발생 OPEN"
     : `${STATUS_LABEL[s.lead!.status].ko}${s.lead!.acknowledgedBy ? ` · ${s.lead!.acknowledgedBy}` : ` ${s.lead!.status === "ACKNOWLEDGED" ? "ACK" : "IN ACTION"}`}`;
 
-function LineTile({ line, st, now, compact, sub, tone }: { line: MapLine; st: LineState | undefined; now: number; compact?: boolean; sub?: string; tone?: string }) {
+function LineTile({ line, st, now, celebrateMs, compact, sub, tone }: { line: MapLine; st: LineState | undefined; now: number; celebrateMs: number; compact?: boolean; sub?: string; tone?: string }) {
   if (!st) {
     return (
       <div className={`pm-line pm-normal${tone ? ` pm-tone-${tone}` : ""}${compact ? " pm-chip" : ""}`} data-line={line.code} data-state="NORMAL" title={sub}>
@@ -64,7 +69,7 @@ function LineTile({ line, st, now, compact, sub, tone }: { line: MapLine; st: Li
   const e = st.lead!;
   if (st.state === "DONE") {
     // completed within 24 h: green, compact — name + completion time; just completed: a short ceremony
-    const celebrate = now - Date.parse(e.closedAt!) < CELEBRATE_MS + POLL_MS;
+    const celebrate = now - Date.parse(e.closedAt!) < celebrateMs;
     return (
       <Link href={`/respond/${encodeURIComponent(e.id)}`} className={`pm-line pm-done${celebrate ? " pm-celebrate" : ""}${compact ? " pm-chip" : ""}`} data-line={line.code} data-state="DONE" title={`${line.name} · 완료 ${fmtTime(e.closedAt!)}`}>
         {celebrate && (
@@ -101,10 +106,14 @@ function LineTile({ line, st, now, compact, sub, tone }: { line: MapLine; st: Li
 }
 
 export default function PlantMapPage() {
-  const { data, lastSuccess, clockOffsetMs } = usePolling<BoardResponse>("/api/andons?scope=board", POLL_MS);
+  const push = useBoardPush();
+  const pollMs = push.state === "on" ? PUSH_SAFETY_MS : NO_PUSH_POLL_MS;
+  const { data, lastSuccess, clockOffsetMs } = usePolling<BoardResponse>("/api/andons?scope=board", pollMs);
   const { data: meta } = usePolling<MasterData>("/api/meta", META_MS);
   const now = useServerNow(clockOffsetMs);
-  const stale = lastSuccess == null || now - clockOffsetMs - lastSuccess > STALE_MS;
+  // ~2 missed safety loads before the "disconnected" warning
+  const stale = lastSuccess == null || now - clockOffsetMs - lastSuccess > 2 * pollMs + 10_000;
+  const celebrateMs = CELEBRATE_MS + (push.state === "on" ? PUSH_DELAY_MS : pollMs);
 
   const events = data?.events ?? [];
   const states = lineStates(events);
@@ -144,7 +153,17 @@ export default function PlantMapPage() {
             ⚠ 서버 연결 끊김 · 마지막 갱신 {lastSuccess ? fmtTime(new Date(lastSuccess).toISOString()) : "-"}
           </span>
         ) : (
-          <span className="conn conn-ok"><i className="live-dot" aria-hidden /> LIVE</span>
+          <span className="conn conn-ok" title={push.state === "on" ? "ANDON이 바뀌면 즉시 갱신 (푸시)" : `${NO_PUSH_POLL_MS / 1000}초마다 갱신`}>
+            <i className="live-dot" aria-hidden /> LIVE
+          </span>
+        )}
+        {push.state === "off" && (
+          <button type="button" className="conn conn-push" onClick={() => push.enable()} data-testid="board-push-enable">
+            실시간 갱신 켜기 ({NO_PUSH_POLL_MS / 1000}초 갱신 중)
+          </button>
+        )}
+        {push.state === "blocked" && (
+          <span className="conn conn-push" title="브라우저 주소창 왼쪽 자물쇠 → 알림 → 허용">알림 차단됨 · {NO_PUSH_POLL_MS / 1000}초 갱신</span>
         )}
       </header>
 
@@ -163,7 +182,7 @@ export default function PlantMapPage() {
             {stations.map((s) => (
               <div key={s.cell.id} className="pm-cell" style={pct(s.box)} data-station={s.cell.id}>
                 {s.line ? (
-                  <LineTile line={s.line} st={stationState([s.line.code, ...(s.cell.aliasLineCodes ?? [])], states)} now={now} sub={s.cell.subLabel} tone={s.cell.tone} />
+                  <LineTile line={s.line} st={stationState([s.line.code, ...(s.cell.aliasLineCodes ?? [])], states)} now={now} celebrateMs={celebrateMs} sub={s.cell.subLabel} tone={s.cell.tone} />
                 ) : (
                   <div className={`pm-unlinked pm-tone-${s.cell.tone}`} title="배치도에는 있으나 라인 기준정보와 연결이 확인되지 않음">
                     {s.cell.layoutLabel}
@@ -223,7 +242,7 @@ export default function PlantMapPage() {
               <h3>배치 위치 확인 필요 · Position to confirm ({unplaced.length})</h3>
               <div className="fs-chips">
                 {unplacedSorted.map((l) => (
-                  <LineTile key={l.code} line={l} st={states.get(l.code)} now={now} compact />
+                  <LineTile key={l.code} line={l} st={states.get(l.code)} now={now} celebrateMs={celebrateMs} compact />
                 ))}
               </div>
             </div>

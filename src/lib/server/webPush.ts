@@ -81,19 +81,33 @@ export interface PushStatus {
   devices: number;
   /** ?endpoint=… given: whether that device is still registered for this user (else the app re-registers it). */
   thisDevice?: boolean;
+  /** ?endpoint=… given: whether that device gets the board-changed signal (shop-floor display). */
+  thisDeviceBoard?: boolean;
 }
 
 export async function pushStatusFor(req: Request): Promise<PushStatus> {
   const user = await requireUser(req);
   const v = vapidKeys();
-  const row = await db.get("SELECT COUNT(*) AS n FROM push_subscription WHERE user_id = ?", user.id);
+  const row = await db.get("SELECT COUNT(*) AS n FROM push_subscription WHERE user_id = ? AND alert = 1", user.id);
   const endpoint = new URL(req.url).searchParams.get("endpoint");
-  const thisDevice = endpoint ? !!(await db.get("SELECT 1 FROM push_subscription WHERE user_id = ? AND endpoint = ?", user.id, endpoint)) : undefined;
-  return { configured: !!v, publicKey: v?.publicKey ?? null, devices: Number(row?.n ?? 0), ...(thisDevice === undefined ? {} : { thisDevice }) };
+  const mine = endpoint ? await db.get("SELECT alert, board FROM push_subscription WHERE user_id = ? AND endpoint = ?", user.id, endpoint) : undefined;
+  return {
+    configured: !!v,
+    publicKey: v?.publicKey ?? null,
+    devices: Number(row?.n ?? 0),
+    ...(endpoint ? { thisDevice: !!mine && Number(mine.alert) === 1, thisDeviceBoard: !!mine && Number(mine.board) === 1 } : {}),
+  };
 }
 
-/** Body = the browser's PushSubscription.toJSON(). Re-subscribing the same device moves it to this user. */
-export async function subscribeFor(req: Request, body: unknown, oldEndpoint?: string): Promise<void> {
+/** ALERT: rings for the user's ANDON (/me). BOARD: silent "board changed" signal for a shop-floor display. */
+export type PushKind = "ALERT" | "BOARD";
+
+/**
+ * Body = the browser's PushSubscription.toJSON(). Re-subscribing the same device moves it to this user.
+ * A browser has one subscription: turning on the other kind on the same device keeps the first one (an
+ * office PC can ring for its user AND refresh the board) — as long as it stays with the same user.
+ */
+export async function subscribeFor(req: Request, body: unknown, oldEndpoint?: string, kind?: PushKind): Promise<void> {
   const user = await requireUser(req);
   if (!vapidKeys()) throw new AndonError(503, "푸시 알림이 설정되지 않았습니다.", "PUSH_NOT_CONFIGURED");
   const b = (body ?? {}) as { endpoint?: unknown; keys?: { p256dh?: unknown; auth?: unknown } };
@@ -106,11 +120,19 @@ export async function subscribeFor(req: Request, body: unknown, oldEndpoint?: st
   }
   const ua = (req.headers.get("user-agent") || "").slice(0, 300) || null;
   await db.transaction(async () => {
+    // re-subscribed, or the browser rotated its subscription (oldEndpoint): keep what the device was used for
+    const prev = (await db.get(
+      "SELECT MAX(alert) AS alert, MAX(board) AS board FROM push_subscription WHERE user_id = ? AND endpoint IN (?, ?)",
+      user.id, endpoint, oldEndpoint ?? endpoint,
+    )) as { alert: number | null; board: number | null } | undefined;
+    const known = prev?.alert != null; // kind omitted (rotation by the service worker): keep exactly what it was
+    const alert = kind === "ALERT" || Number(prev?.alert ?? 0) === 1 || (!kind && !known) ? 1 : 0;
+    const board = kind === "BOARD" || Number(prev?.board ?? 0) === 1 ? 1 : 0;
     if (oldEndpoint) await db.run("DELETE FROM push_subscription WHERE endpoint = ? AND user_id = ?", oldEndpoint, user.id);
     await db.run("DELETE FROM push_subscription WHERE endpoint = ?", endpoint);
     await db.run(
-      "INSERT INTO push_subscription (user_id, endpoint, p256dh, auth, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-      user.id, endpoint, p256dh, auth, ua, nowIso(),
+      "INSERT INTO push_subscription (user_id, endpoint, p256dh, auth, user_agent, created_at, alert, board) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      user.id, endpoint, p256dh, auth, ua, nowIso(), alert, board,
     );
   });
 }
@@ -122,16 +144,42 @@ export async function unsubscribeFor(req: Request, endpoint: unknown): Promise<v
 }
 
 /**
- * Pushes to every device of the user. Returns how many devices accepted it ({sent: 0, devices: 0} when the
- * user has none — not an error). Devices the push service reports as gone (404 / 410) are removed.
+ * Pushes to every ANDON alert device of the user. Returns how many devices accepted it ({sent: 0, devices: 0}
+ * when the user has none — not an error).
  */
 export async function sendPushTo(userId: number, m: PushMessage): Promise<{ sent: number; devices: number; error: string | null }> {
   const v = vapidKeys();
-  const subs = (await db.all("SELECT id, endpoint, p256dh, auth FROM push_subscription WHERE user_id = ? ORDER BY id", userId)) as {
-    id: number; endpoint: string; p256dh: string; auth: string;
-  }[];
+  const subs = (await db.all("SELECT id, endpoint, p256dh, auth FROM push_subscription WHERE user_id = ? AND alert = 1 ORDER BY id", userId)) as SubRow[];
   if (!v || subs.length === 0) return { sent: 0, devices: subs.length, error: v ? null : "PUSH_NOT_CONFIGURED" };
   const payload = JSON.stringify({ title: m.title, body: m.body, url: m.link, tag: m.tag ?? null, ack: m.ack ?? null });
+  // TTL 1 h: an ANDON older than that is not worth ringing a phone that was off
+  const r = await deliver(v, subs, payload, 3600, () => tellPushLost(userId));
+  return { sent: r.sent, devices: subs.length, error: r.error };
+}
+
+/**
+ * "The board changed" (ANDON raised, acknowledged, in action, completed): a silent signal to every board
+ * display; the display's page then loads the board once. Replaces the 5-second polling (2026-10-29, Vercel
+ * free-tier CPU). Short TTL: a display that was offline catches up by itself when it comes back. Never throws.
+ */
+export async function sendBoardRefresh(reason: string): Promise<{ sent: number; devices: number }> {
+  try {
+    const v = vapidKeys();
+    const subs = (await db.all("SELECT id, endpoint, p256dh, auth FROM push_subscription WHERE board = 1 ORDER BY id")) as SubRow[];
+    if (!v || subs.length === 0) return { sent: 0, devices: subs.length };
+    const r = await deliver(v, subs, JSON.stringify({ type: "board", reason }), 60);
+    if (r.error) console.warn(`[push] board refresh (${reason}): ${r.sent}/${subs.length} sent, last error: ${r.error}`);
+    return { sent: r.sent, devices: subs.length };
+  } catch (err) {
+    console.warn(`[push] board refresh (${reason}) failed: ${(err as Error).message}`);
+    return { sent: 0, devices: 0 };
+  }
+}
+
+type SubRow = { id: number; endpoint: string; p256dh: string; auth: string };
+
+/** Sends one payload to the given devices. Devices the push service reports as gone (404 / 410) are removed. */
+async function deliver(v: Vapid, subs: SubRow[], payload: string, ttl: number, onGone?: () => Promise<void>): Promise<{ sent: number; error: string | null }> {
   let sent = 0;
   let lastError: string | null = null;
   await Promise.all(
@@ -140,7 +188,7 @@ export async function sendPushTo(userId: number, m: PushMessage): Promise<{ sent
         if (!allowedEndpoint(s.endpoint)) throw new Error("endpoint not allowed");
         const r = webpush.generateRequestDetails({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload, {
           vapidDetails: v,
-          TTL: 3600, // an ANDON older than 1 h is not worth ringing a phone that was off
+          TTL: ttl,
           urgency: "high",
           contentEncoding: "aes128gcm",
         });
@@ -152,7 +200,7 @@ export async function sendPushTo(userId: number, m: PushMessage): Promise<{ sent
         });
         if (res.status === 404 || res.status === 410) {
           await db.run("DELETE FROM push_subscription WHERE id = ?", s.id);
-          await tellPushLost(userId);
+          await onGone?.();
           throw new Error(`device gone (${res.status}) — removed`);
         }
         if (!res.ok) throw new Error(`push service ${res.status}`);
@@ -164,7 +212,7 @@ export async function sendPushTo(userId: number, m: PushMessage): Promise<{ sent
       }
     }),
   );
-  return { sent, devices: subs.length, error: lastError };
+  return { sent, error: lastError };
 }
 
 /**
@@ -175,7 +223,7 @@ export async function sendPushTo(userId: number, m: PushMessage): Promise<{ sent
  */
 async function tellPushLost(userId: number): Promise<void> {
   try {
-    if (await db.get("SELECT 1 FROM push_subscription WHERE user_id = ?", userId)) return; // another device still rings
+    if (await db.get("SELECT 1 FROM push_subscription WHERE user_id = ? AND alert = 1", userId)) return; // another device still rings
     const base = (process.env.APP_BASE_URL || "https://forvia-yeongcheon-andon.vercel.app").replace(/\/$/, "");
     await sendKakaoMemoTo(
       userId,

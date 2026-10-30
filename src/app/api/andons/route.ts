@@ -1,5 +1,6 @@
 import { createEvent, getBoardCounts, listEvents, AndonError, type ListOptions } from "@/lib/server/andonService";
 import { notifyAndonCreated } from "@/lib/server/notifications";
+import { sendBoardRefresh } from "@/lib/server/webPush";
 import { deletePhoto, savePhoto } from "@/lib/server/photos";
 import { after } from "next/server";
 import { handle, requestAudit } from "@/lib/server/http";
@@ -97,6 +98,7 @@ export async function POST(req: Request) {
       // After the response: the operator gets confirmation immediately; every attempt is logged.
       // after() keeps the work alive until it finishes, also on serverless platforms.
       const created = result.event;
+      after(() => sendBoardRefresh("created")); // shop-floor displays load the board now (no polling)
       after(() => notifyAndonCreated(created));
     }
     return Response.json(

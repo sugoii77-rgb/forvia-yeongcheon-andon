@@ -39,8 +39,8 @@ function Bars({ rows }: { rows: { name: string; count: number }[] }) {
 
 export default function HistoryPage() {
   const [days, setDays] = useState(7);
-  const stats = usePolling<Stats>(`/api/stats?days=${days}`, 10000);
-  const list = usePolling<{ events: AndonEvent[] }>("/api/andons?scope=all&limit=200", 10000);
+  const stats = usePolling<Stats>(`/api/stats?days=${days}`, 60000);
+  const list = usePolling<{ events: AndonEvent[] }>("/api/andons?scope=all&limit=200", 60000);
   const s = stats.data;
 
   return (

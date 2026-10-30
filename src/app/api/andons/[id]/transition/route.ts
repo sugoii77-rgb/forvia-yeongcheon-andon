@@ -4,6 +4,7 @@ import { TRANSITION_ACTIONS, type TransitionAction } from "@/lib/domain";
 import { handle, requestAudit } from "@/lib/server/http";
 import { notifyAndonAcknowledged, notifyAndonClosed } from "@/lib/server/notifications";
 import { after } from "next/server";
+import { sendBoardRefresh } from "@/lib/server/webPush";
 
 // JSON body: { action: "ACKNOWLEDGE" | "ACTION" | "CLOSE", comment? }
 // The responder is ALWAYS the logged-in user (session cookie). Identity in the body is never trusted:
@@ -32,6 +33,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/andons/[id]/tra
       comment: body.comment == null ? undefined : String(body.comment),
       audit,
     });
+    after(() => sendBoardRefresh(event.status)); // shop-floor displays load the board now (no polling)
     if (event.status === "CLOSED") after(() => notifyAndonClosed(event, user.id)); // completion notice (+ the caller)
     // "접수 완료" back to whoever raised it (plant feedback 2026-10-09)
     if (body.action === "ACKNOWLEDGE") after(() => notifyAndonAcknowledged(event, user));

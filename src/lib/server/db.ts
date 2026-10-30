@@ -614,6 +614,19 @@ async function migrateV11(db: Sql) {
   `);
 }
 
+/**
+ * v12 — event-driven board (2026-10-29, Vercel free-tier CPU): the shop-floor display no longer polls every
+ * 5 s; the server pushes a silent "board changed" signal to the display's browser instead. A device row is
+ * now an ANDON alert device (alert = 1, rings for its user), a board display (board = 1), or both.
+ */
+async function migrateV12(db: Sql) {
+  await db.exec(`
+    ALTER TABLE push_subscription ADD COLUMN alert INTEGER NOT NULL DEFAULT 1 CHECK (alert IN (0, 1));
+    ALTER TABLE push_subscription ADD COLUMN board INTEGER NOT NULL DEFAULT 0 CHECK (board IN (0, 1));
+    CREATE INDEX ix_push_subscription_board ON push_subscription(board);
+  `);
+}
+
 const MIGRATIONS: { version: number; up: (db: Sql) => Promise<void>; foreignKeysOff?: boolean }[] = [
   { version: 1, up: (db) => db.exec(V1_SQL) },
   { version: 2, up: migrateV2 },
@@ -627,6 +640,7 @@ const MIGRATIONS: { version: number; up: (db: Sql) => Promise<void>; foreignKeys
   { version: 9, up: migrateV9 },
   { version: 10, up: migrateV10 },
   { version: 11, up: migrateV11 },
+  { version: 12, up: migrateV12 },
 ];
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
 

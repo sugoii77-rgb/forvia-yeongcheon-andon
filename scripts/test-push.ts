@@ -280,6 +280,52 @@ try {
     assert.equal(received.filter((m) => m.endpoint === glPhone.endpoint).length, 0, "caller closed it → no notice to the caller");
   });
 
+  await check("board display (kind BOARD, 2026-10-29): gets the silent board signal, never ANDON alerts; alert devices never get board signals", async () => {
+    const fes = await newUser("[TEST] Board display", effDept);
+    const display = newDevice();
+    const phone = newDevice();
+    await wp.subscribeFor(req("/x", fes.cookie), subJson(display), undefined, "BOARD");
+    await wp.subscribeFor(req("/x", fes.cookie), subJson(phone), undefined, "ALERT");
+    const st = await wp.pushStatusFor(req(`/api/notify/push?endpoint=${encodeURIComponent(display.endpoint)}`, fes.cookie));
+    assert.equal(st.thisDevice, false);
+    assert.equal(st.thisDeviceBoard, true);
+    assert.equal(st.devices, 1, "a board display is not counted as an alert device");
+
+    received.length = 0;
+    const r = await wp.sendBoardRefresh("created");
+    assert.ok(r.sent >= 1 && r.sent === r.devices, JSON.stringify(r));
+    const got = received.filter((m) => m.endpoint === display.endpoint);
+    assert.equal(got.length, 1);
+    assert.equal((got[0].payload as unknown as { type: string }).type, "board");
+    assert.equal(got[0].headers.get("ttl"), "60");
+    assert.equal(received.filter((m) => m.endpoint === phone.endpoint).length, 0, "alert phone: no silent board push (iOS would drop it)");
+
+    received.length = 0;
+    const a = await wp.sendPushTo(fes.id, { title: "t", body: "b", link: BASE });
+    assert.equal(a.devices, 1);
+    assert.deepEqual(received.map((m) => m.endpoint), [phone.endpoint], "ANDON alert only to the alert device");
+
+    // the same browser turned on for alerts too (/me) keeps the board; a rotation without kind keeps both
+    await wp.subscribeFor(req("/x", fes.cookie), subJson(display), undefined, "ALERT");
+    const rotated = newDevice();
+    await wp.subscribeFor(req("/x", fes.cookie), subJson(rotated), display.endpoint);
+    const row = await db.get("SELECT alert, board FROM push_subscription WHERE endpoint = ?", rotated.endpoint);
+    assert.deepEqual({ alert: Number(row!.alert), board: Number(row!.board) }, { alert: 1, board: 1 });
+    const boardOnly = newDevice();
+    await wp.subscribeFor(req("/x", fes.cookie), subJson(boardOnly), undefined, "BOARD");
+    const rot2 = newDevice();
+    await wp.subscribeFor(req("/x", fes.cookie), subJson(rot2), boardOnly.endpoint);
+    const row2 = await db.get("SELECT alert, board FROM push_subscription WHERE endpoint = ?", rot2.endpoint);
+    assert.deepEqual({ alert: Number(row2!.alert), board: Number(row2!.board) }, { alert: 0, board: 1 }, "rotation of a board-only display does not start ringing");
+
+    // display gone → removed, no lost-device notice to anyone
+    rot2.status = 410;
+    rotated.status = 410;
+    await wp.sendBoardRefresh("CLOSED");
+    assert.equal(await db.get("SELECT 1 FROM push_subscription WHERE endpoint IN (?, ?)", rot2.endpoint, rotated.endpoint), undefined);
+    await db.run("UPDATE app_user SET active = 0 WHERE id = ?", fes.id);
+  });
+
   await check("no push request left this process", async () => {
     assert.deepEqual(outside, []);
   });
