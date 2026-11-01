@@ -18,6 +18,8 @@ export async function listSetupStatus(): Promise<SetupStatusPerson[]> {
       WHERE u.active = 1
         AND EXISTS (SELECT 1 FROM user_identity i WHERE i.user_id = u.id)   -- accounts people can log in with
         AND COALESCE(u.email, '') NOT LIKE '%.test'                           -- automated test accounts
+        -- visitors' view-only accounts (plant 2026-11-01: R&D / BG observers), tagged in the name
+        AND NOT (u.department_code = 'FES' AND (u.name LIKE '%참관%' OR LOWER(u.name) LIKE '%observer%'))
       ORDER BY u.department_code, r.sort_order DESC, u.name`,
   );
   return rows.map((r) => ({
