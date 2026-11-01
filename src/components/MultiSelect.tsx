@@ -2,6 +2,7 @@
 // Drop-down with check boxes (several values). Closed: a button with the chosen labels; open: the list
 // with "전체 선택 / 해제". Large touch targets for phones.
 import { useEffect, useId, useRef, useState } from "react";
+import { useT } from "@/lib/i18n";
 
 export interface MultiOption {
   value: string;
@@ -14,8 +15,8 @@ export function MultiSelect({
   options,
   selected,
   onChange,
-  placeholder = "선택하세요",
-  emptyText = "선택할 항목이 없습니다",
+  placeholder,
+  emptyText,
   testId,
 }: {
   label: string;
@@ -26,6 +27,9 @@ export function MultiSelect({
   emptyText?: string;
   testId?: string;
 }) {
+  const t = useT();
+  placeholder ??= t("선택하세요", "Choose");
+  emptyText ??= t("선택할 항목이 없습니다", "Nothing to choose");
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const listId = useId();
@@ -48,7 +52,7 @@ export function MultiSelect({
 
   const chosen = options.filter((o) => selected.includes(o.value));
   const summary =
-    chosen.length === 0 ? placeholder : chosen.length <= 3 ? chosen.map((o) => o.label).join(", ") : `${chosen.slice(0, 2).map((o) => o.label).join(", ")} 외 ${chosen.length - 2}명`;
+    chosen.length === 0 ? placeholder : chosen.length <= 3 ? chosen.map((o) => o.label).join(", ") : t(`${chosen.slice(0, 2).map((o) => o.label).join(", ")} 외 ${chosen.length - 2}명`, `${chosen.slice(0, 2).map((o) => o.label).join(", ")} +${chosen.length - 2}`);
   const toggle = (v: string) => onChange(selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v]);
   const all = options.length > 0 && chosen.length === options.length;
 
@@ -74,7 +78,7 @@ export function MultiSelect({
           ) : (
             <>
               <button type="button" className="ms-all" onClick={() => onChange(all ? [] : options.map((o) => o.value))}>
-                {all ? "전체 해제" : "전체 선택"}
+                {all ? t("전체 해제", "Clear all") : t("전체 선택", "Select all")}
               </button>
               {options.map((o) => (
                 <label key={o.value} className="ms-opt" role="option" aria-selected={selected.includes(o.value)}>
@@ -83,7 +87,7 @@ export function MultiSelect({
                   {o.hint && <small>{o.hint}</small>}
                 </label>
               ))}
-              <button type="button" className="ms-done" onClick={() => setOpen(false)}>완료</button>
+              <button type="button" className="ms-done" onClick={() => setOpen(false)}>{t("완료", "Done")}</button>
             </>
           )}
         </div>

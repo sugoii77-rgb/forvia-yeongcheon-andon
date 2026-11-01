@@ -3,6 +3,7 @@
 // push notifications ring with the phone's normal notification sound. Per device (phone, office PC, …).
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/client";
+import { useT } from "@/lib/i18n";
 
 interface PushStatus {
   configured: boolean;
@@ -97,6 +98,7 @@ export async function pushOffBeforeLogout(): Promise<void> {
 }
 
 export function PushNotify() {
+  const t = useT();
   const [status, setStatus] = useState<PushStatus | null>(null);
   const [env, setEnv] = useState<Env | null>(null);
   const [onHere, setOnHere] = useState(false);
@@ -126,7 +128,7 @@ export function PushNotify() {
     try {
       const perm = await Notification.requestPermission();
       if (perm !== "granted") {
-        setMsg({ ok: false, text: "알림이 차단되어 있습니다. 브라우저(또는 휴대폰 설정 → 앱 → Chrome/ANDON → 알림)에서 이 사이트의 알림을 '허용'으로 바꾼 뒤 다시 누르세요." });
+        setMsg({ ok: false, text: t("알림이 차단되어 있습니다. 브라우저(또는 휴대폰 설정 → 앱 → Chrome/ANDON → 알림)에서 이 사이트의 알림을 '허용'으로 바꾼 뒤 다시 누르세요.", "Notifications are blocked. Allow notifications for this site in the browser (or phone settings → Apps → Chrome/ANDON → Notifications), then try again.") });
         return;
       }
       const reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
@@ -148,9 +150,9 @@ export function PushNotify() {
         body: JSON.stringify({ subscription: sub.toJSON(), kind: "ALERT" }),
       });
       await api("/api/notify/push/test", { method: "POST" }).catch(() => {});
-      setMsg({ ok: true, text: "이 기기의 알림을 켰습니다. 테스트 알림을 보냈습니다 — 알림음이 울렸는지 확인하세요." });
+      setMsg({ ok: true, text: t("이 기기의 알림을 켰습니다. 테스트 알림을 보냈습니다 — 알림음이 울렸는지 확인하세요.", "Alerts are on for this device. A test alert was sent — check that it rang.") });
     } catch (err) {
-      setMsg({ ok: false, text: (err as Error).message || "알림을 켜지 못했습니다." });
+      setMsg({ ok: false, text: (err as Error).message || t("알림을 켜지 못했습니다.", "Could not turn on alerts.") });
     } finally {
       setBusy(null);
       await load();
@@ -162,7 +164,7 @@ export function PushNotify() {
     setMsg(null);
     try {
       await api("/api/notify/push/test", { method: "POST" });
-      setMsg({ ok: true, text: "테스트 알림을 보냈습니다. 알림이 켜진 모든 기기에서 울립니다." });
+      setMsg({ ok: true, text: t("테스트 알림을 보냈습니다. 알림이 켜진 모든 기기에서 울립니다.", "Test alert sent to all your devices with alerts on.") });
     } catch (err) {
       setMsg({ ok: false, text: (err as Error).message });
     } finally {
@@ -176,7 +178,7 @@ export function PushNotify() {
     try {
       await pushOffBeforeLogout();
       storage.set(OFF_KEY, "1"); // turned off on purpose: the automatic re-registration leaves it off
-      setMsg({ ok: true, text: "이 기기의 알림을 껐습니다." });
+      setMsg({ ok: true, text: t("이 기기의 알림을 껐습니다.", "Alerts are off for this device.") });
     } finally {
       setBusy(null);
       await load();
@@ -187,57 +189,60 @@ export function PushNotify() {
   return (
     <div className="card" data-testid="push-notify">
       <h2 style={{ marginTop: 0 }}>
-        휴대폰 알림 (알림음) <span className="muted" style={{ fontSize: 14 }}>Push</span>
+        {t("휴대폰 알림 (알림음)", "Phone alerts (sound)")} <span className="muted" style={{ fontSize: 14 }}>Push</span>
       </h2>
       <p className="muted" style={{ fontSize: 14 }}>
-        카카오톡 &lsquo;나와의 채팅&rsquo;은 알림음이 울리지 않습니다. 여기서 알림을 켜면 ANDON이 올 때 휴대폰 알림음·진동이 함께 울립니다. 기기마다 한 번씩 켜 주세요.
+        {t("카카오톡 ‘나와의 채팅’은 알림음이 울리지 않습니다. 여기서 알림을 켜면 ANDON이 올 때 휴대폰 알림음·진동이 함께 울립니다. 기기마다 한 번씩 켜 주세요.", "Turn this on to make the phone ring and vibrate when an ANDON comes in. Once per device.")}
       </p>
       <dl className="kv">
-        <dt>이 기기</dt>
-        <dd data-testid="push-state">{onHere ? "✔ 알림 켜짐" : "꺼짐"}</dd>
-        <dt>알림 켜진 기기</dt>
-        <dd>{status.devices}대</dd>
+        <dt>{t("이 기기", "This device")}</dt>
+        <dd data-testid="push-state">{onHere ? t("✔ 알림 켜짐", "✔ on") : t("꺼짐", "off")}</dd>
+        <dt>{t("알림 켜진 기기", "Devices with alerts")}</dt>
+        <dd>{t(`${status.devices}대`, String(status.devices))}</dd>
       </dl>
       {env === "in-app" && (
         <div className="alert alert-error">
-          카카오톡 등 앱 안의 브라우저에서는 알림을 켤 수 없습니다. 오른쪽 위 메뉴에서 &lsquo;다른 브라우저로 열기&rsquo;(Chrome / Safari)를 누른 뒤 다시 시도하세요.
+          {t("카카오톡 등 앱 안의 브라우저에서는 알림을 켤 수 없습니다. 오른쪽 위 메뉴에서 ‘다른 브라우저로 열기’(Chrome / Safari)를 누른 뒤 다시 시도하세요.", "Alerts cannot be turned on inside an app's built-in browser. Open this page in Chrome or Safari and try again.")}
         </div>
       )}
       {env === "ios-browser" && (
         <div className="alert alert-error">
-          아이폰은 Safari에서 <b>공유 → 홈 화면에 추가</b>로 ANDON 아이콘을 만든 뒤, <b>그 아이콘으로 열어서</b> 알림을 켜야 합니다. (iOS 16.4 이상)
+          {t("아이폰은 Safari에서 ‘공유 → 홈 화면에 추가’로 ANDON 아이콘을 만든 뒤, 그 아이콘으로 열어서 알림을 켜야 합니다. (iOS 16.4 이상)", "iPhone: in Safari tap Share → Add to Home Screen, open ANDON from that icon, then turn alerts on (iOS 16.4+).")}
         </div>
       )}
-      {env === "unsupported" && <div className="alert alert-error">이 브라우저는 알림을 지원하지 않습니다. Chrome에서 열어 주세요.</div>}
+      {env === "unsupported" && <div className="alert alert-error">{t("이 브라우저는 알림을 지원하지 않습니다. Chrome에서 열어 주세요.", "This browser does not support alerts. Please use Chrome.")}</div>}
       {msg && <div className={`alert ${msg.ok ? "alert-ok" : "alert-error"}`}>{msg.text}</div>}
       <div className="row" style={{ marginTop: 12 }}>
         {env === "ok" && !onHere && (
           <button className="btn btn-primary" onClick={turnOn} disabled={!!busy}>
-            {busy === "on" ? "켜는 중…" : "이 기기 알림 켜기"}
+            {busy === "on" ? t("켜는 중…", "Turning on…") : t("이 기기 알림 켜기", "Turn on alerts on this device")}
           </button>
         )}
         {status.devices > 0 && (
           <button className="btn" onClick={test} disabled={!!busy}>
-            {busy === "test" ? "보내는 중…" : "테스트 알림"}
+            {busy === "test" ? t("보내는 중…", "Sending…") : t("테스트 알림", "Test alert")}
           </button>
         )}
         {env === "ok" && onHere && (
           <button className="btn" onClick={turnOff} disabled={!!busy}>
-            {busy === "off" ? "끄는 중…" : "이 기기 알림 끄기"}
+            {busy === "off" ? t("끄는 중…", "Turning off…") : t("이 기기 알림 끄기", "Turn off alerts on this device")}
           </button>
         )}
       </div>
       <details style={{ marginTop: 12 }}>
-        <summary style={{ cursor: "pointer", fontWeight: 700 }}>ANDON 전용 알림음 (딩동 + &ldquo;안돈 호출입니다&rdquo;)</summary>
+        <summary style={{ cursor: "pointer", fontWeight: 700 }}>{t("ANDON 전용 알림음 (딩동 + “안돈 호출입니다”)", "ANDON alert sound (ding-dong + Korean voice)")}</summary>
         <div className="row" style={{ marginTop: 8, flexWrap: "wrap", gap: 6 }}>
           <button className="btn" type="button" onClick={() => new Audio("/andon-alert.mp3").play().catch(() => {})}>
-            ▶ 미리 듣기
+            ▶ {t("미리 듣기", "Listen")}
           </button>
-          <a className="btn" href="/andon-alert.mp3" download="ANDON-알림음.mp3">알림음 받기</a>
+          <a className="btn" href="/andon-alert.mp3" download="ANDON-알림음.mp3">{t("알림음 받기", "Download sound")}</a>
         </div>
         <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>
-          <b>안드로이드만, 선택 사항.</b> 받은 파일을 내 파일 앱에서 <b>Notifications</b> 폴더로 옮긴 뒤 휴대폰 설정에서 ANDON 알림 소리로
-          고릅니다 (삼성은 설정 → 알림 → 고급 설정 → &lsquo;앱별 알림 카테고리 관리&rsquo;를 먼저 켜기). 순서는 상단 메뉴 <a href="/help#sound">도움말</a>에 있습니다.
+          {t(
+            "안드로이드만, 선택 사항. 받은 파일을 내 파일 앱에서 Notifications 폴더로 옮긴 뒤 휴대폰 설정에서 ANDON 알림 소리로 고릅니다 (삼성은 설정 → 알림 → 고급 설정 → ‘앱별 알림 카테고리 관리’를 먼저 켜기). 순서는 상단 메뉴 도움말에 있습니다.",
+            "Android only, optional: move the file into the Notifications folder (My Files app), then pick it as the ANDON notification sound in the phone settings. Steps:",
+          )}{" "}
+          <a href="/help#sound">{t("도움말", "Help")}</a>
         </p>
       </details>
     </div>

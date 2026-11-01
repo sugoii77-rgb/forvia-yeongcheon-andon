@@ -2,19 +2,21 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMe } from "@/lib/client";
+import { LangToggle, useT } from "@/lib/i18n";
 import { PushAutoHeal } from "@/components/PushNotify";
 
 const LINKS = [
-  { href: "/operator", label: "ANDON 호출" },
-  { href: "/dashboard", label: "현황판" },
-  { href: "/respond", label: "조치 (담당자)" },
-  { href: "/history", label: "이력/통계" },
-  { href: "/help", label: "도움말" },
+  { href: "/operator", ko: "ANDON 호출", en: "Call ANDON" },
+  { href: "/dashboard", ko: "현황판", en: "Dashboard" },
+  { href: "/respond", ko: "조치 (담당자)", en: "Respond" },
+  { href: "/history", ko: "이력/통계", en: "History" },
+  { href: "/help", ko: "도움말", en: "Help" },
 ];
 
 export function TopBar() {
   const path = usePathname();
   const { user, loaded } = useMe();
+  const t = useT();
   return (
     <header className="topbar">
       <PushAutoHeal signedIn={!!user?.active} />
@@ -24,25 +26,30 @@ export function TopBar() {
       <nav>
         {LINKS.map((l) => (
           <Link key={l.href} href={l.href} className={path.startsWith(l.href) ? "active" : ""}>
-            {l.label}
+            {t(l.ko, l.en)}
           </Link>
         ))}
         {loaded &&
           (user ? (
-            <Link href="/me" className={`tb-me${path.startsWith("/me") ? " active" : ""}`} aria-label={`${user.name} · 내 정보 / 설정`} title="내 정보 · 설정 (알림음 · 카카오 · 비밀번호)">
+            <Link
+              href="/me"
+              className={`tb-me${path.startsWith("/me") ? " active" : ""}`}
+              aria-label={`${user.name} · ${t("내 정보 / 설정", "My account / settings")}`}
+              title={t("내 정보 · 설정 (알림음 · 카카오 · 비밀번호)", "My account · settings (alerts · KakaoTalk · password)")}
+            >
               <span>{user.name}</span>
               <GearIcon />
             </Link>
           ) : (
             <Link href={`/login?next=${encodeURIComponent(path)}`} className={path.startsWith("/login") ? "active" : ""}>
-              로그인
+              {t("로그인", "Log in")}
             </Link>
           ))}
+        <LangToggle />
       </nav>
     </header>
   );
 }
-
 /** Outline gear (settings) — same link as the name: one tap target to '내 정보'. */
 function GearIcon() {
   return (

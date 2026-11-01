@@ -2,6 +2,7 @@
 // Browser-side helpers shared by all screens.
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { PublicUser } from "./domain";
+import { currentLang, errorText } from "./i18n";
 
 export class ApiError extends Error {
   constructor(
@@ -46,17 +47,19 @@ export async function api<T>(url: string, init: RequestInit = {}, timeoutMs = 15
     res = await fetch(url, { ...init, headers, signal: ctrl.signal, cache: "no-store" });
   } catch (err) {
     const timeout = (err as Error)?.name === "AbortError";
+    const code = timeout ? "TIMEOUT" : "NETWORK";
     throw new ApiError(
-      timeout ? "서버 응답 시간 초과 (timeout). 네트워크를 확인하세요." : "서버에 연결할 수 없습니다. 네트워크를 확인하세요.",
+      errorText(currentLang(), code, timeout ? "서버 응답 시간 초과 (timeout). 네트워크를 확인하세요." : "서버에 연결할 수 없습니다. 네트워크를 확인하세요."),
       0,
-      timeout ? "TIMEOUT" : "NETWORK",
+      code,
     );
   } finally {
     clearTimeout(timer);
   }
   const body = await res.json().catch(() => null);
   if (!res.ok) {
-    throw new ApiError(body?.error ?? `서버 오류 (HTTP ${res.status})`, res.status, body?.code);
+    const lang = currentLang();
+    throw new ApiError(errorText(lang, body?.code, body?.error ?? (lang === "en" ? `Server error (HTTP ${res.status})` : `서버 오류 (HTTP ${res.status})`)), res.status, body?.code);
   }
   return body as T;
 }
@@ -102,11 +105,12 @@ export function fmtDuration(sec: number | null): string {
 export function fmtDurationKo(sec: number | null): string {
   if (sec == null) return "-";
   const s = Math.round(sec);
-  if (s < 60) return `${s}초`;
+  const en = currentLang() === "en";
+  if (s < 60) return en ? `${s} s` : `${s}초`;
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
-  if (h > 0) return `${h}시간 ${m}분`;
-  return `${m}분 ${s % 60}초`;
+  if (h > 0) return en ? `${h} h ${m} min` : `${h}시간 ${m}분`;
+  return en ? `${m} min ${s % 60} s` : `${m}분 ${s % 60}초`;
 }
 
 /** Ticks every second; returns "server now" in ms, corrected by the last known server clock offset. */

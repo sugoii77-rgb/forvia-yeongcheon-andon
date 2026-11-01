@@ -8,6 +8,7 @@ import Link from "next/link";
 import type { CSSProperties } from "react";
 import { fmtTime, usePolling, useServerNow } from "@/lib/client";
 import { useBoardPush } from "@/components/BoardPush";
+import { categoryName, LangToggle, useLang, useT, type Lang } from "@/lib/i18n";
 import { MAP_FRAME, MAP_ZONES } from "@/config/plantLayout";
 import { STATUS_LABEL, type AndonEvent, type MasterData } from "@/lib/domain";
 import { CATEGORY_LEGEND, categoryKey, displayLines, stationState, elapsedSeconds, formatElapsed, lineStates, placeLines, shiftLabel, sortActive, sortDone, type LineState, type MapLine } from "@/lib/plantMap";
@@ -52,12 +53,14 @@ const pct = (raw: { x: number; y: number; w: number; h: number }) => {
   const b = fit(raw);
   return { left: `${b.x}%`, top: `${b.y}%`, width: `${b.w}%`, height: `${b.h}%` };
 };
-const stateText = (s: LineState) =>
+const stateText = (s: LineState, lang: Lang) =>
   s.state === "OPEN"
-    ? "발생 OPEN"
-    : `${STATUS_LABEL[s.lead!.status].ko}${s.lead!.acknowledgedBy ? ` · ${s.lead!.acknowledgedBy}` : ` ${s.lead!.status === "ACKNOWLEDGED" ? "ACK" : "IN ACTION"}`}`;
+    ? (lang === "en" ? "OPEN" : "발생 OPEN")
+    : `${STATUS_LABEL[s.lead!.status][lang]}${s.lead!.acknowledgedBy ? ` · ${s.lead!.acknowledgedBy}` : lang === "en" ? "" : ` ${s.lead!.status === "ACKNOWLEDGED" ? "ACK" : "IN ACTION"}`}`;
 
 function LineTile({ line, st, now, celebrateMs, compact, sub, tone }: { line: MapLine; st: LineState | undefined; now: number; celebrateMs: number; compact?: boolean; sub?: string; tone?: string }) {
+  const lang = useLang();
+  const t = useT();
   if (!st) {
     return (
       <div className={`pm-line pm-normal${tone ? ` pm-tone-${tone}` : ""}${compact ? " pm-chip" : ""}`} data-line={line.code} data-state="NORMAL" title={sub}>
@@ -71,7 +74,7 @@ function LineTile({ line, st, now, celebrateMs, compact, sub, tone }: { line: Ma
     // completed within 24 h: green, compact — name + completion time; just completed: a short ceremony
     const celebrate = now - Date.parse(e.closedAt!) < celebrateMs;
     return (
-      <Link href={`/respond/${encodeURIComponent(e.id)}`} className={`pm-line pm-done${celebrate ? " pm-celebrate" : ""}${compact ? " pm-chip" : ""}`} data-line={line.code} data-state="DONE" title={`${line.name} · 완료 ${fmtTime(e.closedAt!)}`}>
+      <Link href={`/respond/${encodeURIComponent(e.id)}`} className={`pm-line pm-done${celebrate ? " pm-celebrate" : ""}${compact ? " pm-chip" : ""}`} data-line={line.code} data-state="DONE" title={`${line.name} · ${t("완료", "closed")} ${fmtTime(e.closedAt!)}`}>
         {celebrate && (
           <span className="pm-cele-burst" aria-hidden>
             {CONFETTI.map((i) => (
@@ -80,7 +83,7 @@ function LineTile({ line, st, now, celebrateMs, compact, sub, tone }: { line: Ma
           </span>
         )}
         <span className="pm-name">{line.name}</span>
-        <span className="pm-state">✔ 완료 {fmtTime(e.closedAt!)}{e.closedBy ? ` · ${e.closedBy}` : ""}</span>
+        <span className="pm-state">✔ {t("완료", "Closed")} {fmtTime(e.closedAt!)}{e.closedBy ? ` · ${e.closedBy}` : ""}</span>
       </Link>
     );
   }
@@ -91,16 +94,16 @@ function LineTile({ line, st, now, celebrateMs, compact, sub, tone }: { line: Ma
       data-line={line.code}
       data-state={st.state}
       data-category={categoryKey(e.categoryCode)}
-      title={`${line.name}${sub ? ` (${sub})` : ""} · ${e.categoryName} · ${e.description}`}
+      title={`${line.name}${sub ? ` (${sub})` : ""} · ${categoryName(lang, e.categoryCode, e.categoryName)} · ${e.description}`}
     >
       <span className="pm-top">
         <span className="pm-name">{line.name}</span>
         {st.count > 1 && <span className="pm-badge" aria-label={`${st.count} active ANDON`}>{st.count}</span>}
       </span>
-      {!compact && <span className="pm-cat">{e.categoryName}{e.lineCode !== line.code ? ` · ${e.lineName}` : ""}</span>}
+      {!compact && <span className="pm-cat">{categoryName(lang, e.categoryCode, e.categoryName)}{e.lineCode !== line.code ? ` · ${e.lineName}` : ""}</span>}
       {!compact && <span className="pm-desc">{e.description}</span>}
       <span className="pm-time">{formatElapsed(elapsedSeconds(e, now))}</span>
-      {!compact && <span className="pm-state">{stateText(st)}</span>}
+      {!compact && <span className="pm-state">{stateText(st, lang)}</span>}
     </Link>
   );
 }
@@ -132,6 +135,9 @@ export default function PlantMapPage() {
   const actionLines = shownStates.filter((x) => x?.state === "ACTION").length;
   const normalLines = shownStates.filter((x) => !x || x.state === "DONE").length;
   const doneEvents = sortDone(events);
+  const lang = useLang();
+  const t = useT();
+  const cat = (e: AndonEvent) => categoryName(lang, e.categoryCode, e.categoryName);
 
   return (
     <main className="floor">
@@ -142,7 +148,7 @@ export default function PlantMapPage() {
         <span className="fc fc-open" data-testid="count-open">● OPEN {meta ? openLines : "-"}</span>
         <span className="fc fc-action" data-testid="count-action">● IN ACTION {meta ? actionLines : "-"}</span>
         <span className="fc fc-normal" data-testid="count-normal">● NORMAL {meta ? normalLines : "-"}</span>
-        <span className="fc fc-done" data-testid="count-done">✔ 완료 24h {data ? doneEvents.length : "-"}</span>
+        <span className="fc fc-done" data-testid="count-done">✔ {t("완료", "CLOSED")} 24h {data ? doneEvents.length : "-"}</span>
         <span className="spacer" />
         <span className={`fc fc-shift${data?.shift?.status === "RESOLVED" ? "" : " fc-unresolved"}`} data-testid="shift">
           {data ? shiftLabel(data.shift) : "SHIFT: -"}
@@ -150,21 +156,22 @@ export default function PlantMapPage() {
         <span className="floor-clock" suppressHydrationWarning>{kstClock.format(new Date(now))}</span>
         {stale ? (
           <span className="conn conn-bad" role="alert">
-            ⚠ 서버 연결 끊김 · 마지막 갱신 {lastSuccess ? fmtTime(new Date(lastSuccess).toISOString()) : "-"}
+            ⚠ {t("서버 연결 끊김 · 마지막 갱신", "Connection lost · last update")} {lastSuccess ? fmtTime(new Date(lastSuccess).toISOString()) : "-"}
           </span>
         ) : (
-          <span className="conn conn-ok" title={push.state === "on" ? "ANDON이 바뀌면 즉시 갱신 (푸시)" : `${NO_PUSH_POLL_MS / 1000}초마다 갱신`}>
+          <span className="conn conn-ok" title={push.state === "on" ? t("ANDON이 바뀌면 즉시 갱신 (푸시)", "Updates as soon as an ANDON changes (push)") : t(`${NO_PUSH_POLL_MS / 1000}초마다 갱신`, `Updates every ${NO_PUSH_POLL_MS / 1000} s`)}>
             <i className="live-dot" aria-hidden /> LIVE
           </span>
         )}
         {push.state === "off" && (
           <button type="button" className="conn conn-push" onClick={() => push.enable()} data-testid="board-push-enable">
-            실시간 갱신 켜기 ({NO_PUSH_POLL_MS / 1000}초 갱신 중)
+            {t(`실시간 갱신 켜기 (${NO_PUSH_POLL_MS / 1000}초 갱신 중)`, `Turn on live updates (now every ${NO_PUSH_POLL_MS / 1000} s)`)}
           </button>
         )}
         {push.state === "blocked" && (
-          <span className="conn conn-push" title="브라우저 주소창 왼쪽 자물쇠 → 알림 → 허용">알림 차단됨 · {NO_PUSH_POLL_MS / 1000}초 갱신</span>
+          <span className="conn conn-push" title={t("브라우저 주소창 왼쪽 자물쇠 → 알림 → 허용", "Padlock left of the address bar → Notifications → Allow")}>{t(`알림 차단됨 · ${NO_PUSH_POLL_MS / 1000}초 갱신`, `Notifications blocked · every ${NO_PUSH_POLL_MS / 1000} s`)}</span>
         )}
+        <LangToggle />
       </header>
 
       <div className="floor-body">
@@ -184,7 +191,7 @@ export default function PlantMapPage() {
                 {s.line ? (
                   <LineTile line={s.line} st={stationState([s.line.code, ...(s.cell.aliasLineCodes ?? [])], states)} now={now} celebrateMs={celebrateMs} sub={s.cell.subLabel} tone={s.cell.tone} />
                 ) : (
-                  <div className={`pm-unlinked pm-tone-${s.cell.tone}`} title="배치도에는 있으나 라인 기준정보와 연결이 확인되지 않음">
+                  <div className={`pm-unlinked pm-tone-${s.cell.tone}`} title={t("배치도에는 있으나 라인 기준정보와 연결이 확인되지 않음", "On the layout, but not yet linked to a line in the master data")}>
                     {s.cell.layoutLabel}
                   </div>
                 )}
@@ -197,13 +204,13 @@ export default function PlantMapPage() {
           <h2>
             ACTIVE ANDON <span className="fs-n">{data ? active.length : "-"}</span>
           </h2>
-          <div className="fs-legend" aria-label="테두리 색 = 이상 유형">
-            <span className="fs-legend-t">테두리 = 유형</span>
+          <div className="fs-legend" aria-label={t("테두리 색 = 이상 유형", "Border colour = problem type")}>
+            <span className="fs-legend-t">{t("테두리 = 유형", "Border = type")}</span>
             {CATEGORY_LEGEND.map((c) => (
-              <span key={c.key} className={`fs-lg pm-c-${c.key}`}>{c.label}</span>
+              <span key={c.key} className={`fs-lg pm-c-${c.key}`}>{t(c.label, c.en)}</span>
             ))}
           </div>
-          {data && active.length === 0 && <div className="fs-clear">✔ 진행 중인 ANDON 없음</div>}
+          {data && active.length === 0 && <div className="fs-clear">✔ {t("진행 중인 ANDON 없음", "No active ANDON")}</div>}
           <ol className="fs-list">
             {active.map((e) => (
               <li key={e.id}>
@@ -211,7 +218,7 @@ export default function PlantMapPage() {
                   <span className="fs-line">{e.lineName}</span>
                   <span className="fs-meta">
                     <i className={`fs-dot pm-c-${categoryKey(e.categoryCode)}`} />
-                    {e.categoryName} · {e.status === "OPEN" ? "발생" : `${e.departments.map((d) => d.code).join("·")} ${STATUS_LABEL[e.status].ko}${e.acknowledgedBy ? ` · ${e.acknowledgedBy}` : ""}`}
+                    {cat(e)} · {e.status === "OPEN" ? t("발생", "OPEN") : `${e.departments.map((d) => d.code).join("·")} ${STATUS_LABEL[e.status][lang]}${e.acknowledgedBy ? ` · ${e.acknowledgedBy}` : ""}`}
                   </span>
                   <span className="fs-time">{formatElapsed(elapsedSeconds(e, now))}</span>
                 </Link>
@@ -220,7 +227,7 @@ export default function PlantMapPage() {
           </ol>
           {doneEvents.length > 0 && (
             <div className="fs-done">
-              <h3>완료 · 24시간 표시 ({doneEvents.length})</h3>
+              <h3>{t("완료 · 24시간 표시", "Closed · last 24 h")} ({doneEvents.length})</h3>
               <ol className="fs-list">
                 {doneEvents.map((e) => (
                   <li key={e.id}>
@@ -228,7 +235,7 @@ export default function PlantMapPage() {
                       <span className="fs-line">{e.lineName}</span>
                       <span className="fs-meta">
                         <i className={`fs-dot pm-c-${categoryKey(e.categoryCode)}`} />
-                        {e.categoryName} · 완료 {fmtTime(e.closedAt!)}{e.closedBy ? ` · ${e.closedBy}` : ""}
+                        {cat(e)} · {t("완료", "closed")} {fmtTime(e.closedAt!)}{e.closedBy ? ` · ${e.closedBy}` : ""}
                       </span>
                       <span className="fs-time">{formatElapsed(elapsedSeconds(e, now))}</span>
                     </Link>
@@ -239,7 +246,7 @@ export default function PlantMapPage() {
           )}
           {unplaced.length > 0 && (
             <div className="fs-tray">
-              <h3>배치 위치 확인 필요 · Position to confirm ({unplaced.length})</h3>
+              <h3>{t("배치 위치 확인 필요", "Position to confirm")} ({unplaced.length})</h3>
               <div className="fs-chips">
                 {unplacedSorted.map((l) => (
                   <LineTile key={l.code} line={l} st={states.get(l.code)} now={now} celebrateMs={celebrateMs} compact />

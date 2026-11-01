@@ -17,6 +17,7 @@ import {
   type Responsibility,
   type TransitionAction,
 } from "@/lib/domain";
+import { categoryName, departmentLabel, roleName, useLang, useT } from "@/lib/i18n";
 
 interface Detail {
   event: AndonEvent;
@@ -29,11 +30,11 @@ interface Detail {
   serverTime: string;
 }
 
-const ROUTING_LABEL: Record<string, string> = {
-  LINE_PROCESS_CATEGORY: "공정별 규칙",
-  LINE_CATEGORY: "라인별 규칙",
-  CATEGORY_DEFAULT: "유형 기본값",
-  GAP_LEADER_CALL: "GAP 리더 호출",
+const ROUTING_LABEL: Record<string, [string, string]> = {
+  LINE_PROCESS_CATEGORY: ["공정별 규칙", "process rule"],
+  LINE_CATEGORY: ["라인별 규칙", "line rule"],
+  CATEGORY_DEFAULT: ["유형 기본값", "category default"],
+  GAP_LEADER_CALL: ["GAP 리더 호출", "chosen by the GAP leader"],
 };
 
 /** "Android · Chrome" style summary of a user-agent string (display only). */
@@ -56,17 +57,19 @@ function deviceSummary(ua: string | null): string {
   return [os, br].filter(Boolean).join(" · ");
 }
 
-const ACTION_LABEL: Record<string, string> = {
-  CREATE: "발생 (CREATE)",
-  ACKNOWLEDGE: "접수 (ACKNOWLEDGE)",
-  ACTION: "조치 (ACTION)",
-  CLOSE: "완료 (CLOSE)",
+const ACTION_LABEL: Record<string, [string, string]> = {
+  CREATE: ["발생 (CREATE)", "Raised"],
+  ACKNOWLEDGE: ["접수 (ACKNOWLEDGE)", "Acknowledged"],
+  ACTION: ["조치 (ACTION)", "Action"],
+  CLOSE: ["완료 (CLOSE)", "Closed"],
 };
 
 export default function RespondDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { data, error, clockOffsetMs, refresh } = usePolling<Detail>(`/api/andons/${encodeURIComponent(id)}`, 15000); // + at once on an ANDON push / back on screen
   const now = useServerNow(clockOffsetMs);
+  const lang = useLang();
+  const tr = useT();
 
   const [mode, setMode] = useState<"ACTION" | "CLOSE" | null>(null);
   const [comment, setComment] = useState("");
@@ -76,11 +79,11 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
   async function run(action: TransitionAction) {
     if (busy) return;
     if (!data?.viewer?.canRespond) {
-      setResult({ ok: false, message: "이 ANDON을 조치할 권한이 없습니다." });
+      setResult({ ok: false, message: tr("이 ANDON을 조치할 권한이 없습니다.", "You cannot act on this ANDON.") });
       return;
     }
     if (action !== "ACKNOWLEDGE" && !comment.trim()) {
-      setResult({ ok: false, message: "조치 내용을 입력하세요." });
+      setResult({ ok: false, message: tr("조치 내용을 입력하세요.", "Please describe the action taken.") });
       return;
     }
     setBusy(true);
@@ -92,7 +95,7 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
         // No identity in the body: the server uses the logged-in user (session cookie).
         body: JSON.stringify({ action, comment: action === "ACKNOWLEDGE" ? undefined : comment.trim() }),
       });
-      setResult({ ok: true, message: `저장됨 → ${STATUS_LABEL[res.event.status].ko} (${res.event.status})` });
+      setResult({ ok: true, message: `${tr("저장됨", "Saved")} → ${STATUS_LABEL[res.event.status][lang]} (${res.event.status})` });
       setComment("");
       setMode(null);
     } catch (e) {
@@ -108,7 +111,7 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
       <>
         <TopBar />
         <main className="page">
-          {error ? <div className="alert alert-error">불러오기 실패: {error}</div> : <p className="muted">불러오는 중…</p>}
+          {error ? <div className="alert alert-error">{tr("불러오기 실패", "Could not load")}: {error}</div> : <p className="muted">{tr("불러오는 중…", "Loading…")}</p>}
         </main>
       </>
     );
@@ -125,26 +128,26 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
   const elapsed = (end - new Date(e.createdAt).getTime()) / 1000;
   const eligible = data.eligibleResponders;
   const viewer = data.viewer;
-  const responsibleLabel = e.departments.length > 1
+  const responsibleLabel = departmentLabel(lang, e.departments.length > 1
     ? e.departmentLabel
     : data.responsibility
     ? data.responsibility.effectiveDepartmentCode === data.responsibility.departmentCode
       ? data.responsibility.departmentLabel
       : `${data.responsibility.departmentLabel} → ${data.responsibility.effectiveDepartmentCode}`
-    : e.departmentLabel;
+    : e.departmentLabel);
 
   return (
     <>
       <TopBar />
       <main className="page">
-        {error && <div className="alert alert-warn">자동 갱신 실패 (표시된 정보가 최신이 아닐 수 있음): {error}</div>}
+        {error && <div className="alert alert-warn">{tr("자동 갱신 실패 (표시된 정보가 최신이 아닐 수 있음)", "Refresh failed (the information shown may be out of date)")}: {error}</div>}
 
         <div className={`event-item sig-${signalColor(e.status)}`} style={{ borderLeftWidth: 12 }}>
           <div className="row">
             <StatusBadge status={e.status} />
             <span className="muted">{e.id}</span>
             <span className="spacer" />
-            <span className="muted">{e.closedAt ? "소요" : "경과"}</span>
+            <span className="muted">{e.closedAt ? tr("소요", "Duration") : tr("경과", "Elapsed")}</span>
             <strong style={{ fontSize: 24, fontVariantNumeric: "tabular-nums" }}>{fmtDuration(elapsed)}</strong>
           </div>
           <div className="title" style={{ fontSize: 22 }}>
@@ -152,35 +155,35 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
           </div>
           <div style={{ fontSize: 19, margin: "6px 0" }}>{e.description}</div>
           <dl className="kv" style={{ marginTop: 10 }}>
-            <dt>이상 유형</dt>
-            <dd>{e.categoryName}</dd>
+            <dt>{tr("이상 유형", "Problem type")}</dt>
+            <dd>{categoryName(lang, e.categoryCode, e.categoryName)}</dd>
             {e.situations.length > 0 && (
               <>
-                <dt>상황</dt>
+                <dt>{tr("상황", "Situation")}</dt>
                 <dd>{e.situations.join(", ")}</dd>
               </>
             )}
-            <dt>담당 부서</dt>
+            <dt>{tr("담당 부서", "Responsible dept.")}</dt>
             <dd>
               {responsibleLabel}
               {data.responsibility && (
                 <span className="muted" style={{ fontWeight: 500 }}>
                   {" "}
-                  ({ROUTING_LABEL[data.responsibility.matchedBy] ?? data.responsibility.matchedBy})
+                  ({ROUTING_LABEL[data.responsibility.matchedBy]?.[lang === "en" ? 1 : 0] ?? data.responsibility.matchedBy})
                 </span>
               )}
             </dd>
-            <dt>발생</dt>
+            <dt>{tr("발생", "Raised")}</dt>
             <dd>
               {fmtDateTime(e.createdAt)} · {e.createdBy}
             </dd>
-            <dt>접수</dt>
+            <dt>{tr("접수", "Acknowledged")}</dt>
             <dd>{e.acknowledgedAt ? `${fmtDateTime(e.acknowledgedAt)} · ${e.acknowledgedBy}` : "-"}</dd>
-            <dt>완료</dt>
+            <dt>{tr("완료", "Closed")}</dt>
             <dd>{e.closedAt ? `${fmtDateTime(e.closedAt)} · ${e.closedBy}` : "-"}</dd>
             {e.correctiveAction && (
               <>
-                <dt>시정 조치</dt>
+                <dt>{tr("시정 조치", "Corrective action")}</dt>
                 <dd>{e.correctiveAction}</dd>
               </>
             )}
@@ -190,7 +193,7 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={`/api/photos/${e.photoFile}`}
-                alt="현장 사진"
+                alt={tr("현장 사진", "Photo from the line")}
                 style={{ marginTop: 12, maxWidth: "100%", maxHeight: 320, borderRadius: 10, display: "block" }}
               />
             </a>
@@ -201,40 +204,40 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
           <section className="card" style={{ marginTop: 14 }}>
             {!viewer && (
               <div className="alert alert-warn">
-                조치하려면 로그인하세요.{" "}
-                <Link href={`/login?next=${encodeURIComponent(`/respond/${e.id}`)}`}>로그인</Link>
+                {tr("조치하려면 로그인하세요.", "Log in to respond.")}{" "}
+                <Link href={`/login?next=${encodeURIComponent(`/respond/${e.id}`)}`}>{tr("로그인", "Log in")}</Link>
               </div>
             )}
             {viewer && (
               <div style={{ marginBottom: 12 }}>
-                조치자 <strong>{viewer.user.name}</strong>{" "}
-                <span className="muted">· {viewer.user.departmentLabel} · {viewer.user.roleName}</span>
+                {tr("조치자", "Signed in as")} <strong>{viewer.user.name}</strong>{" "}
+                <span className="muted">· {departmentLabel(lang, viewer.user.departmentLabel)} · {roleName(lang, viewer.user.role, viewer.user.roleName)}</span>
               </div>
             )}
             {viewer && !viewer.canRespond && (
               <div className="alert alert-warn">
                 {!viewer.user.active
-                  ? "비활성 계정입니다. 조치할 수 없습니다."
+                  ? tr("비활성 계정입니다. 조치할 수 없습니다.", "This account is deactivated.")
                   : !viewer.user.canRespond
-                    ? "이 역할은 조치 권한이 없습니다."
-                    : `이 ANDON은 ${responsibleLabel} 부서 담당입니다 (내 부서: ${viewer.user.departmentLabel}).`}
+                    ? tr("이 역할은 조치 권한이 없습니다.", "View only — this account cannot acknowledge or close ANDON.")
+                    : tr(`이 ANDON은 ${responsibleLabel} 부서 담당입니다 (내 부서: ${viewer.user.departmentLabel}).`, `This ANDON belongs to ${responsibleLabel} (your department: ${departmentLabel(lang, viewer.user.departmentLabel)}).`)}
               </div>
             )}
             {viewer?.canRespond && closeByUap && (
-              <div className="alert alert-warn">최종 완료(Close)는 생산(UAP)이 확인 후 처리합니다. {repair ? "수리 내용" : "조치 내용"}을 입력해 주세요.</div>
+              <div className="alert alert-warn">{tr(`최종 완료(Close)는 생산(UAP)이 확인 후 처리합니다. ${repair ? "수리 내용" : "조치 내용"}을 입력해 주세요.`, `Production (UAP) checks and closes it. Please enter the ${repair ? "repair" : "action"} note.`)}</div>
             )}
-            {eligible.length === 0 && <div className="alert alert-error">이 부서에 등록된 담당자가 없습니다 (기준정보 확인 필요).</div>}
+            {eligible.length === 0 && <div className="alert alert-error">{tr("이 부서에 등록된 담당자가 없습니다 (기준정보 확인 필요).", "No responder registered for this department (check the master data).")}</div>}
 
             {viewer?.canRespond && mode && (
               <div className="field">
-                <label htmlFor="comment">{mode === "CLOSE" ? (repair ? "수리 확인 내용" : "시정 조치 내용 (Corrective action)") : repair ? "수리 내용" : "조치 내용 (Action note)"}</label>
+                <label htmlFor="comment">{mode === "CLOSE" ? (repair ? tr("수리 확인 내용", "Repair check") : tr("시정 조치 내용 (Corrective action)", "Corrective action")) : repair ? tr("수리 내용", "Repair note") : tr("조치 내용 (Action note)", "Action note")}</label>
                 <textarea
                   id="comment"
                   className="textarea"
                   maxLength={1000}
                   value={comment}
                   onChange={(ev) => setComment(ev.target.value)}
-                  placeholder={mode === "CLOSE" ? "예) 체결 토크 재조정 후 전수 재검사 완료" : "예) 현장 도착, 원인 확인 중"}
+                  placeholder={mode === "CLOSE" ? tr("예) 체결 토크 재조정 후 전수 재검사 완료", "e.g. torque readjusted, 100 % re-inspected") : tr("예) 현장 도착, 원인 확인 중", "e.g. on site, checking the cause")}
                   autoFocus
                 />
               </div>
@@ -246,17 +249,17 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
             <div className="row">
               {actions.includes("ACKNOWLEDGE") && (
                 <button className="btn btn-ack btn-big btn-block" disabled={busy} onClick={() => run("ACKNOWLEDGE")}>
-                  {busy ? "처리 중…" : repair ? "수리 시작" : "ACKNOWLEDGE · 접수"}
+                  {busy ? tr("처리 중…", "Working…") : repair ? tr("수리 시작", "Start repair") : tr("ACKNOWLEDGE · 접수", "ACKNOWLEDGE")}
                 </button>
               )}
               {!mode && actions.includes("ACTION") && (
                 <button className="btn btn-action btn-big" style={{ flex: 1 }} disabled={busy} onClick={() => setMode("ACTION")}>
-                  {repair ? "수리 내용 입력" : "ACTION · 조치 입력"}
+                  {repair ? tr("수리 내용 입력", "Enter repair note") : tr("ACTION · 조치 입력", "ACTION · enter note")}
                 </button>
               )}
               {!mode && actions.includes("CLOSE") && (
                 <button className="btn btn-close btn-big" style={{ flex: 1 }} disabled={busy} onClick={() => setMode("CLOSE")}>
-                  {repair ? "수리 완료 확인 (CLOSE)" : preventive ? "예방보전 완료" : "CLOSE · 완료"}
+                  {repair ? tr("수리 완료 확인 (CLOSE)", "Confirm repair (CLOSE)") : preventive ? tr("예방보전 완료", "Preventive maintenance done") : tr("CLOSE · 완료", "CLOSE")}
                 </button>
               )}
               {mode && (
@@ -267,10 +270,10 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
                     disabled={busy}
                     onClick={() => run(mode)}
                   >
-                    {busy ? "저장 중…" : mode === "CLOSE" ? (repair ? "수리 완료 확인 저장" : "완료 저장 (CLOSE)") : repair ? "수리 내용 저장" : "조치 저장 (ACTION)"}
+                    {busy ? tr("저장 중…", "Saving…") : mode === "CLOSE" ? (repair ? tr("수리 완료 확인 저장", "Save repair check") : tr("완료 저장 (CLOSE)", "Save & close")) : repair ? tr("수리 내용 저장", "Save repair note") : tr("조치 저장 (ACTION)", "Save action")}
                   </button>
                   <button className="btn btn-big" style={{ flex: 1 }} disabled={busy} onClick={() => setMode(null)}>
-                    취소
+                    {tr("취소", "Cancel")}
                   </button>
                 </>
               )}
@@ -280,26 +283,26 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
         )}
         {e.status === "CLOSED" && result?.ok && <div className="alert alert-ok">{result.message}</div>}
 
-        <h2>이력 History</h2>
+        <h2>{tr("이력 History", "History")}</h2>
         <ol className="timeline">
           {data.transitions.map((t) => (
             <li key={t.id} className={`sig-${signalColor(t.toStatus)}`}>
-              <strong>{ACTION_LABEL[t.action] ?? t.action}</strong>{" "}
+              <strong>{ACTION_LABEL[t.action]?.[lang === "en" ? 1 : 0] ?? t.action}</strong>{" "}
               <span className="muted">
                 {fmtDateTime(t.createdAt)} · {t.userName}
-                {t.userDepartmentLabel ? ` (${t.userDepartmentLabel} · ${t.userRole})` : ""} ·{" "}
+                {t.userDepartmentLabel ? ` (${departmentLabel(lang, t.userDepartmentLabel)} · ${t.userRole})` : ""} ·{" "}
                 {t.fromStatus ?? "—"} → {t.toStatus}
               </span>
               {/* 조치 시각 = when the note was saved (plant 2026-10-24) */}
               {t.action === "ACTION" && (
                 <div>
-                  조치 시각 <strong>{fmtDateTime(t.createdAt)}</strong>
-                  {e.acknowledgedAt && <span className="muted"> · 접수 후 {fmtDuration((new Date(t.createdAt).getTime() - new Date(e.acknowledgedAt).getTime()) / 1000)}</span>}
+                  {tr("조치 시각", "Action at")} <strong>{fmtDateTime(t.createdAt)}</strong>
+                  {e.acknowledgedAt && <span className="muted"> · {tr("접수 후", "after ACK")} {fmtDuration((new Date(t.createdAt).getTime() - new Date(e.acknowledgedAt).getTime()) / 1000)}</span>}
                 </div>
               )}
               {(t.deviceId || t.clientIp) && (
                 <div className="muted" style={{ fontSize: 13 }}>
-                  기기 {t.deviceId ? t.deviceId.slice(0, 12) : "-"}
+                  {tr("기기", "Device")} {t.deviceId ? t.deviceId.slice(0, 12) : "-"}
                   {t.clientIp ? ` · ${t.clientIp}` : ""}
                   {deviceSummary(t.userAgent) ? ` · ${deviceSummary(t.userAgent)}` : ""}
                 </div>
@@ -309,18 +312,18 @@ export default function RespondDetailPage({ params }: { params: Promise<{ id: st
           ))}
         </ol>
 
-        <h2>알림 기록 Notifications</h2>
+        <h2>{tr("알림 기록 Notifications", "Notifications sent")}</h2>
         {data.notifications.length === 0 ? (
-          <p className="muted">알림 기록 없음</p>
+          <p className="muted">{tr("알림 기록 없음", "No notifications")}</p>
         ) : (
           <div className="table-wrap">
             <table className="table">
               <thead>
                 <tr>
-                  <th>시각</th>
-                  <th>채널</th>
-                  <th>수신자</th>
-                  <th>결과</th>
+                  <th>{tr("시각", "Time")}</th>
+                  <th>{tr("채널", "Channel")}</th>
+                  <th>{tr("수신자", "Recipient")}</th>
+                  <th>{tr("결과", "Result")}</th>
                 </tr>
               </thead>
               <tbody>

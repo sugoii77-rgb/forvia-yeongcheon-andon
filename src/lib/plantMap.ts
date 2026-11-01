@@ -120,12 +120,12 @@ export function shiftLabel(shift: { status: "RESOLVED"; team: "A" | "B"; type: "
  * red = OPEN, amber = ACK / IN_PROGRESS). Production and other categories share one neutral colour.
  */
 export type CategoryKey = "QUALITY" | "MATERIAL" | "MAINTENANCE" | "SAFETY" | "OTHER";
-export const CATEGORY_LEGEND: { key: CategoryKey; label: string }[] = [
-  { key: "QUALITY", label: "품질" },
-  { key: "MATERIAL", label: "물류" },
-  { key: "MAINTENANCE", label: "설비" },
-  { key: "SAFETY", label: "안전" },
-  { key: "OTHER", label: "생산·기타" },
+export const CATEGORY_LEGEND: { key: CategoryKey; label: string; en: string }[] = [
+  { key: "QUALITY", label: "품질", en: "Quality" },
+  { key: "MATERIAL", label: "물류", en: "Logistics" },
+  { key: "MAINTENANCE", label: "설비", en: "Equipment" },
+  { key: "SAFETY", label: "안전", en: "Safety" },
+  { key: "OTHER", label: "생산·기타", en: "Production / other" },
 ];
 export function categoryKey(code: string): CategoryKey {
   return code === "QUALITY" || code === "MATERIAL" || code === "MAINTENANCE" || code === "SAFETY" ? code : "OTHER";

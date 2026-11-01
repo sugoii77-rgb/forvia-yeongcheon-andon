@@ -4,8 +4,10 @@ import { useState } from "react";
 import Link from "next/link";
 import { TopBar } from "@/components/TopBar";
 import { api } from "@/lib/client";
+import { useT } from "@/lib/i18n";
 
 export default function ResetPage() {
+  const t = useT();
   const [login, setLogin] = useState("");
   const [sent, setSent] = useState<string | null>(null);
   const [form, setForm] = useState({ code: "", newPassword: "", newPasswordConfirm: "" });
@@ -53,27 +55,29 @@ export default function ResetPage() {
     <>
       <TopBar />
       <main className="page" style={{ maxWidth: 520 }}>
-        <h1>비밀번호 재설정 <span className="muted" style={{ fontSize: 16 }}>Reset password</span></h1>
+        <h1>{t("비밀번호 재설정", "Reset password")}</h1>
         {done ? (
           <div className="card">
-            <div className="alert alert-ok">비밀번호를 바꿨습니다. 새 비밀번호로 로그인하세요.</div>
-            <Link className="btn btn-primary" href="/login">로그인</Link>
+            <div className="alert alert-ok">{t("비밀번호를 바꿨습니다. 새 비밀번호로 로그인하세요.", "Password changed. Log in with the new password.")}</div>
+            <Link className="btn btn-primary" href="/login">{t("로그인", "Log in")}</Link>
           </div>
         ) : (
           <div className="card">
             <p className="muted" style={{ marginTop: 0, fontSize: 15 }}>
-              카카오 알림을 연결해 둔 계정은 카카오톡 &lsquo;나와의 채팅&rsquo;으로 받은 인증번호로 직접 비밀번호를 바꿀 수 있습니다.
-              카카오 알림을 연결하지 않았다면 시스템 담당자에게 재설정을 요청하세요.
+              {t(
+                "카카오 알림을 연결해 둔 계정은 카카오톡 ‘나와의 채팅’으로 받은 인증번호로 직접 비밀번호를 바꿀 수 있습니다. 카카오 알림을 연결하지 않았다면 시스템 담당자에게 재설정을 요청하세요.",
+                "Accounts linked to KakaoTalk get a code in KakaoTalk to reset the password. Visitors and accounts without KakaoTalk: please ask the system owner (Young-Hwan OH, QC).",
+              )}
             </p>
             <form onSubmit={request}>
               <div className="field">
-                <label htmlFor="login">사번 또는 이메일</label>
-                <input id="login" className="input" type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} placeholder="예) 12345678"
+                <label htmlFor="login">{t("사번 또는 이메일", "Employee no. or e-mail")}</label>
+                <input id="login" className="input" type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} placeholder={t("예) 12345678", "e.g. name@forvia.com")}
                   value={login} onChange={(e) => setLogin(e.target.value)} required disabled={!!sent} />
               </div>
               {!sent && (
                 <button className="btn btn-primary btn-block" type="submit" disabled={busy || !login.trim()}>
-                  {busy ? "보내는 중…" : "카카오톡으로 인증번호 받기"}
+                  {busy ? t("보내는 중…", "Sending…") : t("카카오톡으로 인증번호 받기", "Send a code to my KakaoTalk")}
                 </button>
               )}
             </form>
@@ -81,25 +85,25 @@ export default function ResetPage() {
               <form onSubmit={confirm} style={{ marginTop: 12 }}>
                 <div className="alert alert-ok" style={{ fontSize: 15 }}>{sent}</div>
                 <div className="field">
-                  <label htmlFor="code">인증번호 (6자리)</label>
+                  <label htmlFor="code">{t("인증번호 (6자리)", "Code (6 digits)")}</label>
                   <input id="code" className="input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} pattern="[0-9]{6}"
                     value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.replace(/\D/g, "") })} required />
                 </div>
                 <div className="field">
-                  <label htmlFor="newPassword">새 비밀번호</label>
+                  <label htmlFor="newPassword">{t("새 비밀번호", "New password")}</label>
                   <input id="newPassword" className="input" type="password" autoComplete="new-password" maxLength={128}
                     value={form.newPassword} onChange={(e) => setForm({ ...form, newPassword: e.target.value })} required />
-                  <div className="muted" style={{ fontSize: 14, marginTop: 4 }}>8자 이상, 영문자와 숫자 포함</div>
+                  <div className="muted" style={{ fontSize: 14, marginTop: 4 }}>{t("8자 이상, 영문자와 숫자 포함", "At least 8 characters, with letters and numbers")}</div>
                 </div>
                 <div className="field">
-                  <label htmlFor="newPasswordConfirm">새 비밀번호 확인</label>
+                  <label htmlFor="newPasswordConfirm">{t("새 비밀번호 확인", "Repeat new password")}</label>
                   <input id="newPasswordConfirm" className="input" type="password" autoComplete="new-password" maxLength={128}
                     value={form.newPasswordConfirm} onChange={(e) => setForm({ ...form, newPasswordConfirm: e.target.value })} required />
                 </div>
                 <div className="row">
-                  <button className="btn btn-primary" type="submit" disabled={busy}>{busy ? "변경 중…" : "비밀번호 변경"}</button>
+                  <button className="btn btn-primary" type="submit" disabled={busy}>{busy ? t("변경 중…", "Changing…") : t("비밀번호 변경", "Change password")}</button>
                   <button className="btn" type="button" disabled={busy} onClick={() => { setSent(null); setForm({ code: "", newPassword: "", newPasswordConfirm: "" }); }}>
-                    인증번호 다시 받기
+                    {t("인증번호 다시 받기", "Get a new code")}
                   </button>
                 </div>
               </form>

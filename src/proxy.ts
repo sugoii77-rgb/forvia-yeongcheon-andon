@@ -37,5 +37,5 @@ export function proxy(req: NextRequest) {
 // would cut an oversized multipart ANDON call before the route can answer it properly (the route checks the
 // session itself). Static files, the manual and the help assets stay public.
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|pwa/|manual.html|sw.js|andon-guide|andon-alert|quickstart|api/andons).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|pwa/|manual|sw.js|andon-guide|andon-alert|quickstart|api/andons).*)"],
 };
