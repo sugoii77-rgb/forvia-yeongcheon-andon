@@ -600,6 +600,13 @@ table.table { width: 100%; border-collapse: collapse; background: #fff; font-siz
 /* KR / EN switch (2026-11-01) */
 .lang-toggle { display: inline-flex; border: 1px solid rgba(255, 255, 255, 0.45); border-radius: 999px; overflow: hidden; margin-left: 6px; flex: none; }
 .lang-toggle button { background: transparent; color: inherit; border: 0; padding: 4px 9px; font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; opacity: 0.7; }
+/* top bar: small, at the right end of the bar; on phones next to the title, above the menu rows */
+.topbar .tb-lang { margin-left: auto; }
+.topbar .tb-lang button { padding: 2px 7px; font-size: 11px; }
+@media (max-width: 640px) {
+  .topbar .tb-lang { order: 1; }
+  .topbar nav { order: 2; }
+}
 .lang-toggle button.on { background: rgba(255, 255, 255, 0.92); color: #0b2d5b; opacity: 1; }
 .lang-light .lang-toggle, .lang-toggle.lang-light { border-color: #c4ccd8; }
 .lang-toggle.lang-light button.on { background: #0b2d5b; color: #fff; }

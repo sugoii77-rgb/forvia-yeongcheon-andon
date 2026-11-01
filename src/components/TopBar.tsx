@@ -45,8 +45,8 @@ export function TopBar() {
               {t("로그인", "Log in")}
             </Link>
           ))}
-        <LangToggle />
       </nav>
+      <LangToggle className="tb-lang" />
     </header>
   );
 }
