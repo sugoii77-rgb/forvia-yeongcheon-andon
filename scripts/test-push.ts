@@ -152,8 +152,8 @@ try {
     await notify.notifyAndonCreated(ev);
     const mine = received.filter((m) => devices.get(m.endpoint) === phoneA || devices.get(m.endpoint) === pcA);
     assert.equal(mine.length, 2);
-    assert.match(mine[0].payload.title, /\[ANDON 발생\]/);
-    assert.ok(mine[0].payload.body.includes(ev.id));
+    assert.ok(mine[0].payload.title.startsWith(`${ev.lineName} · `), mine[0].payload.title); // line first (smartwatch)
+    assert.match(mine[0].payload.body, /^ANDON 발생 · .*푸시 알림 확인/);
     assert.equal(mine[0].payload.url, `${BASE}/respond/${encodeURIComponent(ev.id)}`);
     assert.equal(mine[0].payload.tag, ev.id);
     const log = await db.all("SELECT provider, recipient, status FROM notification_log WHERE event_id = ? AND provider = 'push'", ev.id);
@@ -258,13 +258,13 @@ try {
     await notify.notifyAndonAcknowledged(ev, { id: alice.id, name: "[TEST] Push A", departmentCode: "QC", departmentLabel: "QC · 품질" });
     const got = received.filter((m) => m.endpoint === glPhone.endpoint);
     assert.equal(got.length, 1);
-    assert.match(got[0].payload.title, /\[ANDON 접수 완료\]/);
-    assert.match(got[0].payload.body, /QC · 품질 \[TEST\] Push A님이 .*접수했습니다/);
+    assert.equal(got[0].payload.title, `${ev.lineName} · 접수 완료`);
+    assert.match(got[0].payload.body, /^QC · 품질 \[TEST\] Push A님 \d\d:\d\d · /);
     assert.equal(got[0].payload.url, `${BASE}/respond/${encodeURIComponent(ev.id)}`);
     const mt = { id: alice.id, name: "[TEST] Push A", departmentCode: "MT", departmentLabel: "MT · 보전" };
     received.length = 0;
     await notify.notifyAndonAcknowledged(ev, mt);
-    assert.match(received.find((m) => m.endpoint === glPhone.endpoint)!.payload.title, /\[ANDON 수리 시작\]/);
+    assert.match(received.find((m) => m.endpoint === glPhone.endpoint)!.payload.title, / · 수리 시작$/);
     received.length = 0;
     await notify.notifyAndonAcknowledged(ev, { id: gl.id, name: "[TEST] Push GL", departmentCode: effDept, departmentLabel: effDept });
     assert.equal(received.filter((m) => m.endpoint === glPhone.endpoint).length, 0, "the caller acknowledging it themselves gets nothing");
@@ -274,7 +274,7 @@ try {
     await notify.notifyAndonClosed(ev, alice.id);
     const done = received.filter((m) => m.endpoint === glPhone.endpoint);
     assert.equal(done.length, 1);
-    assert.match(done[0].payload.title, /\[ANDON (수리 )?완료\]/);
+    assert.ok([`${ev.lineName} · 완료`, `${ev.lineName} · 수리 완료`].includes(done[0].payload.title), done[0].payload.title);
     received.length = 0;
     await notify.notifyAndonClosed(ev, gl.id);
     assert.equal(received.filter((m) => m.endpoint === glPhone.endpoint).length, 0, "caller closed it → no notice to the caller");
@@ -299,6 +299,15 @@ try {
     assert.equal((got[0].payload as unknown as { type: string }).type, "board");
     assert.equal(got[0].headers.get("ttl"), "60");
     assert.equal(received.filter((m) => m.endpoint === phone.endpoint).length, 0, "alert phone: no silent board push (iOS would drop it)");
+
+    // a phone registered as a board before 2026-11-05 no longer gets the signal (watches showed every change)
+    const oldPhone = newDevice();
+    const phoneReq = new Request(BASE + "/x", { headers: { host: new URL(BASE).host, origin: BASE, cookie: fes.cookie, "user-agent": "Mozilla/5.0 (Linux; Android 14; SM-S921N) Chrome/130.0 Mobile Safari/537.36" } });
+    await wp.subscribeFor(phoneReq, subJson(oldPhone), undefined, "BOARD");
+    received.length = 0;
+    await wp.sendBoardRefresh("created");
+    assert.equal(received.filter((m) => m.endpoint === oldPhone.endpoint).length, 0, "phone: no board signal");
+    assert.equal(received.filter((m) => m.endpoint === display.endpoint).length, 1);
 
     received.length = 0;
     const a = await wp.sendPushTo(fes.id, { title: "t", body: "b", link: BASE });

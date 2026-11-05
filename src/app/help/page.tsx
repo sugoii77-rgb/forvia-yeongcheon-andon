@@ -100,6 +100,10 @@ export default function HelpPage() {
           <ul style={{ lineHeight: 1.8, paddingLeft: 20 }}>
             <li><b>비밀번호를 잊었으면:</b> 로그인 화면 → &lsquo;비밀번호를 잊으셨나요?&rsquo; → 카카오톡 인증번호</li>
             <li><b>알림이 안 울리면:</b> 무음·방해금지 모드, 휴대폰 설정 → 애플리케이션 → Chrome(또는 ANDON) → 알림 허용·소리 켜짐 확인</li>
+            <li>
+              <b>화면이 꺼져 있을 때 알림이 늦거나 안 오면 (삼성):</b> 휴대폰 절전 기능이 Chrome을 재워서 생깁니다.
+              설정 → 애플리케이션 → <b>Chrome → 배터리 → &lsquo;제한 없음&rsquo;</b>, 그리고 설정 → 배터리 → 백그라운드 사용 한도 → <b>&lsquo;절전 예외 앱&rsquo;에 Chrome 추가</b>
+            </li>
             <li><b>화면이 예전 그대로면:</b> 화면을 아래로 당겨 새로고침, 또는 앱을 닫았다가 다시 열기</li>
             <li><b>문의:</b> 시스템 담당자 오영환 책임 (QC)</li>
           </ul>

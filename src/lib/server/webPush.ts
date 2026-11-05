@@ -165,7 +165,11 @@ export async function sendPushTo(userId: number, m: PushMessage): Promise<{ sent
 export async function sendBoardRefresh(reason: string): Promise<{ sent: number; devices: number }> {
   try {
     const v = vapidKeys();
-    const subs = (await db.all("SELECT id, endpoint, p256dh, auth FROM push_subscription WHERE board = 1 ORDER BY id")) as SubRow[];
+    // not to phones (MT 2026-11-05): their quiet note on every plant-wide change buried the real alerts on
+    // phones and watches. Phones registered before that keep board = 1 but are skipped here.
+    const subs = (await db.all(
+      "SELECT id, endpoint, p256dh, auth FROM push_subscription WHERE board = 1 AND COALESCE(user_agent, '') NOT LIKE '%Mobile%' AND COALESCE(user_agent, '') NOT LIKE '%iPhone%' ORDER BY id",
+    )) as SubRow[];
     if (!v || subs.length === 0) return { sent: 0, devices: subs.length };
     const r = await deliver(v, subs, JSON.stringify({ type: "board", reason }), 60);
     if (r.error) console.warn(`[push] board refresh (${reason}): ${r.sent}/${subs.length} sent, last error: ${r.error}`);

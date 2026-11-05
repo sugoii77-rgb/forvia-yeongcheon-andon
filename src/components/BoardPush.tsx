@@ -17,6 +17,9 @@ interface PushStatus {
 /** on: updates arrive by push. off: can be turned on (button). blocked: permission denied. unsupported: no push. */
 export type BoardPushState = "checking" | "on" | "off" | "blocked" | "unsupported";
 
+/** Phones (Android phones say "Mobile"; tablets and PCs used as displays do not). */
+const isPhone = () => /Mobile|iPhone/i.test(navigator.userAgent);
+
 async function register(publicKey: string): Promise<void> {
   const reg = (await navigator.serviceWorker.getRegistration("/")) ?? (await navigator.serviceWorker.register("/sw.js", { scope: "/" }));
   await navigator.serviceWorker.ready;
@@ -46,7 +49,9 @@ export function useBoardPush(): { state: BoardPushState; enable: () => Promise<v
   const [state, setState] = useState<BoardPushState>("checking");
 
   const check = useCallback(async () => {
-    if (detectEnv() !== "ok") return setState("unsupported");
+    // phones only get their own ANDON alerts: a "board changed" note on every plant-wide change buried them
+    // (MT 2026-11-05: watches showing "현황이 바뀌었습니다"); a phone's board loads every 15 s while open
+    if (detectEnv() !== "ok" || isPhone()) return setState("unsupported");
     if (Notification.permission === "denied") return setState("blocked");
     try {
       const reg = await navigator.serviceWorker.getRegistration("/");

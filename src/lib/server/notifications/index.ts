@@ -2,7 +2,7 @@
 // Providers: "mock" (log only) and "kakao" (KakaoTalk "send to me" — each employee links their own
 // Kakao account on /me; see ../kakaoNotify.ts). Selected by NOTIFICATION_PROVIDER. Phone push (../webPush.ts)
 // is sent alongside, to every device the recipient turned on in /me (KakaoTalk "send to me" has no sound).
-import { lineWithProcess, type AndonEvent } from "../../domain.ts";
+import { isPlaceholderProcess, lineWithProcess, type AndonEvent } from "../../domain.ts";
 import { db, nowIso } from "../db.ts";
 import { sendKakaoMemoTo } from "../kakaoNotify.ts";
 import { primaryRecipients } from "../routingService.ts";
@@ -22,6 +22,11 @@ export interface NotificationMessage {
   link: string;
   /** New-ANDON notices only: offer the one-tap [접수] button on phone push (see ackButtonFor). */
   ackable?: boolean;
+  /**
+   * Phone push wording, line name first (MT 2026-11-05: a smartwatch shows only the start of the title and
+   * scrolls the rest, so "[ANDON 발생] …" hid the line). KakaoTalk and the log keep title / body.
+   */
+  push?: { title: string; body: string };
 }
 
 export interface NotificationProvider {
@@ -81,6 +86,10 @@ export function buildAndonMessage(event: AndonEvent): NotificationMessage {
     body: `${event.id} · ${event.categoryName} · ${event.description}`,
     link: `${base}/respond/${encodeURIComponent(event.id)}`,
     ackable: true,
+    push: {
+      title: `${event.lineName} · ${event.situations.join(", ") || event.categoryName}`,
+      body: [`ANDON 발생`, isPlaceholderProcess(event.processName) ? "" : event.processName, event.description].filter(Boolean).join(" · "),
+    },
   };
 }
 
@@ -238,7 +247,7 @@ async function deliver(p: NotificationProvider, eventId: string, r: Notification
   const push = (async () => {
     try {
       const ack = message.ackable ? await ackButtonFor(eventId, r) : undefined;
-      const res = await sendPushTo(r.userId, { title: message.title, body: message.body, link: message.link, tag: eventId, ack });
+      const res = await sendPushTo(r.userId, { ...(message.push ?? message), link: message.link, tag: eventId, ack });
       if (res.devices === 0) return false;
       await logAttempt(eventId, "push", `${r.name} (${res.sent}/${res.devices})`, res.sent > 0 ? "SENT" : "FAILED", text, res.sent > 0 ? null : res.error);
       return res.sent > 0;
@@ -305,6 +314,10 @@ export async function notifyAndonClosed(event: AndonEvent, closerId?: number): P
         title: `[ANDON ${repair ? "수리 완료" : "완료"}] ${event.lineName} · ${event.situations.join(", ") || event.categoryName}`,
         body: `${event.id} · 조치: ${event.correctiveAction ?? "-"}`,
         link: `${base}/respond/${encodeURIComponent(event.id)}`,
+        push: {
+          title: `${event.lineName} · ${repair ? "수리 완료" : "완료"}`,
+          body: `${event.situations.join(", ") || event.categoryName} · 조치: ${event.correctiveAction ?? "-"}`,
+        },
       },
     );
   } catch (err) {
@@ -348,6 +361,10 @@ export async function notifyAndonAcknowledged(
         title: `[ANDON ${repair ? "수리 시작" : "접수 완료"}] ${event.lineName} · ${event.situations.join(", ") || event.categoryName}`,
         body: `${actor.departmentLabel} ${actor.name}님이 ${at}에 ${repair ? "수리를 시작했습니다" : "접수했습니다"}. (${event.id})`,
         link: `${base}/respond/${encodeURIComponent(event.id)}`,
+        push: {
+          title: `${event.lineName} · ${repair ? "수리 시작" : "접수 완료"}`,
+          body: `${actor.departmentLabel} ${actor.name}님 ${at} · ${event.situations.join(", ") || event.categoryName}`,
+        },
       },
     );
   } catch (err) {

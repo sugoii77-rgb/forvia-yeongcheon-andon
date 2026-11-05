@@ -67,7 +67,7 @@ async function acknowledge(n) {
       headers: { "Content-Type": "application/json", "x-andon-device": "push-action" },
       body: JSON.stringify({ action: "ACKNOWLEDGE" }),
     });
-    if (res.ok) return done(`✔ ${ack.title} 완료`, `${n.title.replace(/^\[ANDON 발생\]\s*/, "")}\n탭하면 상세 화면이 열립니다.`);
+    if (res.ok) return done(`✔ ${ack.title} 완료`, `${n.title}\n탭하면 상세 화면이 열립니다.`);
     const err = await res.json().catch(() => ({}));
     if (res.status === 401) return self.clients.openWindow(`/login?next=${encodeURIComponent(new URL(url, self.location.origin).pathname)}`);
     if (res.status === 409) return done("이미 처리된 ANDON입니다", "다른 담당자가 먼저 접수했거나 이미 완료되었습니다.\n탭하면 상세 화면이 열립니다.");
