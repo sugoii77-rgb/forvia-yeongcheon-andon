@@ -58,6 +58,8 @@ export function useBoardPush(): { state: BoardPushState; enable: () => Promise<v
       const sub = reg ? await reg.pushManager.getSubscription() : null;
       const status = await api<PushStatus>(`/api/notify/push${sub ? `?endpoint=${encodeURIComponent(sub.endpoint)}` : ""}`);
       if (!status.configured || !status.publicKey) return setState("unsupported");
+      // this device rings for its user's ANDON: no board notes on it (the server skips it too) — it polls instead
+      if (status.thisDevice) return setState("unsupported");
       if (sub && status.thisDeviceBoard && Notification.permission === "granted") return setState("on");
       if (Notification.permission !== "granted") return setState("off");
       await register(status.publicKey); // allowed but not (or no longer) registered: renew quietly

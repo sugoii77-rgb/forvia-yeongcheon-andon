@@ -320,6 +320,10 @@ try {
     await wp.subscribeFor(req("/x", fes.cookie), subJson(rotated), display.endpoint);
     const row = await db.get("SELECT alert, board FROM push_subscription WHERE endpoint = ?", rotated.endpoint);
     assert.deepEqual({ alert: Number(row!.alert), board: Number(row!.board) }, { alert: 1, board: 1 });
+    // ...but a device that rings for its user never gets the board note, whatever its user agent says (MT 2026-11-10)
+    received.length = 0;
+    await wp.sendBoardRefresh("created");
+    assert.equal(received.filter((m) => m.endpoint === rotated.endpoint).length, 0, "alert device: no board signal");
     const boardOnly = newDevice();
     await wp.subscribeFor(req("/x", fes.cookie), subJson(boardOnly), undefined, "BOARD");
     const rot2 = newDevice();
@@ -329,9 +333,8 @@ try {
 
     // display gone → removed, no lost-device notice to anyone
     rot2.status = 410;
-    rotated.status = 410;
     await wp.sendBoardRefresh("CLOSED");
-    assert.equal(await db.get("SELECT 1 FROM push_subscription WHERE endpoint IN (?, ?)", rot2.endpoint, rotated.endpoint), undefined);
+    assert.equal(await db.get("SELECT 1 FROM push_subscription WHERE endpoint = ?", rot2.endpoint), undefined);
     await db.run("UPDATE app_user SET active = 0 WHERE id = ?", fes.id);
   });
 
