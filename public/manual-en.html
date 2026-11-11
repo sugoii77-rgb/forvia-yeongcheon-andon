@@ -283,7 +283,7 @@ code.mono { font-family: var(--font-mono); font-size: 14px; background: var(--na
       <li><div class="t">Auto start · no sleep · power-on after power loss</div><div class="d"><b>Win + R</b> → <code class="mono">shell:startup</code> → copy the shortcut there; power settings: screen off / sleep <b>never</b>; BIOS: <b>Restore on AC power loss</b>.</div></li>
       <li><div class="t">LTE data</div><div class="d">Set the LTE router connection as <b>metered</b> in Windows; schedule Windows Update restarts outside working hours.</div></li>
     </ol>
-    <div class="note"><strong>Keep the dashboard on.</strong> While it runs, the server also checks every minute for ANDON open longer than 2 hours (escalation). Green <b>● LIVE</b> = connected; a red warning appears when the connection is lost. <b>Alt + F4</b> closes the kiosk for maintenance.</div>
+    <div class="note"><strong>Keep the dashboard on.</strong> The 2-hour escalation is checked by the server every minute, even when the dashboard is off. Green <b>● LIVE</b> = connected; a red warning appears when the connection is lost. <b>Alt + F4</b> closes the kiosk for maintenance.</div>
   </section>
 
   <section aria-labelledby="h-faq">

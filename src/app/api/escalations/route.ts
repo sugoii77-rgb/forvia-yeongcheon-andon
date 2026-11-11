@@ -9,7 +9,11 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   return handle("GET /api/escalations", async () => {
     const secret = process.env.CRON_SECRET?.trim();
-    if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) throw new AndonError(401, "unauthorized", "AUTH_REQUIRED");
+    if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
+      // a missing / changed CRON_SECRET stops the escalation check silently otherwise (2026-11-10: 401 every minute)
+      console.warn(`[escalation] unauthorized call${secret ? "" : " — CRON_SECRET is not set"}`);
+      throw new AndonError(401, "unauthorized", "AUTH_REQUIRED");
+    }
     const escalated = await runEscalations();
     return Response.json({ escalated: escalated.length });
   });
