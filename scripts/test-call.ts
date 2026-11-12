@@ -147,7 +147,14 @@ async function main() {
   admin("assign", "add", "AP1-FRT", "GAP_LEADER", "B", String(me));
   admin("assign", "add", "AP1-MAIN1", "GAP_LEADER", "A", String(me));
   const ml = (await gap.request("GET", "/api/call-targets")).body.myLines as string[];
-  check(ml.join() === "AP1-MAIN1,AP1-FRT", `the GAP leader's assigned lines come back, in line order (${ml.join()})`);
+  check(ml.indexOf("AP1-MAIN1") >= 0 && ml.indexOf("AP1-MAIN1") < ml.indexOf("AP1-FRT"), `the GAP leader's assigned lines come back, in line order (${ml.join()})`);
+  // ...plus every other line of their supervisor (they cover those lines in a pinch, plant request 2026-11-12)
+  const svLines = (await db.all(
+    `SELECT a.line_code FROM line_assignment a JOIN line l ON l.code = a.line_code
+      WHERE a.assignment_role = 'SUPERVISOR' AND a.active = 1 AND l.active = 1
+        AND a.user_id IN (SELECT user_id FROM line_assignment WHERE line_code IN ('AP1-MAIN1', 'AP1-FRT') AND assignment_role = 'SUPERVISOR' AND active = 1)`,
+  )).map((r) => r.line_code as string);
+  check(svLines.length > 2 && svLines.every((c) => ml.includes(c)) && ml.length === new Set([...svLines, "AP1-MAIN1", "AP1-FRT"]).size, `GAP leader also gets the supervisor's other lines, nothing else (${ml.length} lines)`);
 
   console.log("UAP DEFAULTS / MT CLOSE / ESCALATION");
   const lead = await registerAccount("UAP", "uap-lead");

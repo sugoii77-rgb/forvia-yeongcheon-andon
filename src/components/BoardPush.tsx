@@ -17,8 +17,9 @@ interface PushStatus {
 /** on: updates arrive by push. off: can be turned on (button). blocked: permission denied. unsupported: no push. */
 export type BoardPushState = "checking" | "on" | "off" | "blocked" | "unsupported";
 
-/** Phones (Android phones say "Mobile"; tablets and PCs used as displays do not). */
-const isPhone = () => /Mobile|iPhone/i.test(navigator.userAgent);
+/** Board displays are Windows PCs. An iPhone / iPad can report "Macintosh" and an Android phone in desktop
+ *  mode "X11; Linux" (MT 2026-11-12), so everything that is not Windows counts as a phone (server: same rule). */
+const isPhone = () => !/Windows/i.test(navigator.userAgent) || /Mobile/i.test(navigator.userAgent);
 
 async function register(publicKey: string): Promise<void> {
   const reg = (await navigator.serviceWorker.getRegistration("/")) ?? (await navigator.serviceWorker.register("/sw.js", { scope: "/" }));

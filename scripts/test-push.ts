@@ -84,6 +84,8 @@ async function check(label: string, fn: () => Promise<void>) {
 }
 const audit = { deviceId: "test-push-device", clientIp: "127.0.0.1", userAgent: "push-test" };
 const req = (route: string, cookie = "", origin = BASE) => new Request(BASE + route, { headers: { host: new URL(BASE).host, origin, cookie } });
+const uaReq = (cookie: string, ua: string) => new Request(BASE + "/x", { headers: { host: new URL(BASE).host, origin: BASE, cookie, "user-agent": ua } });
+const WINDOWS_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0 Safari/537.36";
 async function rejectsCode(fn: () => Promise<unknown>, code: string) {
   await assert.rejects(fn, (e: { code?: string }) => e.code === code || assert.fail(`expected ${code}, got ${e.code}`));
 }
@@ -284,7 +286,7 @@ try {
     const fes = await newUser("[TEST] Board display", effDept);
     const display = newDevice();
     const phone = newDevice();
-    await wp.subscribeFor(req("/x", fes.cookie), subJson(display), undefined, "BOARD");
+    await wp.subscribeFor(uaReq(fes.cookie, WINDOWS_UA), subJson(display), undefined, "BOARD");
     await wp.subscribeFor(req("/x", fes.cookie), subJson(phone), undefined, "ALERT");
     const st = await wp.pushStatusFor(req(`/api/notify/push?endpoint=${encodeURIComponent(display.endpoint)}`, fes.cookie));
     assert.equal(st.thisDevice, false);
@@ -302,11 +304,17 @@ try {
 
     // a phone registered as a board before 2026-11-05 no longer gets the signal (watches showed every change)
     const oldPhone = newDevice();
-    const phoneReq = new Request(BASE + "/x", { headers: { host: new URL(BASE).host, origin: BASE, cookie: fes.cookie, "user-agent": "Mozilla/5.0 (Linux; Android 14; SM-S921N) Chrome/130.0 Mobile Safari/537.36" } });
-    await wp.subscribeFor(phoneReq, subJson(oldPhone), undefined, "BOARD");
+    await wp.subscribeFor(uaReq(fes.cookie, "Mozilla/5.0 (Linux; Android 14; SM-S921N) Chrome/130.0 Mobile Safari/537.36"), subJson(oldPhone), undefined, "BOARD");
+    // an iPhone / iPad reporting a Mac, an Android phone in desktop mode (MT 2026-11-12: 7 such board rows)
+    const macPhone = newDevice();
+    await wp.subscribeFor(uaReq(fes.cookie, "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15"), subJson(macPhone), undefined, "BOARD");
+    const x11Phone = newDevice();
+    await wp.subscribeFor(uaReq(fes.cookie, "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130.0 Safari/537.36"), subJson(x11Phone), undefined, "BOARD");
     received.length = 0;
     await wp.sendBoardRefresh("created");
     assert.equal(received.filter((m) => m.endpoint === oldPhone.endpoint).length, 0, "phone: no board signal");
+    assert.equal(received.filter((m) => m.endpoint === macPhone.endpoint).length, 0, "Mac user agent (iPhone / iPad): no board signal");
+    assert.equal(received.filter((m) => m.endpoint === x11Phone.endpoint).length, 0, "Android desktop mode: no board signal");
     assert.equal(received.filter((m) => m.endpoint === display.endpoint).length, 1);
 
     received.length = 0;
@@ -325,9 +333,9 @@ try {
     await wp.sendBoardRefresh("created");
     assert.equal(received.filter((m) => m.endpoint === rotated.endpoint).length, 0, "alert device: no board signal");
     const boardOnly = newDevice();
-    await wp.subscribeFor(req("/x", fes.cookie), subJson(boardOnly), undefined, "BOARD");
+    await wp.subscribeFor(uaReq(fes.cookie, WINDOWS_UA), subJson(boardOnly), undefined, "BOARD");
     const rot2 = newDevice();
-    await wp.subscribeFor(req("/x", fes.cookie), subJson(rot2), boardOnly.endpoint);
+    await wp.subscribeFor(uaReq(fes.cookie, WINDOWS_UA), subJson(rot2), boardOnly.endpoint);
     const row2 = await db.get("SELECT alert, board FROM push_subscription WHERE endpoint = ?", rot2.endpoint);
     assert.deepEqual({ alert: Number(row2!.alert), board: Number(row2!.board) }, { alert: 0, board: 1 }, "rotation of a board-only display does not start ringing");
 

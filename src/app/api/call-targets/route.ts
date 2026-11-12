@@ -19,13 +19,22 @@ export async function GET(req: Request) {
       categoryDefaults[c.code as string] = await effectiveDepartment(c.default_department as string);
     }
     // The caller's own lines (active Supervisor / GAP leader assignment) — shown first on the call screen.
+    // A GAP leader also gets every other line of their supervisor: they often cover those lines in a pinch
+    // (plant request 2026-11-12).
     const myLines = (
       await db.all(
-        `SELECT DISTINCT a.line_code, l.sort_order FROM line_assignment a JOIN line l ON l.code = a.line_code
-         WHERE a.user_id = ? AND a.active = 1 AND l.active = 1 AND (a.effective_to IS NULL OR a.effective_to > ?)
-         ORDER BY l.sort_order`,
-        user.id,
+        `WITH cur AS (SELECT line_code, user_id, assignment_role FROM line_assignment
+                       WHERE active = 1 AND (effective_to IS NULL OR effective_to > ?1))
+         SELECT l.code AS line_code FROM line l
+          WHERE l.active = 1 AND (
+                l.code IN (SELECT line_code FROM cur WHERE user_id = ?2)
+             OR l.code IN (SELECT s2.line_code FROM cur g
+                             JOIN cur s1 ON s1.line_code = g.line_code AND s1.assignment_role = 'SUPERVISOR'
+                             JOIN cur s2 ON s2.user_id = s1.user_id AND s2.assignment_role = 'SUPERVISOR'
+                            WHERE g.user_id = ?2 AND g.assignment_role = 'GAP_LEADER'))
+          ORDER BY l.sort_order`,
         new Date().toISOString(),
+        user.id,
       )
     ).map((r) => r.line_code as string);
     const line = new URL(req.url).searchParams.get("line") ?? undefined;

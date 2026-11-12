@@ -168,8 +168,11 @@ export async function sendBoardRefresh(reason: string): Promise<{ sent: number; 
     // not to phones (MT 2026-11-05): their quiet note on every plant-wide change buried the real alerts on
     // phones and watches. The user-agent test alone let some phones through (MT 2026-11-10: a phone in
     // desktop-site mode reports a PC user agent), so a device that rings for a person (alert = 1) never gets it.
+    // 2026-11-12: an iPhone / iPad also reports "Macintosh" and an Android phone in desktop mode "X11; Linux",
+    // so only Windows PCs get it — the board displays are Windows PCs.
+    // shortcut: Windows only; add the OS here if a Mac / Linux PC ever becomes a board display.
     const subs = (await db.all(
-      "SELECT id, endpoint, p256dh, auth FROM push_subscription WHERE board = 1 AND alert = 0 AND COALESCE(user_agent, '') NOT LIKE '%Mobile%' AND COALESCE(user_agent, '') NOT LIKE '%iPhone%' ORDER BY id",
+      "SELECT id, endpoint, p256dh, auth FROM push_subscription WHERE board = 1 AND alert = 0 AND COALESCE(user_agent, '') LIKE '%Windows%' AND COALESCE(user_agent, '') NOT LIKE '%Mobile%' ORDER BY id",
     )) as SubRow[];
     if (!v || subs.length === 0) return { sent: 0, devices: subs.length };
     const r = await deliver(v, subs, JSON.stringify({ type: "board", reason }), 60);
