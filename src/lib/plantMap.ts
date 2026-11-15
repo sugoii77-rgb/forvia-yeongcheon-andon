@@ -32,6 +32,14 @@ export function sortActive<T extends Pick<AndonEvent, "status" | "createdAt">>(e
     .sort((a, b) => (a.status === "OPEN" ? 0 : 1) - (b.status === "OPEN" ? 0 : 1) || a.createdAt.localeCompare(b.createdAt));
 }
 
+/** The board's event list: OPEN first, then NEWEST first — an old event that MT fixed but UAP has not closed
+ *  no longer sits on top (MT 2026-11-15). Line tiles keep sortActive (lead = oldest). */
+export function sortBoardList<T extends Pick<AndonEvent, "status" | "createdAt">>(events: T[]): T[] {
+  return events
+    .filter(isActive)
+    .sort((a, b) => (a.status === "OPEN" ? 0 : 1) - (b.status === "OPEN" ? 0 : 1) || b.createdAt.localeCompare(a.createdAt));
+}
+
 export interface LineState {
   state: LineVisualState;
   /** Number of active events on the line (badge when > 1). */

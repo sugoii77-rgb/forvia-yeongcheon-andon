@@ -8,7 +8,7 @@
 //    contact fields in public responses, demo-line history still served, /dashboard renders
 import { LINES } from "../src/lib/server/masterData.ts";
 import { MAP_LANDMARKS, MAP_ZONES, STATION_CELLS, UNMAPPED_LINES, stationBox } from "../src/config/plantLayout.ts";
-import { CATEGORY_LEGEND, categoryKey, displayLines, stationState, elapsedSeconds, formatElapsed, lineStates, placeLines, shiftLabel, sortActive } from "../src/lib/plantMap.ts";
+import { CATEGORY_LEGEND, categoryKey, displayLines, stationState, elapsedSeconds, formatElapsed, lineStates, placeLines, shiftLabel, sortActive, sortBoardList } from "../src/lib/plantMap.ts";
 import type { AndonEvent, AndonStatus } from "../src/lib/domain.ts";
 import "./lib/testkit.ts"; // its fetch wrapper signs the board / meta reads in (data needs a login since 2026-10-19)
 
@@ -96,7 +96,15 @@ function partB() {
   const order = sortActive(events).map((e) => `${e.lineCode}:${e.status}`);
   check(
     JSON.stringify(order) === JSON.stringify(["AQ2-GAMMA2:OPEN", "AQ1-NUI1:OPEN", "AQ1-NUI1:OPEN", "AP1-MAIN1:ACKNOWLEDGED", "AQ1-NUI1:ACKNOWLEDGED", "RESO-CTR:IN_PROGRESS"]),
-    "active list: OPEN before ACK / IN_PROGRESS, then longest elapsed; CLOSED excluded",
+    "tile order: OPEN before ACK / IN_PROGRESS, then longest elapsed; CLOSED excluded",
+  );
+  // board list (MT 2026-11-15): OPEN first, then newest first — a fixed-but-not-closed event no longer stays on top
+  const list = sortBoardList(events);
+  const openN = list.filter((e) => e.status === "OPEN").length;
+  check(
+    list.length === order.length && list.slice(0, openN).every((e) => e.status === "OPEN") &&
+      list.every((e, i) => i === 0 || i === openN || list[i - 1].createdAt >= e.createdAt),
+    `board list: OPEN first, then newest first (${list.map((e) => `${e.lineCode}:${e.status}`).join(", ")})`,
   );
   check(elapsedSeconds(events[0], NOW) === 720 && formatElapsed(720) === "12:00", "elapsed 12 min → 12:00");
   check(elapsedSeconds(events[0], NOW + 61_000) === 781 && formatElapsed(781) === "13:01", "elapsed keeps counting (+61 s → 13:01) without new data");

@@ -11,7 +11,7 @@ import { useBoardPush } from "@/components/BoardPush";
 import { categoryName, LangToggle, useLang, useT, type Lang } from "@/lib/i18n";
 import { MAP_FRAME, MAP_ZONES } from "@/config/plantLayout";
 import { STATUS_LABEL, type AndonEvent, type MasterData } from "@/lib/domain";
-import { CATEGORY_LEGEND, categoryKey, displayLines, stationState, elapsedSeconds, formatElapsed, lineStates, placeLines, shiftLabel, sortActive, sortDone, type LineState, type MapLine } from "@/lib/plantMap";
+import { CATEGORY_LEGEND, categoryKey, displayLines, stationState, elapsedSeconds, formatElapsed, lineStates, placeLines, shiftLabel, sortBoardList, sortDone, type LineState, type MapLine } from "@/lib/plantMap";
 
 type PublicShift = { status: "RESOLVED"; team: "A" | "B"; type: "DAY" | "NIGHT"; operationalDate: string; shiftEnd: string } | { status: "UNRESOLVED"; reason: string };
 interface BoardResponse {
@@ -122,7 +122,7 @@ export default function PlantMapPage() {
   const states = lineStates(events);
   const realLines = displayLines(meta?.lines ?? []);
   const { stations, unplaced } = placeLines(realLines, events);
-  const active = sortActive(events);
+  const active = sortBoardList(events);
   // tray: abnormal lines first so they are never pushed out of view
   const rank = (code: string) => { const st = states.get(code)?.state; return st === "OPEN" ? 0 : st === "ACTION" ? 1 : 2; };
   const unplacedSorted = [...unplaced].sort((a, b) => rank(a.code) - rank(b.code));
