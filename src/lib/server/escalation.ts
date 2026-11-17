@@ -45,7 +45,7 @@ export async function runEscalations(nowMs: number = Date.now()): Promise<string
   try {
     const due = await db.all(
       `SELECT e.id, e.situations FROM andon_event e
-       WHERE e.status <> 'CLOSED' AND e.created_at <= ?
+       WHERE e.status IN ('OPEN','ACKNOWLEDGED','IN_PROGRESS') AND +e.created_at <= ? -- status index: only open events are read (runs every minute)
          AND EXISTS (SELECT 1 FROM andon_event_department x WHERE x.event_id = e.id)
          AND NOT EXISTS (SELECT 1 FROM andon_escalation s WHERE s.event_id = e.id)
        ORDER BY e.created_at LIMIT 50`,

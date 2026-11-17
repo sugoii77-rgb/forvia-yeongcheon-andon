@@ -228,8 +228,9 @@ export async function listEvents(opts: ListOptions = {}): Promise<AndonEvent[]> 
     // plant meeting 2026-10-07: a completed ANDON stays on the board (green) for 24 hours
     const since = new Date(Date.now() - (opts.recentClosedMinutes ?? 24 * 60) * 60_000).toISOString();
     // test events closed by the administrator ('[TEST] …' note) leave the board at once (history keeps them)
-    where.push(`(e.status IN (${active}) OR (e.closed_at >= ? AND COALESCE(e.corrective_action, '') NOT LIKE '[TEST]%'))`);
-    params.push(since);
+    // created_at bound: both OR branches use an index instead of reading every event (Turso rows-read quota).
+    where.push(`(e.status IN (${active}) OR (e.created_at >= ? AND e.closed_at >= ? AND COALESCE(e.corrective_action, '') NOT LIKE '[TEST]%'))`);
+    params.push(recentWindowStart(), since);
   }
   // an event belongs to every department of its call (v9) — or to its single department_code
   const inDepartments = (codes: string[]) => {
@@ -564,13 +565,27 @@ export function kstStartOfToday(): string {
   return new Date(kstNow.getTime() - 9 * 3600_000).toISOString();
 }
 
+/**
+ * Closed events are only looked for among events opened in the last 7 days: andon_event has no index on
+ * closed_at, and reading every event on each board load used up the Turso rows-read quota (2026-11-17).
+ * shortcut: an event opened > 7 days ago and closed now is not shown green / not counted as closed today;
+ * add an index on closed_at (schema migration) to drop this bound.
+ */
+export function recentWindowStart(): string {
+  return new Date(Date.now() - 7 * 86400_000).toISOString();
+}
+
 /** Counters for the dashboard header: current open / in progress, closed since 00:00 KST. */
 export async function getBoardCounts() {
-  const r = (await db.get(`SELECT SUM(status = 'OPEN') AS open,
-              SUM(status IN ('ACKNOWLEDGED','IN_PROGRESS')) AS in_progress,
-              SUM(status = 'CLOSED' AND closed_at >= ?) AS closed_today,
-              SUM(created_at >= ?) AS created_today
-       FROM andon_event`, kstStartOfToday(), kstStartOfToday())) as Row;
+  // One indexed lookup per counter (status / created_at), never a scan of the whole event table.
+  // `+status` keeps SQLite on the created_at index (status = 'CLOSED' matches almost every row).
+  const today = kstStartOfToday();
+  const r = (await db.get(`SELECT
+              (SELECT COUNT(*) FROM andon_event WHERE status = 'OPEN') AS open,
+              (SELECT COUNT(*) FROM andon_event WHERE status IN ('ACKNOWLEDGED','IN_PROGRESS')) AS in_progress,
+              (SELECT COUNT(*) FROM andon_event WHERE created_at >= ? AND +status = 'CLOSED' AND closed_at >= ?) AS closed_today,
+              (SELECT COUNT(*) FROM andon_event WHERE created_at >= ?) AS created_today`,
+    recentWindowStart(), today, today)) as Row;
   return {
     open: Number(r.open ?? 0),
     inProgress: Number(r.in_progress ?? 0),
