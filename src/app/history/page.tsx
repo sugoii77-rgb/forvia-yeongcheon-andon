@@ -41,8 +41,9 @@ function Bars({ rows, label = (n) => n }: { rows: { name: string; count: number 
 
 export default function HistoryPage() {
   const [days, setDays] = useState(7);
-  const stats = usePolling<Stats>(`/api/stats?days=${days}`, 60000);
-  const list = usePolling<{ events: AndonEvent[] }>("/api/andons?scope=all&limit=200", 60000);
+  // History is not a live screen: every 5 min (and when shown again) — each load reads the whole range (Turso rows read).
+  const stats = usePolling<Stats>(`/api/stats?days=${days}`, 5 * 60_000);
+  const list = usePolling<{ events: AndonEvent[] }>("/api/andons?scope=all&limit=200", 5 * 60_000);
   const s = stats.data;
   const lang = useLang();
   const t = useT();

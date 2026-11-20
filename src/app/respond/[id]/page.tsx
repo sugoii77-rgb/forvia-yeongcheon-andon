@@ -66,7 +66,7 @@ const ACTION_LABEL: Record<string, [string, string]> = {
 
 export default function RespondDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { data, error, clockOffsetMs, refresh } = usePolling<Detail>(`/api/andons/${encodeURIComponent(id)}`, 15000); // + at once on an ANDON push / back on screen
+  const { data, error, clockOffsetMs, refresh } = usePolling<Detail>(`/api/andons/${encodeURIComponent(id)}`, 30000); // + at once on an ANDON push / back on screen; 30 s since 2026-11-20 (Turso rows read)
   const now = useServerNow(clockOffsetMs);
   const lang = useLang();
   const tr = useT();

@@ -32,7 +32,9 @@ export async function GET(req: Request) {
     const shift = scope === "board" ? await publicShift() : undefined;
     // The shop-floor board polls every few seconds: it also drives the 2-hour escalation check (≤ 1/min).
     if (scope === "board") after(() => maybeRunEscalations());
-    return Response.json({ events, counts: await getBoardCounts(), serverTime: new Date().toISOString(), ...(shift ? { shift } : {}) });
+    // Header counters are shown on the boards only: phones (respond) and history skip them (Turso rows read).
+    const counts = scope === "board" ? await getBoardCounts() : undefined;
+    return Response.json({ events, ...(counts ? { counts } : {}), serverTime: new Date().toISOString(), ...(shift ? { shift } : {}) });
   });
 }
 
