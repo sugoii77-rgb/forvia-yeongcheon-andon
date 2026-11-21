@@ -566,31 +566,27 @@ export function kstStartOfToday(): string {
 }
 
 /**
- * Closed events are only looked for among events opened in the last 7 days: andon_event has no index on
- * closed_at, and reading every event on each board load used up the Turso rows-read quota (2026-11-17).
- * shortcut: an event opened > 7 days ago and closed now is not shown green / not counted as closed today;
+ * Closed events are only looked for among events opened in the last 2 days: andon_event has no index on
+ * closed_at, and reading every event on each board load used up the Turso rows-read quota (2026-11-17/21).
+ * shortcut: an event opened > 2 days ago and closed now is not shown green / not counted as closed today;
  * add an index on closed_at (schema migration) to drop this bound.
  */
 export function recentWindowStart(): string {
-  return new Date(Date.now() - 7 * 86400_000).toISOString();
+  return new Date(Date.now() - 2 * 86400_000).toISOString();
 }
 
-/** Counters for the dashboard header: current open / in progress, closed since 00:00 KST. */
-export async function getBoardCounts() {
-  // One indexed lookup per counter (status / created_at), never a scan of the whole event table.
-  // `+status` keeps SQLite on the created_at index (status = 'CLOSED' matches almost every row).
+/**
+ * Counters for the dashboard header, from the board list itself (no extra query): it holds every active
+ * event and every event closed in the last 24 h, so open / in progress / closed since 00:00 KST / created
+ * since 00:00 KST all follow from it. Events closed as '[TEST]' are not on the board and not counted.
+ */
+export function boardCounts(events: Pick<AndonEvent, "status" | "createdAt" | "closedAt">[]) {
   const today = kstStartOfToday();
-  const r = (await db.get(`SELECT
-              (SELECT COUNT(*) FROM andon_event WHERE status = 'OPEN') AS open,
-              (SELECT COUNT(*) FROM andon_event WHERE status IN ('ACKNOWLEDGED','IN_PROGRESS')) AS in_progress,
-              (SELECT COUNT(*) FROM andon_event WHERE created_at >= ? AND +status = 'CLOSED' AND closed_at >= ?) AS closed_today,
-              (SELECT COUNT(*) FROM andon_event WHERE created_at >= ?) AS created_today`,
-    recentWindowStart(), today, today)) as Row;
   return {
-    open: Number(r.open ?? 0),
-    inProgress: Number(r.in_progress ?? 0),
-    closedToday: Number(r.closed_today ?? 0),
-    createdToday: Number(r.created_today ?? 0),
+    open: events.filter((e) => e.status === "OPEN").length,
+    inProgress: events.filter((e) => e.status === "ACKNOWLEDGED" || e.status === "IN_PROGRESS").length,
+    closedToday: events.filter((e) => e.status === "CLOSED" && e.closedAt != null && e.closedAt >= today).length,
+    createdToday: events.filter((e) => e.createdAt >= today).length,
   };
 }
 

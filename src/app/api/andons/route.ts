@@ -1,4 +1,4 @@
-import { createEvent, getBoardCounts, listEvents, AndonError, type ListOptions } from "@/lib/server/andonService";
+import { boardCounts, createEvent, listEvents, AndonError, type ListOptions } from "@/lib/server/andonService";
 import { notifyAndonCreated } from "@/lib/server/notifications";
 import { sendBoardRefresh } from "@/lib/server/webPush";
 import { deletePhoto, savePhoto } from "@/lib/server/photos";
@@ -32,8 +32,8 @@ export async function GET(req: Request) {
     const shift = scope === "board" ? await publicShift() : undefined;
     // The shop-floor board polls every few seconds: it also drives the 2-hour escalation check (≤ 1/min).
     if (scope === "board") after(() => maybeRunEscalations());
-    // Header counters are shown on the boards only: phones (respond) and history skip them (Turso rows read).
-    const counts = scope === "board" ? await getBoardCounts() : undefined;
+    // Header counters are shown on the boards only, computed from the board list (no extra DB read).
+    const counts = scope === "board" ? boardCounts(events) : undefined;
     return Response.json({ events, ...(counts ? { counts } : {}), serverTime: new Date().toISOString(), ...(shift ? { shift } : {}) });
   });
 }
