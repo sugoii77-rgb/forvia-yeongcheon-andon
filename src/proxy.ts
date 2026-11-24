@@ -11,9 +11,28 @@ import { SESSION_COOKIE, SESSION_IDLE_MS, secureCookieFor } from "@/lib/server/s
 const PROTECTED = ["/dashboard", "/history", "/respond", "/operator", "/me", "/admin"];
 const isProtected = (p: string) => p === "/" || PROTECTED.some((x) => p === x || p.startsWith(`${x}/`));
 
+// 3) KakaoTalk's built-in browser does not keep the login cookie (a GAP leader opening ANDON from a Kakao
+//    message had to log in again every time, 2026-11-25): pages opened there go to the phone's own browser
+//    (Chrome / Safari) through KakaoTalk's openExternal link, where the login stays and phone alerts work.
+function openInExternalBrowser(url: string) {
+  const target = `kakaotalk://web/openExternal?url=${encodeURIComponent(url)}`;
+  const attr = target.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+  const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ANDON</title></head>
+<body style="font-family:sans-serif;padding:24px;line-height:1.6">
+<p><b>ANDON을 휴대폰 기본 브라우저(Chrome / Safari)에서 엽니다.</b></p>
+<p>열리지 않으면 아래 버튼을 누르거나, 오른쪽 위 메뉴에서 ‘다른 브라우저로 열기’를 누르세요.</p>
+<p><a href="${attr}" style="display:inline-block;padding:12px 18px;background:#1f3864;color:#fff;border-radius:8px;text-decoration:none">브라우저로 열기</a></p>
+<script>location.href=${JSON.stringify(target).replace(/</g, "\\u003c")};</script>
+</body></html>`;
+  return new NextResponse(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+}
+
 export function proxy(req: NextRequest) {
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const path = req.nextUrl.pathname;
+  if (req.method === "GET" && !path.startsWith("/api/") && /KAKAOTALK/i.test(req.headers.get("user-agent") ?? "")) {
+    return openInExternalBrowser(req.nextUrl.href);
+  }
   if ((!token || token.length > 100) && isProtected(path)) {
     const login = new URL("/login", req.url);
     if (path !== "/") login.searchParams.set("next", path + req.nextUrl.search);
