@@ -231,6 +231,8 @@ export async function listEvents(opts: ListOptions = {}): Promise<AndonEvent[]> 
     // created_at bound: both OR branches use an index instead of reading every event (Turso rows-read quota).
     where.push(`(e.status IN (${active}) OR (e.created_at >= ? AND e.closed_at >= ? AND COALESCE(e.corrective_action, '') NOT LIKE '[TEST]%'))`);
     params.push(recentWindowStart(), since);
+    // shortcut: hidden from the board for the BG best-practice screen capture (2026-11-26); remove after the capture
+    where.push("e.id NOT IN ('AND-20261125-018')");
   }
   // an event belongs to every department of its call (v9) — or to its single department_code
   const inDepartments = (codes: string[]) => {
